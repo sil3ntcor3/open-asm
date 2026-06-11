@@ -62,6 +62,23 @@ export default defineConfig(({ mode }) => {
         '@': path.resolve(__dirname, './src'),
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          // Split the largest, independently-loaded libraries into their own
+          // chunks so they are cached separately and don't get duplicated
+          // across route chunks. Each entry is only fetched on the routes that
+          // actually use it.
+          manualChunks: {
+            echarts: ['echarts', 'echarts-for-react'],
+            leaflet: ['leaflet', 'react-leaflet'],
+            codemirror: ['@uiw/react-codemirror', '@codemirror/lang-yaml'],
+            flow: ['@xyflow/react'],
+            charts: ['recharts'],
+          },
+        },
+      },
+    },
     logLevel: 'silent',
     server: {
       watch: {

@@ -38,7 +38,7 @@ const queryClient = new QueryClient({
         );
       },
       refetchOnWindowFocus: import.meta.env.PROD,
-      staleTime: 10 * 1000, // 10s
+      staleTime: 60 * 1000, // 60s — avoid refetch+spinner on every navigation
     },
     mutations: {
       onError: (error) => {
@@ -91,7 +91,7 @@ const localStoragePersister = createSyncStoragePersister({
 persistQueryClient({
   queryClient,
   persister: localStoragePersister,
-  maxAge: 1000 * 60 * 24,
+  maxAge: 1000 * 60 * 60 * 24, // 24h
   dehydrateOptions: {
     shouldDehydrateQuery: (query) => {
       const queryKey = JSON.stringify(query.queryKey);
