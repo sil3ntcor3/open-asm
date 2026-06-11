@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -80,7 +81,7 @@ func TakeScreenshotBase64(ctx context.Context, browser *rod.Browser, rawURL stri
 		waitIdle()
 	})
 	if err != nil {
-		if strings.Contains(err.Error(), "timeout") {
+		if errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "timeout") {
 			return "", fmt.Errorf("timeout loading page %s", url)
 		}
 		return "", fmt.Errorf("failed to load page %s: %w", url, err)
