@@ -37,8 +37,9 @@ The system runs on a distributed architecture consisting of:
 * A web-based console for user interaction, asset management, and real-time monitoring.
 * A core API service responsible for business logic, data persistence, and job orchestration.
 * A Redis-based queue and caching layer enabling asynchronous job distribution, rate limiting, and system decoupling.
-* Distributed workers that execute high-performance scanning tasks, designed for horizontal auto-scaling and fault tolerance.
-* A PostgreSQL database for persistent storage of assets, scan results, and system state.
+* Distributed Go workers that execute high-performance scanning tasks, designed for horizontal auto-scaling and fault tolerance.
+* A PostgreSQL database (with the `pgvector` extension) for persistent storage of assets, scan results, embeddings, and system state.
+* An S3-compatible object store for screenshots and large scan artifacts.
 * An MCP (Model Context Protocol) server that provides structured context to AI systems.
 * Integration with AI/LLM components to enable intelligent querying, analysis, and automation over collected asset data.
 
@@ -53,8 +54,9 @@ graph TD
     subgraph "OASM Platform"
         Console[Web Console]
         API[Core API Service]
-        DB[(PostgreSQL)]
+        DB[(PostgreSQL + pgvector)]
         Redis[(Redis)]
+        Storage[(Object Storage)]
         MCP[MCP Server]
 
         subgraph "Execution Plane"
@@ -70,6 +72,7 @@ graph TD
 
     API <-->|Persist Data| DB
     API <-->|Queue / Cache| Redis
+    API <-->|Artifacts| Storage
 
     %% Job Flow (2-way)
     API <-->|Job / Result| W1
