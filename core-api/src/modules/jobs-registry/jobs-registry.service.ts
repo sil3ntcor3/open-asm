@@ -454,6 +454,7 @@ export class JobsRegistryService {
       // [OPT-4] SKIP LOCKED avoids workers blocking each other on the same row
       const job = await queryBuilder
         .setLock('pessimistic_write', undefined, ['jobs'])
+        .setOnLocked('skip_locked')
         .limit(1)
         .getOne();
 
