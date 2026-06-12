@@ -465,81 +465,109 @@ export class TargetsService implements OnModuleInit {
 
     const offset = (page - 1) * limit;
 
-    const queryBuilder = this.repo
-      .createQueryBuilder('targets')
-      .innerJoin('targets.workspaceTargets', 'workspaceTarget')
-      .innerJoin('workspaceTarget.workspace', 'workspace')
-      .innerJoin('workspace.workspaceMembers', 'workspaceMember')
-      .leftJoin('targets.assets', 'asset')
-      .leftJoin('asset.assetServices', 'assetService')
-      .leftJoin('asset.jobs', 'job')
-      .where('workspace.id = :workspaceId', { workspaceId })
-      .select([
-        'targets.id as id',
-        'targets.value as value',
-        'targets.type as type',
-        'targets.lastDiscoveredAt as "lastDiscoveredAt"',
-        'targets.reScanCount as "reScanCount"',
-        'targets.scanSchedule as "scanSchedule"',
-        'targets.internalNetworkId as "internalNetworkId"',
-        `CAST(COUNT(DISTINCT CASE WHEN "assetService"."isErrorPage" = false THEN "assetService"."id" END) AS INTEGER) AS "totalAssetServices"`,
-        `CASE
-        WHEN COUNT(CASE WHEN job.status = '${JobStatus.IN_PROGRESS}' THEN 1 END) > 0 THEN '${JobStatus.IN_PROGRESS}'
-        WHEN COUNT(CASE WHEN job.status = '${JobStatus.PENDING}' THEN 1 END) > 0 THEN '${JobStatus.PENDING}'
-        WHEN COUNT(CASE WHEN job.status = '${JobStatus.COMPLETED}' THEN 1 END) > 0 THEN '${JobStatus.COMPLETED}'
-        ELSE '${JobStatus.COMPLETED}'
-      END AS status`,
-      ])
-      .groupBy('targets.id');
+    // `asset_services` and `jobs` are both one-to-many off `asset`. Joining them
+    // as siblings produces a cartesian product (services x jobs) per asset, which
+    // — with millions of jobs — explodes into a query that runs for tens of
+    // minutes and times out behind nginx. We instead aggregate each child in its
+    // own LATERAL subquery so neither fans the other out, keeping the work
+    // proportional to the page size. See git history / perf investigation.
 
-    if (value) {
-      queryBuilder.andWhere('targets.value LIKE :value', {
-        value: `%${value}%`,
-      });
-    }
-
-    if (type) {
-      queryBuilder.andWhere('targets.type = :type', { type });
-    }
-
-if (status) {
-      // Filter by computed status using HAVING clause
-      const statusCase = `CASE
-        WHEN COUNT(CASE WHEN job.status = '${JobStatus.IN_PROGRESS}' THEN 1 END) > 0 THEN '${JobStatus.IN_PROGRESS}'
-        WHEN COUNT(CASE WHEN job.status = '${JobStatus.PENDING}' THEN 1 END) > 0 THEN '${JobStatus.PENDING}'
-        WHEN COUNT(CASE WHEN job.status = '${JobStatus.COMPLETED}' THEN 1 END) > 0 THEN '${JobStatus.COMPLETED}'
+    // Computed-status expression, reused by the SELECT and the status filter.
+    // Job-status enum values are hard-coded constants, so inlining them is safe.
+    const statusExpr = `CASE
+        WHEN COUNT(*) FILTER (WHERE j.status = '${JobStatus.IN_PROGRESS}') > 0 THEN '${JobStatus.IN_PROGRESS}'
+        WHEN COUNT(*) FILTER (WHERE j.status = '${JobStatus.PENDING}') > 0 THEN '${JobStatus.PENDING}'
         ELSE '${JobStatus.COMPLETED}'
       END`;
 
-      if (status === JobStatus.COMPLETED) {
-        queryBuilder.having(
-          `(${statusCase}) = :status OR (COUNT(job.id) = 0 AND :status = '${JobStatus.COMPLETED}')`,
-          { status },
-        );
-      } else {
-        queryBuilder.having(`(${statusCase}) = :status`, { status });
-      }
+    // Build the shared WHERE clause with positional params ($1 = workspaceId).
+    const params: unknown[] = [workspaceId];
+    const conditions: string[] = ['wt."workspaceId" = $1'];
+
+    if (value) {
+      params.push(`%${value}%`);
+      conditions.push(`t.value LIKE $${params.length}`);
+    }
+    if (type) {
+      params.push(type);
+      conditions.push(`t.type = $${params.length}`);
+    }
+    if (scope !== undefined) {
+      conditions.push(
+        scope === TargetScopeType.INTERNAL
+          ? 't."internalNetworkId" IS NOT NULL'
+          : 't."internalNetworkId" IS NULL',
+      );
+    }
+    if (status) {
+      params.push(status);
+      // Correlated subquery (no cross-product) reproducing the computed status.
+      // A target with no jobs collapses to COMPLETED, matching the old behavior.
+      conditions.push(`(
+        SELECT ${statusExpr}
+        FROM assets a JOIN jobs j ON j."assetId" = a.id
+        WHERE a."targetId" = t.id
+      ) = $${params.length}`);
     }
 
-if (scope !== undefined) {
-      if (scope === TargetScopeType.INTERNAL) {
-        queryBuilder.andWhere('targets.internalNetworkId IS NOT NULL');
-      } else {
-        queryBuilder.andWhere('targets.internalNetworkId IS NULL');
-      }
-    }
+    const whereClause = conditions.join(' AND ');
 
-    if (sortBy === 'totalAssetServices' || sortBy === 'duration') {
-      queryBuilder.orderBy(`"${sortBy}"`, sortOrder);
-    } else if (sortBy in Target) {
-      queryBuilder.orderBy(`targets.${sortBy}`, sortOrder);
-    } else {
-      queryBuilder.orderBy('targets.createdAt', sortOrder);
-    }
+    // total: only touches `jobs` when a status filter is active; otherwise it is
+    // a cheap indexed count over targets/workspace_targets.
+    const totalRows: Array<{ cnt: string }> = await this.repo.query(
+      `SELECT COUNT(*)::int AS cnt
+       FROM targets t
+       INNER JOIN workspace_targets wt ON wt."targetId" = t.id
+       WHERE ${whereClause}`,
+      params,
+    );
+    const total = Number(totalRows[0]?.cnt ?? 0);
 
-    const total = await queryBuilder.getCount();
+    // Whitelist sort columns (avoids SQL injection and the previously broken
+    // `duration` branch, which referenced a column that was never selected).
+    const sortColumns: Record<string, string> = {
+      value: 't.value',
+      type: 't.type',
+      lastDiscoveredAt: 't."lastDiscoveredAt"',
+      reScanCount: 't."reScanCount"',
+      scanSchedule: 't."scanSchedule"',
+      createdAt: 't."createdAt"',
+      totalAssetServices: '"totalAssetServices"',
+    };
+    const orderColumn = sortColumns[sortBy] ?? 't."createdAt"';
+    const orderDir = sortOrder === 'ASC' ? 'ASC' : 'DESC';
 
-    const targets = await queryBuilder.limit(limit).offset(offset).getRawMany();
+    const listParams = [...params, limit, offset];
+    const targets = await this.repo.query(
+      `SELECT
+         t.id AS id,
+         t.value AS value,
+         t.type AS type,
+         t."lastDiscoveredAt" AS "lastDiscoveredAt",
+         t."reScanCount" AS "reScanCount",
+         t."scanSchedule" AS "scanSchedule",
+         t."internalNetworkId" AS "internalNetworkId",
+         svc.cnt AS "totalAssetServices",
+         js.status AS status
+       FROM targets t
+       INNER JOIN workspace_targets wt ON wt."targetId" = t.id
+       LEFT JOIN LATERAL (
+         SELECT COUNT(DISTINCT s.id)::int AS cnt
+         FROM assets a
+         JOIN asset_services s ON s."assetId" = a.id
+         WHERE a."targetId" = t.id AND s."isErrorPage" = false
+       ) svc ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT ${statusExpr} AS status
+         FROM assets a
+         JOIN jobs j ON j."assetId" = a.id
+         WHERE a."targetId" = t.id
+       ) js ON TRUE
+       WHERE ${whereClause}
+       ORDER BY ${orderColumn} ${orderDir}
+       LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
+      listParams,
+    );
 
     return getManyResponse({ query, data: targets, total });
   }
