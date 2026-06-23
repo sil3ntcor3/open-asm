@@ -40,7 +40,9 @@ import {
   MCPServerResponseDto,
 } from './dto/mcp-config.dto';
 import { MessageResponseDto, ToolCallResponseDto } from './dto/message.dto';
+import { WorkspaceMemoryResponseDto } from './dto/workspace-memory.dto';
 import { AgentConversation } from './entities/agent-conversation.entity';
+import { AgentConversationTodo } from './entities/agent-conversation-todo.entity';
 import { AgentLLMConfig } from './entities/agent-llm-config.entity';
 import { AgentMCPConfig } from './entities/agent-mcp-config.entity';
 import { AgentMessage } from './entities/agent-message.entity';
@@ -65,6 +67,8 @@ export class AgentsService {
     private readonly mcpConfigRepository: Repository<AgentMCPConfig>,
     @InjectRepository(AgentMessageToolCall)
     private readonly toolCallRepository: Repository<AgentMessageToolCall>,
+    @InjectRepository(AgentConversationTodo)
+    private readonly todoRepository: Repository<AgentConversationTodo>,
     private readonly redisService: RedisService,
     private readonly agentsMemories: AgentsMemoriesService,
     private readonly httpService: HttpService,
@@ -380,13 +384,26 @@ export class AgentsService {
       throw new NotFoundException('Conversation not found');
     }
 
+    const todoEntities = await this.todoRepository.find({
+      where: { conversationId: id },
+      order: { sortOrder: 'ASC' },
+    });
+    const todos = todoEntities.map((t) => ({
+      id: t.id,
+      content: t.content,
+      status: t.status,
+      sortOrder: t.sortOrder,
+      updatedAt: t.updatedAt.toISOString(),
+    }));
+
     return {
       id: conversation.id,
       llmConfigId: conversation.llmConfigId,
       title: conversation.title,
+      agentMode: conversation.agentMode,
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
-      todos: conversation.todos ?? [],
+      todos,
       summary: conversation.summary,
     };
   }
@@ -422,6 +439,7 @@ export class AgentsService {
         id: c.id,
         llmConfigId: c.llmConfigId,
         title: c.title,
+        agentMode: c.agentMode,
         createdAt: c.createdAt,
         updatedAt: c.updatedAt,
       })),
@@ -451,6 +469,7 @@ export class AgentsService {
       id: saved.id,
       llmConfigId: saved.llmConfigId,
       title: saved.title,
+      agentMode: saved.agentMode,
       createdAt: saved.createdAt,
       updatedAt: saved.updatedAt,
     };
@@ -659,7 +678,9 @@ export class AgentsService {
     const existing = config.configJson.mcpServers[name] ?? {};
     config.configJson.mcpServers[name] = {
       disabled: false,
+      transport: 'sse',
       timeout: 60,
+      sse_read_timeout: 300,
       allowed_tools: null,
       ...existing,
       ...dto,
@@ -744,5 +765,43 @@ export class AgentsService {
     } catch {
       return { status: 'offline' };
     }
+  }
+
+  async getWorkspaceMemory(
+    workspaceId: string,
+    userId: string,
+    query?: GetManyBaseQueryParams,
+  ): Promise<GetManyBaseResponseDto<WorkspaceMemoryResponseDto>> {
+    const page = query?.page || 1;
+    const limit = query?.limit || 10;
+    const sortBy = query?.sortBy || 'createdAt';
+    const sortOrder = (query?.sortOrder || 'DESC') as 'ASC' | 'DESC';
+
+    const { data, total } = await this.agentsMemories.ltmGetAllPaginated(
+      workspaceId,
+      userId,
+      { page, limit, sortBy, sortOrder },
+    );
+
+    return getManyResponse({
+      query: { ...query, page, limit } as GetManyBaseQueryParams,
+      data: data.map((r) => ({
+        id: r.id,
+        workspaceId: r.workspaceId,
+        userId: r.userId,
+        content: r.content,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+      })),
+      total,
+    });
+  }
+
+  async deleteWorkspaceMemory(
+    id: string,
+    workspaceId: string,
+    userId: string,
+  ): Promise<void> {
+    await this.agentsMemories.ltmDeleteById(id, workspaceId, userId);
   }
 }

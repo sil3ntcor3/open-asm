@@ -22,9 +22,10 @@ import { Shimmer } from '@/components/ai-elements/shimmer';
 import { Markdown } from '@/components/common/markdown';
 import type { ToolCallState } from '@/components/common/tool-call-display';
 import { ToolCallDisplay } from '@/components/common/tool-call-display';
-import type { RemoteExecuteStreamEvent } from '@/hooks/use-remote-execute-stream';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { RemoteExecuteStreamEvent } from '@/hooks/use-remote-execute-stream';
 import type { TextUIPart, UIMessage } from 'ai';
+import { motion } from 'framer-motion';
 import {
   AlertCircle,
   CheckIcon,
@@ -33,7 +34,6 @@ import {
   ShieldAlert,
   X,
 } from 'lucide-react';
-import { motion } from 'framer-motion';
 import {
   memo,
   useCallback,
@@ -56,6 +56,8 @@ interface ChatConversationProps {
   isStreaming?: boolean;
   isLoadingMessages?: boolean;
   streamError?: string | null;
+  isRetrying?: boolean;
+  retryAttempt?: number;
   onDismissError?: () => void;
   selectedConfigId?: string | null;
   selectedModel?: string | null;
@@ -67,6 +69,8 @@ interface ChatConversationProps {
   agentMode?: string;
   onAgentModeChange?: (mode: string) => void;
   todos?: AgentTodoItem[];
+  showTodoAboveInput?: boolean;
+  selectedToolCallId?: string | null;
   remoteExecuteEvents?: Map<string, RemoteExecuteStreamEvent[]>;
 }
 
@@ -197,8 +201,7 @@ const ChatMessage = memo(function ChatMessage({
   const lastPart = parts.at(-1);
 
   // Show "Thinking" shimmer when streaming starts but no parts yet
-  const showInitialThinking =
-    isStreamingActive && parts.length === 0;
+  const showInitialThinking = isStreamingActive && parts.length === 0;
 
   // Reasoning is actively streaming if the last part is a reasoning part
   const isReasoningStreaming =
@@ -215,7 +218,14 @@ const ChatMessage = memo(function ChatMessage({
   // but keep tool calls and text parts in their actual positions.
   type RenderItem =
     | { kind: 'reasoning'; text: string; isStreaming: boolean }
-    | { kind: 'tool'; toolCallId: string; toolName: string; state: string; input?: unknown; output?: unknown }
+    | {
+        kind: 'tool';
+        toolCallId: string;
+        toolName: string;
+        state: string;
+        input?: unknown;
+        output?: unknown;
+      }
     | { kind: 'text'; text: string }
     | { kind: 'generating' }
     | { kind: 'initial-thinking' };
@@ -226,14 +236,19 @@ const ChatMessage = memo(function ChatMessage({
   let pendingReasoning = '';
   const flushReasoning = (streaming: boolean) => {
     if (pendingReasoning.trim()) {
-      renderItems.push({ kind: 'reasoning', text: pendingReasoning, isStreaming: streaming });
+      renderItems.push({
+        kind: 'reasoning',
+        text: pendingReasoning,
+        isStreaming: streaming,
+      });
       pendingReasoning = '';
     }
   };
 
   for (const part of parts) {
     if (part.type === 'reasoning' && 'text' in part) {
-      pendingReasoning += (pendingReasoning ? '\n\n' : '') + (part as { text: string }).text;
+      pendingReasoning +=
+        (pendingReasoning ? '\n\n' : '') + (part as { text: string }).text;
     } else {
       // Flush any accumulated reasoning before non-reasoning part
       flushReasoning(false);
@@ -272,7 +287,9 @@ const ChatMessage = memo(function ChatMessage({
     }
   }
   // Flush any trailing reasoning
-  const lastReasoningPart = [...parts].reverse().find((p) => p.type === 'reasoning');
+  const lastReasoningPart = [...parts]
+    .reverse()
+    .find((p) => p.type === 'reasoning');
   const isTrailingReasoning =
     isReasoningStreaming && lastReasoningPart && pendingReasoning.trim();
   flushReasoning(!!isTrailingReasoning);
@@ -287,7 +304,7 @@ const ChatMessage = memo(function ChatMessage({
   return (
     <Message from={message.role}>
       <MessageContent expandable={message.role === 'user'}>
-        <div className="flex flex-col w-full gap-3">
+        <div className="flex flex-col w-full gap-1.5">
           {renderItems.map((item, i) => {
             switch (item.kind) {
               case 'reasoning':
@@ -307,21 +324,25 @@ const ChatMessage = memo(function ChatMessage({
                 );
               case 'tool':
                 return (
-                  <ToolCallDisplay
+                  <div
                     key={item.toolCallId}
-                    toolCall={{
-                      toolCallId: item.toolCallId,
-                      toolName: item.toolName,
-                      status: item.state as
-                        | 'pending'
-                        | 'executing'
-                        | 'completed'
-                        | 'error',
-                      input: item.input as Record<string, unknown> | undefined,
-                      output: item.output,
-                    }}
-                    streamEvents={remoteExecuteEvents?.get(item.toolCallId)}
-                  />
+                    id={`tool-call-${item.toolCallId}`}
+                  >
+                    <ToolCallDisplay
+                      toolCall={{
+                        toolCallId: item.toolCallId,
+                        toolName: item.toolName,
+                        status: item.state as
+                          | 'pending'
+                          | 'executing'
+                          | 'completed'
+                          | 'error',
+                        input: item.input as Record<string, unknown> | undefined,
+                        output: item.output,
+                      }}
+                      streamEvents={remoteExecuteEvents?.get(item.toolCallId)}
+                    />
+                  </div>
                 );
               case 'text':
                 return (
@@ -462,11 +483,48 @@ function StreamError({
   error,
   onRetry,
   onDismiss,
+  isRetrying,
+  retryAttempt,
 }: {
   error: string;
   onRetry?: () => void;
   onDismiss: () => void;
+  isRetrying?: boolean;
+  retryAttempt?: number;
 }) {
+  if (isRetrying) {
+    return (
+      <motion.div
+        className="mx-auto max-w-3xl w-full px-4"
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+      >
+        <div className="flex items-center gap-3 rounded-lg border border-amber-500/50 bg-amber-500/10 p-4 text-sm">
+          <RefreshCcwIcon className="size-5 text-amber-500 shrink-0 animate-spin" />
+          <div className="flex-1">
+            <p className="font-medium text-amber-600 dark:text-amber-500">
+              Retrying… (attempt {retryAttempt ?? 1} of 3)
+            </p>
+            <p className="text-muted-foreground mt-1">
+              A transient error occurred. Reconnecting automatically.
+            </p>
+          </div>
+          {onDismiss && (
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="rounded-md p-1 hover:bg-accent transition-colors"
+              aria-label="Cancel retry"
+            >
+              <X className="size-4" />
+            </button>
+          )}
+        </div>
+      </motion.div>
+    );
+  }
+
   return (
     <motion.div
       className="mx-auto max-w-3xl w-full px-4"
@@ -517,6 +575,8 @@ export const ChatConversation = memo(function ChatConversation({
   isStreaming = false,
   isLoadingMessages = false,
   streamError,
+  isRetrying = false,
+  retryAttempt = 0,
   onDismissError,
   selectedConfigId,
   selectedModel,
@@ -527,6 +587,8 @@ export const ChatConversation = memo(function ChatConversation({
   agentMode = 'false',
   onAgentModeChange,
   todos,
+  showTodoAboveInput = true,
+  selectedToolCallId,
   remoteExecuteEvents,
 }: ChatConversationProps) {
   const isLoadingMoreRef = useRef(false);
@@ -605,6 +667,38 @@ export const ChatConversation = memo(function ChatConversation({
     prevScrollHeightRef.current = container.scrollHeight;
     prevMessageCountRef.current = messages.length;
   }, [messages]);
+
+  // Scroll to tool call in conversation when selected from sidebar
+  useEffect(() => {
+    if (!selectedToolCallId) return;
+    const el = document.getElementById(`tool-call-${selectedToolCallId}`);
+    if (!el) return;
+
+    let scrollContainer: HTMLElement | null = el.parentElement;
+    while (scrollContainer) {
+      const style = getComputedStyle(scrollContainer);
+      if (style.overflowY === 'auto' || style.overflowY === 'scroll') break;
+      scrollContainer = scrollContainer.parentElement;
+    }
+
+    if (scrollContainer) {
+      const containerRect = scrollContainer.getBoundingClientRect();
+      const elementRect = el.getBoundingClientRect();
+      const relativeTop =
+        elementRect.top - containerRect.top + scrollContainer.scrollTop;
+      const targetScrollTop =
+        relativeTop -
+        scrollContainer.clientHeight / 2 +
+        el.offsetHeight / 2;
+
+      scrollContainer.scrollTo({
+        top: Math.max(0, targetScrollTop),
+        behavior: 'smooth',
+      });
+    } else {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [selectedToolCallId]);
 
   const lastUserMessage = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -710,9 +804,11 @@ export const ChatConversation = memo(function ChatConversation({
             </>
           )}
 
-          {streamError && (
+          {(streamError || isRetrying) && (
             <StreamError
-              error={streamError}
+              error={streamError ?? ''}
+              isRetrying={isRetrying}
+              retryAttempt={retryAttempt}
               onRetry={lastUserMessage ? handleRetry : () => {}}
               onDismiss={onDismissError ?? (() => {})}
             />
@@ -723,7 +819,7 @@ export const ChatConversation = memo(function ChatConversation({
 
       <div className="shrink-0 bg-background/90 backdrop-blur-sm px-4 pb-4">
         <div className="max-w-3xl mx-auto w-full flex flex-col">
-          {todos && todos.length > 0 && (
+          {showTodoAboveInput && todos && todos.length > 0 && (
             <AgentTodoPanel
               todos={todos}
               className="rounded-b-none border-b-0 mx-2"
