@@ -8,6 +8,17 @@ on:
       - "console/**"
       - "core-api/**"
       - "worker/**"
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Service to build manually"
+        type: choice
+        default: all
+        options:
+          - all
+          - console
+          - core-api
+          - worker
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -35,11 +46,29 @@ jobs:
             worker:
               - 'worker/**'
       - id: set-matrix
+        env:
+          DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
+          SVC: ${{ github.event.inputs.service }}
         run: |
+          add_console=false; add_api=false; add_worker=false
+
+          if [ "$DISPATCH" == "true" ]; then
+            case "$SVC" in
+              all)      add_console=true; add_api=true; add_worker=true ;;
+              console)  add_console=true ;;
+              core-api) add_api=true ;;
+              worker)   add_worker=true ;;
+            esac
+          else
+            [ "${{ steps.filter.outputs.console }}" == "true" ] && add_console=true
+            [ "${{ steps.filter.outputs.api }}" == "true" ] && add_api=true
+            [ "${{ steps.filter.outputs.worker }}" == "true" ] && add_worker=true
+          fi
+
           CHANGED=()
-          if [ "${{ steps.filter.outputs.console }}" == "true" ]; then CHANGED+=('{"image":"sil3ntcor3/myoasm-console:latest","context":"console"}'); fi
-          if [ "${{ steps.filter.outputs.api }}" == "true" ]; then CHANGED+=('{"image":"sil3ntcor3/myoasm-api:latest","context":"core-api"}'); fi
-          if [ "${{ steps.filter.outputs.worker }}" == "true" ]; then CHANGED+=('{"image":"sil3ntcor3/myoasm-worker:latest","context":"worker"}'); fi
+          $add_console && CHANGED+=('{"image":"sil3ntcor3/myoasm-console:latest","context":"console"}')
+          $add_api && CHANGED+=('{"image":"sil3ntcor3/myoasm-api:latest","context":"core-api"}')
+          $add_worker && CHANGED+=('{"image":"sil3ntcor3/myoasm-worker:latest","context":"worker"}')
 
           if [ ${#CHANGED[@]} -eq 0 ]; then
             MATRIX='{"include":[]}'
