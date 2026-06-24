@@ -1,0 +1,348 @@
+oasm-api         | [Nest] 1  - 06/23/2026, 11:15:29 PM   ERROR Error in getNextJob
+oasm-api         | [Nest] 1  - 06/23/2026, 11:15:29 PM   ERROR QueryFailedError: canceling statement due to statement timeout
+oasm-api         |     at PostgresQueryRunner.query (/app/node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:216:19)
+oasm-api         |     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+oasm-api         |     at async SelectQueryBuilder.loadRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2220:25)
+oasm-api         |     at async SelectQueryBuilder.executeEntitiesAndRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2068:26)
+oasm-api         |     at async SelectQueryBuilder.getRawAndEntities (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:662:29)
+oasm-api         |     at async SelectQueryBuilder.getOne (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:689:25)
+oasm-api         |     at async JobsRegistryService.getNextJob (/app/dist/modules/jobs-registry/jobs-registry.service.js:299:25)
+oasm-api         |     at async JobsRegistryController.next (/app/dist/modules/jobs-registry/jobs-registry.controller.js:68:21)
+oasm-api         |     at async Next (/app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32)
+oasm-api         |     at async /app/node_modules/@nestjs/microservices/server/server-grpc.js:190:44 {
+oasm-api         |   query: 'SELECT "jobs"."id" AS "jobs_id", "jobs"."createdAt" AS "jobs_createdAt", "jobs"."updatedAt" AS "jobs_updatedAt", "jobs"."category" AS "jobs_category", "jobs"."status" AS "jobs_status", "jobs"."pickJobAt" AS "jobs_pickJobAt", "jobs"."priority" AS "jobs_priority", "jobs"."workerId" AS "jobs_workerId", "jobs"."rawResult" AS "jobs_rawResult", "jobs"."completedAt" AS "jobs_completedAt", "jobs"."isSaveRawResult" AS "jobs_isSaveRawResult", "jobs"."isSaveData" AS "jobs_isSaveData", "jobs"."isPublishEvent" AS "jobs_isPublishEvent", "jobs"."pathResult" AS "jobs_pathResult", "jobs"."command" AS "jobs_command", "jobs"."assetServiceId" AS "jobs_assetServiceId", "jobs"."retryCount" AS "jobs_retryCount", "jobs"."assetId" AS "jobs_assetId", "jobs"."toolId" AS "jobs_toolId", "jobs"."jobHistoryId" AS "jobs_jobHistoryId", "asset"."id" AS "asset_id", "asset"."createdAt" AS "asset_createdAt", "asset"."updatedAt" AS "asset_updatedAt", "asset"."value" AS "asset_value", "asset"."targetId" AS "asset_targetId", "asset"."isPrimary" AS "asset_isPrimary", "asset"."dnsRecords" AS "asset_dnsRecords", "asset"."isEnabled" AS "asset_isEnabled", "assetService"."id" AS "assetService_id", "assetService"."createdAt" AS "assetService_createdAt", "assetService"."updatedAt" AS "assetService_updatedAt", "assetService"."value" AS "assetService_value", "assetService"."port" AS "assetService_port", "assetService"."assetId" AS "assetService_assetId", "assetService"."isErrorPage" AS "assetService_isErrorPage", "assetService"."screenshotPath" AS "assetService_screenshotPath" FROM "jobs" "jobs" INNER JOIN "assets" "asset" ON "asset"."id"="jobs"."assetId"  INNER JOIN "targets" "target" ON "target"."id"="asset"."targetId"  LEFT JOIN "tools" "tool" ON "tool"."id"="jobs"."toolId"  LEFT JOIN "asset_services" "assetService" ON "assetService"."id"="jobs"."assetServiceId" WHERE "jobs"."status" = $1 AND "tool"."name" IN ($2, $3, $4, $5, $6) ORDER BY "jobs"."priority" DESC, "jobs"."createdAt" ASC LIMIT 1 FOR UPDATE OF jobs SKIP LOCKED',
+oasm-api         |   parameters: [
+oasm-api         |     'pending',
+oasm-api         |     'subfinder',
+oasm-api         |     'httpx',
+oasm-api         |     'screenshot',
+oasm-api         |     'naabu',
+oasm-api         |     'nuclei'
+oasm-api         |   ],
+oasm-api         |   driverError: error: canceling statement due to statement timeout
+oasm-api         |       at /app/node_modules/pg/lib/client.js:652:17
+oasm-api         |       at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+oasm-api         |       at async PostgresQueryRunner.query (/app/node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:181:25)
+oasm-api         |       at async SelectQueryBuilder.loadRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2220:25)
+oasm-api         |       at async SelectQueryBuilder.executeEntitiesAndRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2068:26)
+oasm-api         |       at async SelectQueryBuilder.getRawAndEntities (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:662:29)
+oasm-api         |       at async SelectQueryBuilder.getOne (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:689:25)
+oasm-api         |       at async JobsRegistryService.getNextJob (/app/dist/modules/jobs-registry/jobs-registry.service.js:299:25)
+oasm-api         |       at async JobsRegistryController.next (/app/dist/modules/jobs-registry/jobs-registry.controller.js:68:21)
+oasm-api         |       at async Next (/app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32) {
+oasm-api         |     length: 109,
+oasm-api         |     severity: 'ERROR',
+oasm-api         |     code: '57014',
+oasm-api         |     detail: undefined,
+oasm-api         |     hint: undefined,
+oasm-api         |     position: undefined,
+oasm-api         |     internalPosition: undefined,
+oasm-api         |     internalQuery: undefined,
+oasm-api         |     where: undefined,
+oasm-api         |     schema: undefined,
+oasm-api         |     table: undefined,
+oasm-api         |     column: undefined,
+oasm-api         |     dataType: undefined,
+oasm-api         |     constraint: undefined,
+oasm-api         |     file: 'postgres.c',
+oasm-api         |     line: '3406',
+oasm-api         |     routine: 'ProcessInterrupts'
+oasm-api         |   },
+oasm-api         |   length: 109,
+oasm-api         |   severity: 'ERROR',
+oasm-api         |   code: '57014',
+oasm-api         |   detail: undefined,
+oasm-api         |   hint: undefined,
+oasm-api         |   position: undefined,
+oasm-api         |   internalPosition: undefined,
+oasm-api         |   internalQuery: undefined,
+oasm-api         |   where: undefined,
+oasm-api         |   schema: undefined,
+oasm-api         |   table: undefined,
+oasm-api         |   column: undefined,
+oasm-api         |   dataType: undefined,
+oasm-api         |   constraint: undefined,
+oasm-api         |   file: 'postgres.c',
+oasm-api         |   line: '3406',
+oasm-api         |   routine: 'ProcessInterrupts'
+oasm-api         | }
+oasm-postgres    | 2026-06-23 23:15:29.120 UTC [162] ERROR:  canceling statement due to statement timeout
+oasm-postgres    | 2026-06-23 23:15:29.120 UTC [162] STATEMENT:  SELECT "jobs"."id" AS "jobs_id", "jobs"."createdAt" AS "jobs_createdAt", "jobs"."updatedAt" AS "jobs_updatedAt", "jobs"."category" AS "jobs_category", "jobs"."status" AS "jobs_status", "jobs"."pickJobAt" AS "jobs_pickJobAt", "jobs"."priority" AS "jobs_priority", "jobs"."workerId" AS "jobs_workerId", "jobs"."rawResult" AS "jobs_rawResult", "jobs"."completedAt" AS "jobs_completedAt", "jobs"."isSaveRawResult" AS "jobs_isSaveRawResult", "jobs"."isSaveData" AS "jobs_isSaveData", "jobs"."isPublishEvent" AS "jobs_isPublishEvent", "jobs"."pathResult" AS "jobs_pathResult", "jobs"."command" AS "jobs_command", "jobs"."assetServiceId" AS "jobs_assetServiceId", "jobs"."retryCount" AS "jobs_retryCount", "jobs"."assetId" AS "jobs_assetId", "jobs"."toolId" AS "jobs_toolId", "jobs"."jobHistoryId" AS "jobs_jobHistoryId", "asset"."id" AS "asset_id", "asset"."createdAt" AS "asset_createdAt", "asset"."updatedAt" AS "asset_updatedAt", "asset"."value" AS "asset_value", "asset"."targetId" AS "asset_targetId", "asset"."isPrimary" AS "asset_isPrimary", "asset"."dnsRecords" AS "asset_dnsRecords", "asset"."isEnabled" AS "asset_isEnabled", "assetService"."id" AS "assetService_id", "assetService"."createdAt" AS "assetService_createdAt", "assetService"."updatedAt" AS "assetService_updatedAt", "assetService"."value" AS "assetService_value", "assetService"."port" AS "assetService_port", "assetService"."assetId" AS "assetService_assetId", "assetService"."isErrorPage" AS "assetService_isErrorPage", "assetService"."screenshotPath" AS "assetService_screenshotPath" FROM "jobs" "jobs" INNER JOIN "assets" "asset" ON "asset"."id"="jobs"."assetId"  INNER JOIN "targets" "target" ON "target"."id"="asset"."targetId"  LEFT JOIN "tools" "tool" ON "tool"."id"="jobs"."toolId"  LEFT JOIN "asset_services" "assetService" ON "assetService"."id"="jobs"."assetServiceId" WHERE "jobs"."status" = $1 AND "tool"."name" IN ($2, $3, $4, $5, $6) ORDER BY "jobs"."priority" DESC, "jobs"."createdAt" ASC LIMIT 1 FOR UPDATE OF jobs SKIP LOCKED
+oasm-api         | [Nest] 1  - 06/23/2026, 11:15:29 PM   ERROR Error in getNextJob
+oasm-api         | [Nest] 1  - 06/23/2026, 11:15:29 PM   ERROR QueryFailedError: canceling statement due to statement timeout
+oasm-api         |     at PostgresQueryRunner.query (/app/node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:216:19)
+oasm-api         |     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+oasm-api         |     at async SelectQueryBuilder.loadRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2220:25)
+oasm-api         |     at async SelectQueryBuilder.executeEntitiesAndRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2068:26)
+oasm-api         |     at async SelectQueryBuilder.getRawAndEntities (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:662:29)
+oasm-api         |     at async SelectQueryBuilder.getOne (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:689:25)
+oasm-api         |     at async JobsRegistryService.getNextJob (/app/dist/modules/jobs-registry/jobs-registry.service.js:299:25)
+oasm-api         |     at async JobsRegistryController.next (/app/dist/modules/jobs-registry/jobs-registry.controller.js:68:21)
+oasm-api         |     at async Next (/app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32)
+oasm-api         |     at async /app/node_modules/@nestjs/microservices/server/server-grpc.js:190:44 {
+oasm-api         |   query: 'SELECT "jobs"."id" AS "jobs_id", "jobs"."createdAt" AS "jobs_createdAt", "jobs"."updatedAt" AS "jobs_updatedAt", "jobs"."category" AS "jobs_category", "jobs"."status" AS "jobs_status", "jobs"."pickJobAt" AS "jobs_pickJobAt", "jobs"."priority" AS "jobs_priority", "jobs"."workerId" AS "jobs_workerId", "jobs"."rawResult" AS "jobs_rawResult", "jobs"."completedAt" AS "jobs_completedAt", "jobs"."isSaveRawResult" AS "jobs_isSaveRawResult", "jobs"."isSaveData" AS "jobs_isSaveData", "jobs"."isPublishEvent" AS "jobs_isPublishEvent", "jobs"."pathResult" AS "jobs_pathResult", "jobs"."command" AS "jobs_command", "jobs"."assetServiceId" AS "jobs_assetServiceId", "jobs"."retryCount" AS "jobs_retryCount", "jobs"."assetId" AS "jobs_assetId", "jobs"."toolId" AS "jobs_toolId", "jobs"."jobHistoryId" AS "jobs_jobHistoryId", "asset"."id" AS "asset_id", "asset"."createdAt" AS "asset_createdAt", "asset"."updatedAt" AS "asset_updatedAt", "asset"."value" AS "asset_value", "asset"."targetId" AS "asset_targetId", "asset"."isPrimary" AS "asset_isPrimary", "asset"."dnsRecords" AS "asset_dnsRecords", "asset"."isEnabled" AS "asset_isEnabled", "assetService"."id" AS "assetService_id", "assetService"."createdAt" AS "assetService_createdAt", "assetService"."updatedAt" AS "assetService_updatedAt", "assetService"."value" AS "assetService_value", "assetService"."port" AS "assetService_port", "assetService"."assetId" AS "assetService_assetId", "assetService"."isErrorPage" AS "assetService_isErrorPage", "assetService"."screenshotPath" AS "assetService_screenshotPath" FROM "jobs" "jobs" INNER JOIN "assets" "asset" ON "asset"."id"="jobs"."assetId"  INNER JOIN "targets" "target" ON "target"."id"="asset"."targetId"  LEFT JOIN "tools" "tool" ON "tool"."id"="jobs"."toolId"  LEFT JOIN "asset_services" "assetService" ON "assetService"."id"="jobs"."assetServiceId" WHERE "jobs"."status" = $1 AND "tool"."name" IN ($2, $3, $4, $5, $6) ORDER BY "jobs"."priority" DESC, "jobs"."createdAt" ASC LIMIT 1 FOR UPDATE OF jobs SKIP LOCKED',
+oasm-api         |   parameters: [
+oasm-api         |     'pending',
+oasm-api         |     'subfinder',
+oasm-api         |     'httpx',
+oasm-api         |     'screenshot',
+oasm-api         |     'naabu',
+oasm-api         |     'nuclei'
+oasm-api         |   ],
+oasm-api         |   driverError: error: canceling statement due to statement timeout
+oasm-api         |       at /app/node_modules/pg/lib/client.js:652:17
+oasm-api         |       at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+oasm-api         |       at async PostgresQueryRunner.query (/app/node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:181:25)
+oasm-api         |       at async SelectQueryBuilder.loadRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2220:25)
+oasm-api         |       at async SelectQueryBuilder.executeEntitiesAndRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2068:26)
+oasm-api         |       at async SelectQueryBuilder.getRawAndEntities (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:662:29)
+oasm-api         |       at async SelectQueryBuilder.getOne (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:689:25)
+oasm-api         |       at async JobsRegistryService.getNextJob (/app/dist/modules/jobs-registry/jobs-registry.service.js:299:25)
+oasm-api         |       at async JobsRegistryController.next (/app/dist/modules/jobs-registry/jobs-registry.controller.js:68:21)
+oasm-api         |       at async Next (/app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32) {
+oasm-api         |     length: 109,
+oasm-api         |     severity: 'ERROR',
+oasm-api         |     code: '57014',
+oasm-api         |     detail: undefined,
+oasm-api         |     hint: undefined,
+oasm-api         |     position: undefined,
+oasm-api         |     internalPosition: undefined,
+oasm-api         |     internalQuery: undefined,
+oasm-api         |     where: undefined,
+oasm-api         |     schema: undefined,
+oasm-api         |     table: undefined,
+oasm-api         |     column: undefined,
+oasm-api         |     dataType: undefined,
+oasm-api         |     constraint: undefined,
+oasm-api         |     file: 'postgres.c',
+oasm-api         |     line: '3406',
+oasm-api         |     routine: 'ProcessInterrupts'
+oasm-api         |   },
+oasm-api         |   length: 109,
+oasm-api         |   severity: 'ERROR',
+oasm-api         |   code: '57014',
+oasm-api         |   detail: undefined,
+oasm-api         |   hint: undefined,
+oasm-api         |   position: undefined,
+oasm-api         |   internalPosition: undefined,
+oasm-api         |   internalQuery: undefined,
+oasm-api         |   where: undefined,
+oasm-api         |   schema: undefined,
+oasm-api         |   table: undefined,
+oasm-api         |   column: undefined,
+oasm-api         |   dataType: undefined,
+oasm-api         |   constraint: undefined,
+oasm-api         |   file: 'postgres.c',
+oasm-api         |   line: '3406',
+oasm-api         |   routine: 'ProcessInterrupts'
+oasm-api         | }
+oasm-postgres    | 2026-06-23 23:15:29.152 UTC [163] ERROR:  canceling statement due to statement timeout
+oasm-postgres    | 2026-06-23 23:15:29.152 UTC [163] STATEMENT:  SELECT "jobs"."id" AS "jobs_id", "jobs"."createdAt" AS "jobs_createdAt", "jobs"."updatedAt" AS "jobs_updatedAt", "jobs"."category" AS "jobs_category", "jobs"."status" AS "jobs_status", "jobs"."pickJobAt" AS "jobs_pickJobAt", "jobs"."priority" AS "jobs_priority", "jobs"."workerId" AS "jobs_workerId", "jobs"."rawResult" AS "jobs_rawResult", "jobs"."completedAt" AS "jobs_completedAt", "jobs"."isSaveRawResult" AS "jobs_isSaveRawResult", "jobs"."isSaveData" AS "jobs_isSaveData", "jobs"."isPublishEvent" AS "jobs_isPublishEvent", "jobs"."pathResult" AS "jobs_pathResult", "jobs"."command" AS "jobs_command", "jobs"."assetServiceId" AS "jobs_assetServiceId", "jobs"."retryCount" AS "jobs_retryCount", "jobs"."assetId" AS "jobs_assetId", "jobs"."toolId" AS "jobs_toolId", "jobs"."jobHistoryId" AS "jobs_jobHistoryId", "asset"."id" AS "asset_id", "asset"."createdAt" AS "asset_createdAt", "asset"."updatedAt" AS "asset_updatedAt", "asset"."value" AS "asset_value", "asset"."targetId" AS "asset_targetId", "asset"."isPrimary" AS "asset_isPrimary", "asset"."dnsRecords" AS "asset_dnsRecords", "asset"."isEnabled" AS "asset_isEnabled", "assetService"."id" AS "assetService_id", "assetService"."createdAt" AS "assetService_createdAt", "assetService"."updatedAt" AS "assetService_updatedAt", "assetService"."value" AS "assetService_value", "assetService"."port" AS "assetService_port", "assetService"."assetId" AS "assetService_assetId", "assetService"."isErrorPage" AS "assetService_isErrorPage", "assetService"."screenshotPath" AS "assetService_screenshotPath" FROM "jobs" "jobs" INNER JOIN "assets" "asset" ON "asset"."id"="jobs"."assetId"  INNER JOIN "targets" "target" ON "target"."id"="asset"."targetId"  LEFT JOIN "tools" "tool" ON "tool"."id"="jobs"."toolId"  LEFT JOIN "asset_services" "assetService" ON "assetService"."id"="jobs"."assetServiceId" WHERE "jobs"."status" = $1 AND "tool"."name" IN ($2, $3, $4, $5, $6) ORDER BY "jobs"."priority" DESC, "jobs"."createdAt" ASC LIMIT 1 FOR UPDATE OF jobs SKIP LOCKED
+oasm-api         | [Nest] 1  - 06/23/2026, 11:15:29 PM   ERROR Error in getNextJob
+oasm-api         | [Nest] 1  - 06/23/2026, 11:15:29 PM   ERROR QueryFailedError: canceling statement due to statement timeout
+oasm-api         |     at PostgresQueryRunner.query (/app/node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:216:19)
+oasm-api         |     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+oasm-api         |     at async SelectQueryBuilder.loadRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2220:25)
+oasm-api         |     at async SelectQueryBuilder.executeEntitiesAndRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2068:26)
+oasm-api         |     at async SelectQueryBuilder.getRawAndEntities (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:662:29)
+oasm-api         |     at async SelectQueryBuilder.getOne (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:689:25)
+oasm-api         |     at async JobsRegistryService.getNextJob (/app/dist/modules/jobs-registry/jobs-registry.service.js:299:25)
+oasm-api         |     at async JobsRegistryController.next (/app/dist/modules/jobs-registry/jobs-registry.controller.js:68:21)
+oasm-api         |     at async Next (/app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32)
+oasm-api         |     at async /app/node_modules/@nestjs/microservices/server/server-grpc.js:190:44 {
+oasm-api         |   query: 'SELECT "jobs"."id" AS "jobs_id", "jobs"."createdAt" AS "jobs_createdAt", "jobs"."updatedAt" AS "jobs_updatedAt", "jobs"."category" AS "jobs_category", "jobs"."status" AS "jobs_status", "jobs"."pickJobAt" AS "jobs_pickJobAt", "jobs"."priority" AS "jobs_priority", "jobs"."workerId" AS "jobs_workerId", "jobs"."rawResult" AS "jobs_rawResult", "jobs"."completedAt" AS "jobs_completedAt", "jobs"."isSaveRawResult" AS "jobs_isSaveRawResult", "jobs"."isSaveData" AS "jobs_isSaveData", "jobs"."isPublishEvent" AS "jobs_isPublishEvent", "jobs"."pathResult" AS "jobs_pathResult", "jobs"."command" AS "jobs_command", "jobs"."assetServiceId" AS "jobs_assetServiceId", "jobs"."retryCount" AS "jobs_retryCount", "jobs"."assetId" AS "jobs_assetId", "jobs"."toolId" AS "jobs_toolId", "jobs"."jobHistoryId" AS "jobs_jobHistoryId", "asset"."id" AS "asset_id", "asset"."createdAt" AS "asset_createdAt", "asset"."updatedAt" AS "asset_updatedAt", "asset"."value" AS "asset_value", "asset"."targetId" AS "asset_targetId", "asset"."isPrimary" AS "asset_isPrimary", "asset"."dnsRecords" AS "asset_dnsRecords", "asset"."isEnabled" AS "asset_isEnabled", "assetService"."id" AS "assetService_id", "assetService"."createdAt" AS "assetService_createdAt", "assetService"."updatedAt" AS "assetService_updatedAt", "assetService"."value" AS "assetService_value", "assetService"."port" AS "assetService_port", "assetService"."assetId" AS "assetService_assetId", "assetService"."isErrorPage" AS "assetService_isErrorPage", "assetService"."screenshotPath" AS "assetService_screenshotPath" FROM "jobs" "jobs" INNER JOIN "assets" "asset" ON "asset"."id"="jobs"."assetId"  INNER JOIN "targets" "target" ON "target"."id"="asset"."targetId"  LEFT JOIN "tools" "tool" ON "tool"."id"="jobs"."toolId"  LEFT JOIN "asset_services" "assetService" ON "assetService"."id"="jobs"."assetServiceId" WHERE "jobs"."status" = $1 AND "tool"."name" IN ($2, $3, $4, $5, $6) ORDER BY "jobs"."priority" DESC, "jobs"."createdAt" ASC LIMIT 1 FOR UPDATE OF jobs SKIP LOCKED',
+oasm-api         |   parameters: [
+oasm-api         |     'pending',
+oasm-api         |     'subfinder',
+oasm-api         |     'httpx',
+oasm-api         |     'screenshot',
+oasm-api         |     'naabu',
+oasm-api         |     'nuclei'
+oasm-api         |   ],
+oasm-api         |   driverError: error: canceling statement due to statement timeout
+oasm-api         |       at /app/node_modules/pg/lib/client.js:652:17
+oasm-api         |       at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+oasm-api         |       at async PostgresQueryRunner.query (/app/node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:181:25)
+oasm-api         |       at async SelectQueryBuilder.loadRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2220:25)
+oasm-api         |       at async SelectQueryBuilder.executeEntitiesAndRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2068:26)
+oasm-api         |       at async SelectQueryBuilder.getRawAndEntities (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:662:29)
+oasm-api         |       at async SelectQueryBuilder.getOne (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:689:25)
+oasm-api         |       at async JobsRegistryService.getNextJob (/app/dist/modules/jobs-registry/jobs-registry.service.js:299:25)
+oasm-api         |       at async JobsRegistryController.next (/app/dist/modules/jobs-registry/jobs-registry.controller.js:68:21)
+oasm-api         |       at async Next (/app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32) {
+oasm-api         |     length: 109,
+oasm-api         |     severity: 'ERROR',
+oasm-api         |     code: '57014',
+oasm-api         |     detail: undefined,
+oasm-api         |     hint: undefined,
+oasm-api         |     position: undefined,
+oasm-api         |     internalPosition: undefined,
+oasm-api         |     internalQuery: undefined,
+oasm-api         |     where: undefined,
+oasm-api         |     schema: undefined,
+oasm-api         |     table: undefined,
+oasm-api         |     column: undefined,
+oasm-api         |     dataType: undefined,
+oasm-api         |     constraint: undefined,
+oasm-api         |     file: 'postgres.c',
+oasm-api         |     line: '3406',
+oasm-api         |     routine: 'ProcessInterrupts'
+oasm-api         |   },
+oasm-api         |   length: 109,
+oasm-api         |   severity: 'ERROR',
+oasm-api         |   code: '57014',
+oasm-api         |   detail: undefined,
+oasm-api         |   hint: undefined,
+oasm-api         |   position: undefined,
+oasm-api         |   internalPosition: undefined,
+oasm-api         |   internalQuery: undefined,
+oasm-api         |   where: undefined,
+oasm-api         |   schema: undefined,
+oasm-api         |   table: undefined,
+oasm-api         |   column: undefined,
+oasm-api         |   dataType: undefined,
+oasm-api         |   constraint: undefined,
+oasm-api         |   file: 'postgres.c',
+oasm-api         |   line: '3406',
+oasm-api         |   routine: 'ProcessInterrupts'
+oasm-api         | }
+oasm-postgres    | 2026-06-23 23:15:29.336 UTC [164] ERROR:  canceling statement due to statement timeout
+oasm-postgres    | 2026-06-23 23:15:29.336 UTC [164] STATEMENT:  SELECT "jobs"."id" AS "jobs_id", "jobs"."createdAt" AS "jobs_createdAt", "jobs"."updatedAt" AS "jobs_updatedAt", "jobs"."category" AS "jobs_category", "jobs"."status" AS "jobs_status", "jobs"."pickJobAt" AS "jobs_pickJobAt", "jobs"."priority" AS "jobs_priority", "jobs"."workerId" AS "jobs_workerId", "jobs"."rawResult" AS "jobs_rawResult", "jobs"."completedAt" AS "jobs_completedAt", "jobs"."isSaveRawResult" AS "jobs_isSaveRawResult", "jobs"."isSaveData" AS "jobs_isSaveData", "jobs"."isPublishEvent" AS "jobs_isPublishEvent", "jobs"."pathResult" AS "jobs_pathResult", "jobs"."command" AS "jobs_command", "jobs"."assetServiceId" AS "jobs_assetServiceId", "jobs"."retryCount" AS "jobs_retryCount", "jobs"."assetId" AS "jobs_assetId", "jobs"."toolId" AS "jobs_toolId", "jobs"."jobHistoryId" AS "jobs_jobHistoryId", "asset"."id" AS "asset_id", "asset"."createdAt" AS "asset_createdAt", "asset"."updatedAt" AS "asset_updatedAt", "asset"."value" AS "asset_value", "asset"."targetId" AS "asset_targetId", "asset"."isPrimary" AS "asset_isPrimary", "asset"."dnsRecords" AS "asset_dnsRecords", "asset"."isEnabled" AS "asset_isEnabled", "assetService"."id" AS "assetService_id", "assetService"."createdAt" AS "assetService_createdAt", "assetService"."updatedAt" AS "assetService_updatedAt", "assetService"."value" AS "assetService_value", "assetService"."port" AS "assetService_port", "assetService"."assetId" AS "assetService_assetId", "assetService"."isErrorPage" AS "assetService_isErrorPage", "assetService"."screenshotPath" AS "assetService_screenshotPath" FROM "jobs" "jobs" INNER JOIN "assets" "asset" ON "asset"."id"="jobs"."assetId"  INNER JOIN "targets" "target" ON "target"."id"="asset"."targetId"  LEFT JOIN "tools" "tool" ON "tool"."id"="jobs"."toolId"  LEFT JOIN "asset_services" "assetService" ON "assetService"."id"="jobs"."assetServiceId" WHERE "jobs"."status" = $1 AND "tool"."name" IN ($2, $3, $4, $5, $6) ORDER BY "jobs"."priority" DESC, "jobs"."createdAt" ASC LIMIT 1 FOR UPDATE OF jobs SKIP LOCKED
+oasm-api         | [Nest] 1  - 06/23/2026, 11:15:29 PM   ERROR Error in getNextJob
+oasm-api         | [Nest] 1  - 06/23/2026, 11:15:29 PM   ERROR QueryFailedError: canceling statement due to statement timeout
+oasm-api         |     at PostgresQueryRunner.query (/app/node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:216:19)
+oasm-api         |     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+oasm-api         |     at async SelectQueryBuilder.loadRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2220:25)
+oasm-api         |     at async SelectQueryBuilder.executeEntitiesAndRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2068:26)
+oasm-api         |     at async SelectQueryBuilder.getRawAndEntities (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:662:29)
+oasm-api         |     at async SelectQueryBuilder.getOne (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:689:25)
+oasm-api         |     at async JobsRegistryService.getNextJob (/app/dist/modules/jobs-registry/jobs-registry.service.js:299:25)
+oasm-api         |     at async JobsRegistryController.next (/app/dist/modules/jobs-registry/jobs-registry.controller.js:68:21)
+oasm-api         |     at async Next (/app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32)
+oasm-api         |     at async /app/node_modules/@nestjs/microservices/server/server-grpc.js:190:44 {
+oasm-api         |   query: 'SELECT "jobs"."id" AS "jobs_id", "jobs"."createdAt" AS "jobs_createdAt", "jobs"."updatedAt" AS "jobs_updatedAt", "jobs"."category" AS "jobs_category", "jobs"."status" AS "jobs_status", "jobs"."pickJobAt" AS "jobs_pickJobAt", "jobs"."priority" AS "jobs_priority", "jobs"."workerId" AS "jobs_workerId", "jobs"."rawResult" AS "jobs_rawResult", "jobs"."completedAt" AS "jobs_completedAt", "jobs"."isSaveRawResult" AS "jobs_isSaveRawResult", "jobs"."isSaveData" AS "jobs_isSaveData", "jobs"."isPublishEvent" AS "jobs_isPublishEvent", "jobs"."pathResult" AS "jobs_pathResult", "jobs"."command" AS "jobs_command", "jobs"."assetServiceId" AS "jobs_assetServiceId", "jobs"."retryCount" AS "jobs_retryCount", "jobs"."assetId" AS "jobs_assetId", "jobs"."toolId" AS "jobs_toolId", "jobs"."jobHistoryId" AS "jobs_jobHistoryId", "asset"."id" AS "asset_id", "asset"."createdAt" AS "asset_createdAt", "asset"."updatedAt" AS "asset_updatedAt", "asset"."value" AS "asset_value", "asset"."targetId" AS "asset_targetId", "asset"."isPrimary" AS "asset_isPrimary", "asset"."dnsRecords" AS "asset_dnsRecords", "asset"."isEnabled" AS "asset_isEnabled", "assetService"."id" AS "assetService_id", "assetService"."createdAt" AS "assetService_createdAt", "assetService"."updatedAt" AS "assetService_updatedAt", "assetService"."value" AS "assetService_value", "assetService"."port" AS "assetService_port", "assetService"."assetId" AS "assetService_assetId", "assetService"."isErrorPage" AS "assetService_isErrorPage", "assetService"."screenshotPath" AS "assetService_screenshotPath" FROM "jobs" "jobs" INNER JOIN "assets" "asset" ON "asset"."id"="jobs"."assetId"  INNER JOIN "targets" "target" ON "target"."id"="asset"."targetId"  LEFT JOIN "tools" "tool" ON "tool"."id"="jobs"."toolId"  LEFT JOIN "asset_services" "assetService" ON "assetService"."id"="jobs"."assetServiceId" WHERE "jobs"."status" = $1 AND "tool"."name" IN ($2, $3, $4, $5, $6) ORDER BY "jobs"."priority" DESC, "jobs"."createdAt" ASC LIMIT 1 FOR UPDATE OF jobs SKIP LOCKED',
+oasm-api         |   parameters: [
+oasm-api         |     'pending',
+oasm-api         |     'subfinder',
+oasm-api         |     'httpx',
+oasm-api         |     'screenshot',
+oasm-api         |     'naabu',
+oasm-api         |     'nuclei'
+oasm-api         |   ],
+oasm-api         |   driverError: error: canceling statement due to statement timeout
+oasm-api         |       at /app/node_modules/pg/lib/client.js:652:17
+oasm-api         |       at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+oasm-api         |       at async PostgresQueryRunner.query (/app/node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:181:25)
+oasm-api         |       at async SelectQueryBuilder.loadRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2220:25)
+oasm-api         |       at async SelectQueryBuilder.executeEntitiesAndRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2068:26)
+oasm-api         |       at async SelectQueryBuilder.getRawAndEntities (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:662:29)
+oasm-api         |       at async SelectQueryBuilder.getOne (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:689:25)
+oasm-api         |       at async JobsRegistryService.getNextJob (/app/dist/modules/jobs-registry/jobs-registry.service.js:299:25)
+oasm-api         |       at async JobsRegistryController.next (/app/dist/modules/jobs-registry/jobs-registry.controller.js:68:21)
+oasm-api         |       at async Next (/app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32) {
+oasm-api         |     length: 109,
+oasm-api         |     severity: 'ERROR',
+oasm-api         |     code: '57014',
+oasm-api         |     detail: undefined,
+oasm-api         |     hint: undefined,
+oasm-api         |     position: undefined,
+oasm-api         |     internalPosition: undefined,
+oasm-api         |     internalQuery: undefined,
+oasm-api         |     where: undefined,
+oasm-api         |     schema: undefined,
+oasm-api         |     table: undefined,
+oasm-api         |     column: undefined,
+oasm-api         |     dataType: undefined,
+oasm-api         |     constraint: undefined,
+oasm-api         |     file: 'postgres.c',
+oasm-api         |     line: '3406',
+oasm-api         |     routine: 'ProcessInterrupts'
+oasm-api         |   },
+oasm-api         |   length: 109,
+oasm-api         |   severity: 'ERROR',
+oasm-api         |   code: '57014',
+oasm-api         |   detail: undefined,
+oasm-api         |   hint: undefined,
+oasm-api         |   position: undefined,
+oasm-api         |   internalPosition: undefined,
+oasm-api         |   internalQuery: undefined,
+oasm-api         |   where: undefined,
+oasm-api         |   schema: undefined,
+oasm-api         |   table: undefined,
+oasm-api         |   column: undefined,
+oasm-api         |   dataType: undefined,
+oasm-api         |   constraint: undefined,
+oasm-api         |   file: 'postgres.c',
+oasm-api         |   line: '3406',
+oasm-api         |   routine: 'ProcessInterrupts'
+oasm-api         | }
+oasm-postgres    | 2026-06-23 23:15:29.341 UTC [165] ERROR:  canceling statement due to statement timeout
+oasm-postgres    | 2026-06-23 23:15:29.341 UTC [165] STATEMENT:  SELECT "jobs"."id" AS "jobs_id", "jobs"."createdAt" AS "jobs_createdAt", "jobs"."updatedAt" AS "jobs_updatedAt", "jobs"."category" AS "jobs_category", "jobs"."status" AS "jobs_status", "jobs"."pickJobAt" AS "jobs_pickJobAt", "jobs"."priority" AS "jobs_priority", "jobs"."workerId" AS "jobs_workerId", "jobs"."rawResult" AS "jobs_rawResult", "jobs"."completedAt" AS "jobs_completedAt", "jobs"."isSaveRawResult" AS "jobs_isSaveRawResult", "jobs"."isSaveData" AS "jobs_isSaveData", "jobs"."isPublishEvent" AS "jobs_isPublishEvent", "jobs"."pathResult" AS "jobs_pathResult", "jobs"."command" AS "jobs_command", "jobs"."assetServiceId" AS "jobs_assetServiceId", "jobs"."retryCount" AS "jobs_retryCount", "jobs"."assetId" AS "jobs_assetId", "jobs"."toolId" AS "jobs_toolId", "jobs"."jobHistoryId" AS "jobs_jobHistoryId", "asset"."id" AS "asset_id", "asset"."createdAt" AS "asset_createdAt", "asset"."updatedAt" AS "asset_updatedAt", "asset"."value" AS "asset_value", "asset"."targetId" AS "asset_targetId", "asset"."isPrimary" AS "asset_isPrimary", "asset"."dnsRecords" AS "asset_dnsRecords", "asset"."isEnabled" AS "asset_isEnabled", "assetService"."id" AS "assetService_id", "assetService"."createdAt" AS "assetService_createdAt", "assetService"."updatedAt" AS "assetService_updatedAt", "assetService"."value" AS "assetService_value", "assetService"."port" AS "assetService_port", "assetService"."assetId" AS "assetService_assetId", "assetService"."isErrorPage" AS "assetService_isErrorPage", "assetService"."screenshotPath" AS "assetService_screenshotPath" FROM "jobs" "jobs" INNER JOIN "assets" "asset" ON "asset"."id"="jobs"."assetId"  INNER JOIN "targets" "target" ON "target"."id"="asset"."targetId"  LEFT JOIN "tools" "tool" ON "tool"."id"="jobs"."toolId"  LEFT JOIN "asset_services" "assetService" ON "assetService"."id"="jobs"."assetServiceId" WHERE "jobs"."status" = $1 AND "tool"."name" IN ($2, $3, $4, $5, $6) ORDER BY "jobs"."priority" DESC, "jobs"."createdAt" ASC LIMIT 1 FOR UPDATE OF jobs SKIP LOCKED
+oasm-api         | [Nest] 1  - 06/23/2026, 11:15:29 PM   ERROR Error in getNextJob
+oasm-api         | [Nest] 1  - 06/23/2026, 11:15:29 PM   ERROR QueryFailedError: canceling statement due to statement timeout
+oasm-api         |     at PostgresQueryRunner.query (/app/node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:216:19)
+oasm-api         |     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+oasm-api         |     at async SelectQueryBuilder.loadRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2220:25)
+oasm-api         |     at async SelectQueryBuilder.executeEntitiesAndRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2068:26)
+oasm-api         |     at async SelectQueryBuilder.getRawAndEntities (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:662:29)
+oasm-api         |     at async SelectQueryBuilder.getOne (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:689:25)
+oasm-api         |     at async JobsRegistryService.getNextJob (/app/dist/modules/jobs-registry/jobs-registry.service.js:299:25)
+oasm-api         |     at async JobsRegistryController.next (/app/dist/modules/jobs-registry/jobs-registry.controller.js:68:21)
+oasm-api         |     at async Next (/app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32)
+oasm-api         |     at async /app/node_modules/@nestjs/microservices/server/server-grpc.js:190:44 {
+oasm-api         |   query: 'SELECT "jobs"."id" AS "jobs_id", "jobs"."createdAt" AS "jobs_createdAt", "jobs"."updatedAt" AS "jobs_updatedAt", "jobs"."category" AS "jobs_category", "jobs"."status" AS "jobs_status", "jobs"."pickJobAt" AS "jobs_pickJobAt", "jobs"."priority" AS "jobs_priority", "jobs"."workerId" AS "jobs_workerId", "jobs"."rawResult" AS "jobs_rawResult", "jobs"."completedAt" AS "jobs_completedAt", "jobs"."isSaveRawResult" AS "jobs_isSaveRawResult", "jobs"."isSaveData" AS "jobs_isSaveData", "jobs"."isPublishEvent" AS "jobs_isPublishEvent", "jobs"."pathResult" AS "jobs_pathResult", "jobs"."command" AS "jobs_command", "jobs"."assetServiceId" AS "jobs_assetServiceId", "jobs"."retryCount" AS "jobs_retryCount", "jobs"."assetId" AS "jobs_assetId", "jobs"."toolId" AS "jobs_toolId", "jobs"."jobHistoryId" AS "jobs_jobHistoryId", "asset"."id" AS "asset_id", "asset"."createdAt" AS "asset_createdAt", "asset"."updatedAt" AS "asset_updatedAt", "asset"."value" AS "asset_value", "asset"."targetId" AS "asset_targetId", "asset"."isPrimary" AS "asset_isPrimary", "asset"."dnsRecords" AS "asset_dnsRecords", "asset"."isEnabled" AS "asset_isEnabled", "assetService"."id" AS "assetService_id", "assetService"."createdAt" AS "assetService_createdAt", "assetService"."updatedAt" AS "assetService_updatedAt", "assetService"."value" AS "assetService_value", "assetService"."port" AS "assetService_port", "assetService"."assetId" AS "assetService_assetId", "assetService"."isErrorPage" AS "assetService_isErrorPage", "assetService"."screenshotPath" AS "assetService_screenshotPath" FROM "jobs" "jobs" INNER JOIN "assets" "asset" ON "asset"."id"="jobs"."assetId"  INNER JOIN "targets" "target" ON "target"."id"="asset"."targetId"  LEFT JOIN "tools" "tool" ON "tool"."id"="jobs"."toolId"  LEFT JOIN "asset_services" "assetService" ON "assetService"."id"="jobs"."assetServiceId" WHERE "jobs"."status" = $1 AND "tool"."name" IN ($2, $3, $4, $5, $6) ORDER BY "jobs"."priority" DESC, "jobs"."createdAt" ASC LIMIT 1 FOR UPDATE OF jobs SKIP LOCKED',
+oasm-api         |   parameters: [
+oasm-api         |     'pending',
+oasm-api         |     'subfinder',
+oasm-api         |     'httpx',
+oasm-api         |     'screenshot',
+oasm-api         |     'naabu',
+oasm-api         |     'nuclei'
+oasm-api         |   ],
+oasm-api         |   driverError: error: canceling statement due to statement timeout
+oasm-api         |       at /app/node_modules/pg/lib/client.js:652:17
+oasm-api         |       at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+oasm-api         |       at async PostgresQueryRunner.query (/app/node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:181:25)
+oasm-api         |       at async SelectQueryBuilder.loadRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2220:25)
+oasm-api         |       at async SelectQueryBuilder.executeEntitiesAndRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2068:26)
+oasm-api         |       at async SelectQueryBuilder.getRawAndEntities (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:662:29)
+oasm-api         |       at async SelectQueryBuilder.getOne (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:689:25)
+oasm-api         |       at async JobsRegistryService.getNextJob (/app/dist/modules/jobs-registry/jobs-registry.service.js:299:25)
+oasm-api         |       at async JobsRegistryController.next (/app/dist/modules/jobs-registry/jobs-registry.controller.js:68:21)
+oasm-api         |       at async Next (/app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32) {
+oasm-api         |     length: 109,
+oasm-api         |     severity: 'ERROR',
+oasm-api         |     code: '57014',
+oasm-api         |     detail: undefined,
+oasm-api         |     hint: undefined,
+oasm-api         |     position: undefined,
+oasm-api         |     internalPosition: undefined,
+oasm-api         |     internalQuery: undefined,
+oasm-api         |     where: undefined,
+oasm-api         |     schema: undefined,
+oasm-api         |     table: undefined,
+oasm-api         |     column: undefined,
+oasm-api         |     dataType: undefined,
+oasm-api         |     constraint: undefined,
+oasm-api         |     file: 'postgres.c',
+oasm-api         |     line: '3406',
+oasm-api         |     routine: 'ProcessInterrupts'
+oasm-api         |   },
+oasm-api         |   length: 109,
+oasm-api         |   severity: 'ERROR',
+oasm-api         |   code: '57014',
+oasm-api         |   detail: undefined,
+oasm-api         |   hint: undefined,
+oasm-api         |   position: undefined,
+oasm-api         |   internalPosition: undefined,
+oasm-api         |   internalQuery: undefined,
+oasm-api         |   where: undefined,
+oasm-api         |   schema: undefined,
+oasm-api         |   table: undefined,
+oasm-api         |   column: undefined,
+oasm-api         |   dataType: undefined,
+oasm-api         |   constraint: undefined,
+oasm-api         |   file: 'postgres.c',
+oasm-api         |   line: '3406',
+oasm-api         |   routine: 'ProcessInterrupts'
+oasm-api         | }
