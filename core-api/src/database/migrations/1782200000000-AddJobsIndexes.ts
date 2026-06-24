@@ -4,10 +4,22 @@ export class AddJobsIndexes1782200000000 implements MigrationInterface {
   name = 'AddJobsIndexes1782200000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // These indexes are declared on the Job entity but were never created in
-    // the database. Without them, getNextJob performs a full sequential scan +
-    // sort + FOR UPDATE SKIP LOCKED on every worker poll, causing statement
-    // timeouts and severe API slowness as the jobs table grows.
+    // Performance fix for getNextJob (worker job polling).
+    //
+    // The existing "IDX_jobs_status_priority_createdAt" index is all-ascending,
+    // but getNextJob orders by `priority DESC, createdAt ASC` (mixed direction).
+    // Postgres cannot use an all-ascending index to satisfy a mixed-direction
+    // ORDER BY, so it sorts the entire pending-job set on every poll, exceeding
+    // statement_timeout under load. This partial index matches the query's
+    // filter and sort direction exactly, allowing an ordered index scan with no
+    // sort node, scoped to only pending rows.
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_jobs_pending_priority_createdAt" ON "jobs" ("priority" DESC, "createdAt" ASC) WHERE "status" = 'pending'`,
+    );
+
+    // The indexes below are declared on the Job entity. They exist on databases
+    // that were previously synchronized, but are created here (IF NOT EXISTS) so
+    // fresh, migration-only databases get them too.
     await queryRunner.query(
       `CREATE INDEX IF NOT EXISTS "IDX_jobs_status_priority_createdAt" ON "jobs" ("status", "priority", "createdAt")`,
     );
@@ -40,6 +52,9 @@ export class AddJobsIndexes1782200000000 implements MigrationInterface {
     await queryRunner.query(`DROP INDEX IF EXISTS "IDX_jobs_asset_status"`);
     await queryRunner.query(
       `DROP INDEX IF EXISTS "IDX_jobs_status_priority_createdAt"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_jobs_pending_priority_createdAt"`,
     );
   }
 }
