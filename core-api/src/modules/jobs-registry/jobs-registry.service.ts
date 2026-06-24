@@ -193,6 +193,7 @@ export class JobsRegistryService {
         targetIds,
         assetIds,
         workspaceId,
+        tool.category,
       );
 
       // Step 3: iterate tools and create jobs
@@ -232,6 +233,7 @@ export class JobsRegistryService {
         targetIds,
         assetIds,
         workspaceId,
+        tool.category,
       );
 
       const filteredAssets = this.filterAssetsByCategory(assets, tool.category);
@@ -281,11 +283,30 @@ export class JobsRegistryService {
     targetIds?: string[],
     assetIds?: string[],
     workspaceId?: string,
+    category?: ToolCategory,
   ): Promise<Asset[]> {
     const assetsQueryBuilder = this.dataSource
       .getRepository(Asset)
       .createQueryBuilder('assets')
       .where('assets.isEnabled = true');
+
+    // Idempotency guard: skip assets that already have an open (pending or
+    // in-progress) job for this category, so repeated triggers cannot fan out
+    // duplicate jobs and explode the queue.
+    if (category) {
+      assetsQueryBuilder.andWhere(
+        `NOT EXISTS (
+          SELECT 1 FROM "jobs" "openJob"
+          WHERE "openJob"."assetId" = "assets"."id"
+            AND "openJob"."category" = :guardCategory
+            AND "openJob"."status" IN (:...openStatuses)
+        )`,
+        {
+          guardCategory: category,
+          openStatuses: [JobStatus.PENDING, JobStatus.IN_PROGRESS],
+        },
+      );
+    }
 
     if (targetIds && targetIds.length > 0) {
       assetsQueryBuilder.andWhere('assets.targetId IN (:...targetIds)', {
@@ -321,12 +342,32 @@ export class JobsRegistryService {
     targetIds?: string[],
     assetIds?: string[],
     workspaceId?: string,
+    category?: ToolCategory,
   ): Promise<AssetService[]> {
     const assetServicesQueryBuilder = this.dataSource
       .getRepository(AssetService)
       .createQueryBuilder('assetServices')
       .innerJoinAndSelect('assetServices.asset', 'asset')
       .where('asset.isEnabled = true');
+
+    // Idempotency guard: skip asset services that already have an open (pending
+    // or in-progress) job for this category, so repeated triggers cannot fan
+    // out duplicate jobs and explode the queue (root cause of the screenshot
+    // O(N^2) runaway).
+    if (category) {
+      assetServicesQueryBuilder.andWhere(
+        `NOT EXISTS (
+          SELECT 1 FROM "jobs" "openJob"
+          WHERE "openJob"."assetServiceId" = "assetServices"."id"
+            AND "openJob"."category" = :guardCategory
+            AND "openJob"."status" IN (:...openStatuses)
+        )`,
+        {
+          guardCategory: category,
+          openStatuses: [JobStatus.PENDING, JobStatus.IN_PROGRESS],
+        },
+      );
+    }
 
     if (targetIds && targetIds.length > 0) {
       assetServicesQueryBuilder.andWhere('asset.targetId IN (:...targetIds)', {
