@@ -1,25 +1,20 @@
-oasm-api         | [Nest] 1  - 06/23/2026, 11:15:29 PM   ERROR Error in getNextJob
-oasm-api         | [Nest] 1  - 06/23/2026, 11:15:29 PM   ERROR QueryFailedError: canceling statement due to statement timeout
+oasm-postgres    | 2026-06-30 03:38:50.760 UTC [604] ERROR:  invalid input syntax for type uuid: "undefined"
+oasm-postgres    | 2026-06-30 03:38:50.760 UTC [604] CONTEXT:  unnamed portal parameter $1 = '...'
+oasm-postgres    | 2026-06-30 03:38:50.760 UTC [604] STATEMENT:  SELECT "Tool"."id" AS "Tool_id", "Tool"."createdAt" AS "Tool_createdAt", "Tool"."updatedAt" AS "Tool_updatedAt", "Tool"."name" AS "Tool_name", "Tool"."description" AS "Tool_description", "Tool"."command" AS "Tool_command", "Tool"."category" AS "Tool_category", "Tool"."version" AS "Tool_version", "Tool"."logoUrl" AS "Tool_logoUrl", "Tool"."isBuiltIn" AS "Tool_isBuiltIn", "Tool"."isOfficialSupport" AS "Tool_isOfficialSupport", "Tool"."type" AS "Tool_type", "Tool"."providerId" AS "Tool_providerId", "Tool"."priority" AS "Tool_priority", "Tool"."apiKeyId" AS "Tool_apiKeyId" FROM "tools" "Tool" WHERE (("Tool"."id" = $1)) LIMIT 1
+oasm-console     | 192.168.1.9 - - [30/Jun/2026:03:38:50 +0000] "GET /api/tools/undefined HTTP/1.1" 500 52 "http://hercules.home.lan:7000/tools/undefined" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36" "-"
+oasm-api         | [Nest] 1  - 06/30/2026, 3:38:50 AM   ERROR [ExceptionsHandler] QueryFailedError: invalid input syntax for type uuid: "undefined"
 oasm-api         |     at PostgresQueryRunner.query (/app/node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:216:19)
 oasm-api         |     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
 oasm-api         |     at async SelectQueryBuilder.loadRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2220:25)
 oasm-api         |     at async SelectQueryBuilder.executeEntitiesAndRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2068:26)
 oasm-api         |     at async SelectQueryBuilder.getRawAndEntities (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:662:29)
 oasm-api         |     at async SelectQueryBuilder.getOne (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:689:25)
-oasm-api         |     at async JobsRegistryService.getNextJob (/app/dist/modules/jobs-registry/jobs-registry.service.js:299:25)
-oasm-api         |     at async JobsRegistryController.next (/app/dist/modules/jobs-registry/jobs-registry.controller.js:68:21)
-oasm-api         |     at async Next (/app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32)
-oasm-api         |     at async /app/node_modules/@nestjs/microservices/server/server-grpc.js:190:44 {
-oasm-api         |   query: 'SELECT "jobs"."id" AS "jobs_id", "jobs"."createdAt" AS "jobs_createdAt", "jobs"."updatedAt" AS "jobs_updatedAt", "jobs"."category" AS "jobs_category", "jobs"."status" AS "jobs_status", "jobs"."pickJobAt" AS "jobs_pickJobAt", "jobs"."priority" AS "jobs_priority", "jobs"."workerId" AS "jobs_workerId", "jobs"."rawResult" AS "jobs_rawResult", "jobs"."completedAt" AS "jobs_completedAt", "jobs"."isSaveRawResult" AS "jobs_isSaveRawResult", "jobs"."isSaveData" AS "jobs_isSaveData", "jobs"."isPublishEvent" AS "jobs_isPublishEvent", "jobs"."pathResult" AS "jobs_pathResult", "jobs"."command" AS "jobs_command", "jobs"."assetServiceId" AS "jobs_assetServiceId", "jobs"."retryCount" AS "jobs_retryCount", "jobs"."assetId" AS "jobs_assetId", "jobs"."toolId" AS "jobs_toolId", "jobs"."jobHistoryId" AS "jobs_jobHistoryId", "asset"."id" AS "asset_id", "asset"."createdAt" AS "asset_createdAt", "asset"."updatedAt" AS "asset_updatedAt", "asset"."value" AS "asset_value", "asset"."targetId" AS "asset_targetId", "asset"."isPrimary" AS "asset_isPrimary", "asset"."dnsRecords" AS "asset_dnsRecords", "asset"."isEnabled" AS "asset_isEnabled", "assetService"."id" AS "assetService_id", "assetService"."createdAt" AS "assetService_createdAt", "assetService"."updatedAt" AS "assetService_updatedAt", "assetService"."value" AS "assetService_value", "assetService"."port" AS "assetService_port", "assetService"."assetId" AS "assetService_assetId", "assetService"."isErrorPage" AS "assetService_isErrorPage", "assetService"."screenshotPath" AS "assetService_screenshotPath" FROM "jobs" "jobs" INNER JOIN "assets" "asset" ON "asset"."id"="jobs"."assetId"  INNER JOIN "targets" "target" ON "target"."id"="asset"."targetId"  LEFT JOIN "tools" "tool" ON "tool"."id"="jobs"."toolId"  LEFT JOIN "asset_services" "assetService" ON "assetService"."id"="jobs"."assetServiceId" WHERE "jobs"."status" = $1 AND "tool"."name" IN ($2, $3, $4, $5, $6) ORDER BY "jobs"."priority" DESC, "jobs"."createdAt" ASC LIMIT 1 FOR UPDATE OF jobs SKIP LOCKED',
+oasm-api         |     at async ToolsService.getToolById (/app/dist/modules/tools/tools.service.js:261:22) {
+oasm-api         |   query: 'SELECT "Tool"."id" AS "Tool_id", "Tool"."createdAt" AS "Tool_createdAt", "Tool"."updatedAt" AS "Tool_updatedAt", "Tool"."name" AS "Tool_name", "Tool"."description" AS "Tool_description", "Tool"."command" AS "Tool_command", "Tool"."category" AS "Tool_category", "Tool"."version" AS "Tool_version", "Tool"."logoUrl" AS "Tool_logoUrl", "Tool"."isBuiltIn" AS "Tool_isBuiltIn", "Tool"."isOfficialSupport" AS "Tool_isOfficialSupport", "Tool"."type" AS "Tool_type", "Tool"."providerId" AS "Tool_providerId", "Tool"."priority" AS "Tool_priority", "Tool"."apiKeyId" AS "Tool_apiKeyId" FROM "tools" "Tool" WHERE (("Tool"."id" = $1)) LIMIT 1',
 oasm-api         |   parameters: [
-oasm-api         |     'pending',
-oasm-api         |     'subfinder',
-oasm-api         |     'httpx',
-oasm-api         |     'screenshot',
-oasm-api         |     'naabu',
-oasm-api         |     'nuclei'
+oasm-api         |     'undefined'
 oasm-api         |   ],
-oasm-api         |   driverError: error: canceling statement due to statement timeout
+oasm-api         |   driverError: error: invalid input syntax for type uuid: "undefined"
 oasm-api         |       at /app/node_modules/pg/lib/client.js:652:17
 oasm-api         |       at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
 oasm-api         |       at async PostgresQueryRunner.query (/app/node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:181:25)
@@ -27,69 +22,60 @@ oasm-api         |       at async SelectQueryBuilder.loadRawResults (/app/node_m
 oasm-api         |       at async SelectQueryBuilder.executeEntitiesAndRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2068:26)
 oasm-api         |       at async SelectQueryBuilder.getRawAndEntities (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:662:29)
 oasm-api         |       at async SelectQueryBuilder.getOne (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:689:25)
-oasm-api         |       at async JobsRegistryService.getNextJob (/app/dist/modules/jobs-registry/jobs-registry.service.js:299:25)
-oasm-api         |       at async JobsRegistryController.next (/app/dist/modules/jobs-registry/jobs-registry.controller.js:68:21)
-oasm-api         |       at async Next (/app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32) {
-oasm-api         |     length: 109,
+oasm-api         |       at async ToolsService.getToolById (/app/dist/modules/tools/tools.service.js:261:22) {
+oasm-api         |     length: 141,
 oasm-api         |     severity: 'ERROR',
-oasm-api         |     code: '57014',
+oasm-api         |     code: '22P02',
 oasm-api         |     detail: undefined,
 oasm-api         |     hint: undefined,
 oasm-api         |     position: undefined,
 oasm-api         |     internalPosition: undefined,
 oasm-api         |     internalQuery: undefined,
-oasm-api         |     where: undefined,
+oasm-api         |     where: "unnamed portal parameter $1 = '...'",
 oasm-api         |     schema: undefined,
 oasm-api         |     table: undefined,
 oasm-api         |     column: undefined,
 oasm-api         |     dataType: undefined,
 oasm-api         |     constraint: undefined,
-oasm-api         |     file: 'postgres.c',
-oasm-api         |     line: '3406',
-oasm-api         |     routine: 'ProcessInterrupts'
+oasm-api         |     file: 'uuid.c',
+oasm-api         |     line: '138',
+oasm-api         |     routine: 'string_to_uuid'
 oasm-api         |   },
-oasm-api         |   length: 109,
+oasm-api         |   length: 141,
 oasm-api         |   severity: 'ERROR',
-oasm-api         |   code: '57014',
+oasm-api         |   code: '22P02',
 oasm-api         |   detail: undefined,
 oasm-api         |   hint: undefined,
 oasm-api         |   position: undefined,
 oasm-api         |   internalPosition: undefined,
 oasm-api         |   internalQuery: undefined,
-oasm-api         |   where: undefined,
+oasm-api         |   where: "unnamed portal parameter $1 = '...'",
 oasm-api         |   schema: undefined,
 oasm-api         |   table: undefined,
 oasm-api         |   column: undefined,
 oasm-api         |   dataType: undefined,
 oasm-api         |   constraint: undefined,
-oasm-api         |   file: 'postgres.c',
-oasm-api         |   line: '3406',
-oasm-api         |   routine: 'ProcessInterrupts'
+oasm-api         |   file: 'uuid.c',
+oasm-api         |   line: '138',
+oasm-api         |   routine: 'string_to_uuid'
 oasm-api         | }
-oasm-postgres    | 2026-06-23 23:15:29.120 UTC [162] ERROR:  canceling statement due to statement timeout
-oasm-postgres    | 2026-06-23 23:15:29.120 UTC [162] STATEMENT:  SELECT "jobs"."id" AS "jobs_id", "jobs"."createdAt" AS "jobs_createdAt", "jobs"."updatedAt" AS "jobs_updatedAt", "jobs"."category" AS "jobs_category", "jobs"."status" AS "jobs_status", "jobs"."pickJobAt" AS "jobs_pickJobAt", "jobs"."priority" AS "jobs_priority", "jobs"."workerId" AS "jobs_workerId", "jobs"."rawResult" AS "jobs_rawResult", "jobs"."completedAt" AS "jobs_completedAt", "jobs"."isSaveRawResult" AS "jobs_isSaveRawResult", "jobs"."isSaveData" AS "jobs_isSaveData", "jobs"."isPublishEvent" AS "jobs_isPublishEvent", "jobs"."pathResult" AS "jobs_pathResult", "jobs"."command" AS "jobs_command", "jobs"."assetServiceId" AS "jobs_assetServiceId", "jobs"."retryCount" AS "jobs_retryCount", "jobs"."assetId" AS "jobs_assetId", "jobs"."toolId" AS "jobs_toolId", "jobs"."jobHistoryId" AS "jobs_jobHistoryId", "asset"."id" AS "asset_id", "asset"."createdAt" AS "asset_createdAt", "asset"."updatedAt" AS "asset_updatedAt", "asset"."value" AS "asset_value", "asset"."targetId" AS "asset_targetId", "asset"."isPrimary" AS "asset_isPrimary", "asset"."dnsRecords" AS "asset_dnsRecords", "asset"."isEnabled" AS "asset_isEnabled", "assetService"."id" AS "assetService_id", "assetService"."createdAt" AS "assetService_createdAt", "assetService"."updatedAt" AS "assetService_updatedAt", "assetService"."value" AS "assetService_value", "assetService"."port" AS "assetService_port", "assetService"."assetId" AS "assetService_assetId", "assetService"."isErrorPage" AS "assetService_isErrorPage", "assetService"."screenshotPath" AS "assetService_screenshotPath" FROM "jobs" "jobs" INNER JOIN "assets" "asset" ON "asset"."id"="jobs"."assetId"  INNER JOIN "targets" "target" ON "target"."id"="asset"."targetId"  LEFT JOIN "tools" "tool" ON "tool"."id"="jobs"."toolId"  LEFT JOIN "asset_services" "assetService" ON "assetService"."id"="jobs"."assetServiceId" WHERE "jobs"."status" = $1 AND "tool"."name" IN ($2, $3, $4, $5, $6) ORDER BY "jobs"."priority" DESC, "jobs"."createdAt" ASC LIMIT 1 FOR UPDATE OF jobs SKIP LOCKED
-oasm-api         | [Nest] 1  - 06/23/2026, 11:15:29 PM   ERROR Error in getNextJob
-oasm-api         | [Nest] 1  - 06/23/2026, 11:15:29 PM   ERROR QueryFailedError: canceling statement due to statement timeout
+oasm-postgres    | 2026-06-30 03:38:51.774 UTC [604] ERROR:  invalid input syntax for type uuid: "undefined"
+oasm-postgres    | 2026-06-30 03:38:51.774 UTC [604] CONTEXT:  unnamed portal parameter $1 = '...'
+oasm-postgres    | 2026-06-30 03:38:51.774 UTC [604] STATEMENT:  SELECT "Tool"."id" AS "Tool_id", "Tool"."createdAt" AS "Tool_createdAt", "Tool"."updatedAt" AS "Tool_updatedAt", "Tool"."name" AS "Tool_name", "Tool"."description" AS "Tool_description", "Tool"."command" AS "Tool_command", "Tool"."category" AS "Tool_category", "Tool"."version" AS "Tool_version", "Tool"."logoUrl" AS "Tool_logoUrl", "Tool"."isBuiltIn" AS "Tool_isBuiltIn", "Tool"."isOfficialSupport" AS "Tool_isOfficialSupport", "Tool"."type" AS "Tool_type", "Tool"."providerId" AS "Tool_providerId", "Tool"."priority" AS "Tool_priority", "Tool"."apiKeyId" AS "Tool_apiKeyId" FROM "tools" "Tool" WHERE (("Tool"."id" = $1)) LIMIT 1
+oasm-console     | 192.168.1.9 - - [30/Jun/2026:03:38:51 +0000] "GET /api/tools/undefined HTTP/1.1" 500 52 "http://hercules.home.lan:7000/tools/undefined" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36" "-"
+oasm-api         | [Nest] 1  - 06/30/2026, 3:38:51 AM   ERROR [ExceptionsHandler] QueryFailedError: invalid input syntax for type uuid: "undefined"
 oasm-api         |     at PostgresQueryRunner.query (/app/node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:216:19)
 oasm-api         |     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
 oasm-api         |     at async SelectQueryBuilder.loadRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2220:25)
 oasm-api         |     at async SelectQueryBuilder.executeEntitiesAndRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2068:26)
 oasm-api         |     at async SelectQueryBuilder.getRawAndEntities (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:662:29)
 oasm-api         |     at async SelectQueryBuilder.getOne (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:689:25)
-oasm-api         |     at async JobsRegistryService.getNextJob (/app/dist/modules/jobs-registry/jobs-registry.service.js:299:25)
-oasm-api         |     at async JobsRegistryController.next (/app/dist/modules/jobs-registry/jobs-registry.controller.js:68:21)
-oasm-api         |     at async Next (/app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32)
-oasm-api         |     at async /app/node_modules/@nestjs/microservices/server/server-grpc.js:190:44 {
-oasm-api         |   query: 'SELECT "jobs"."id" AS "jobs_id", "jobs"."createdAt" AS "jobs_createdAt", "jobs"."updatedAt" AS "jobs_updatedAt", "jobs"."category" AS "jobs_category", "jobs"."status" AS "jobs_status", "jobs"."pickJobAt" AS "jobs_pickJobAt", "jobs"."priority" AS "jobs_priority", "jobs"."workerId" AS "jobs_workerId", "jobs"."rawResult" AS "jobs_rawResult", "jobs"."completedAt" AS "jobs_completedAt", "jobs"."isSaveRawResult" AS "jobs_isSaveRawResult", "jobs"."isSaveData" AS "jobs_isSaveData", "jobs"."isPublishEvent" AS "jobs_isPublishEvent", "jobs"."pathResult" AS "jobs_pathResult", "jobs"."command" AS "jobs_command", "jobs"."assetServiceId" AS "jobs_assetServiceId", "jobs"."retryCount" AS "jobs_retryCount", "jobs"."assetId" AS "jobs_assetId", "jobs"."toolId" AS "jobs_toolId", "jobs"."jobHistoryId" AS "jobs_jobHistoryId", "asset"."id" AS "asset_id", "asset"."createdAt" AS "asset_createdAt", "asset"."updatedAt" AS "asset_updatedAt", "asset"."value" AS "asset_value", "asset"."targetId" AS "asset_targetId", "asset"."isPrimary" AS "asset_isPrimary", "asset"."dnsRecords" AS "asset_dnsRecords", "asset"."isEnabled" AS "asset_isEnabled", "assetService"."id" AS "assetService_id", "assetService"."createdAt" AS "assetService_createdAt", "assetService"."updatedAt" AS "assetService_updatedAt", "assetService"."value" AS "assetService_value", "assetService"."port" AS "assetService_port", "assetService"."assetId" AS "assetService_assetId", "assetService"."isErrorPage" AS "assetService_isErrorPage", "assetService"."screenshotPath" AS "assetService_screenshotPath" FROM "jobs" "jobs" INNER JOIN "assets" "asset" ON "asset"."id"="jobs"."assetId"  INNER JOIN "targets" "target" ON "target"."id"="asset"."targetId"  LEFT JOIN "tools" "tool" ON "tool"."id"="jobs"."toolId"  LEFT JOIN "asset_services" "assetService" ON "assetService"."id"="jobs"."assetServiceId" WHERE "jobs"."status" = $1 AND "tool"."name" IN ($2, $3, $4, $5, $6) ORDER BY "jobs"."priority" DESC, "jobs"."createdAt" ASC LIMIT 1 FOR UPDATE OF jobs SKIP LOCKED',
+oasm-api         |     at async ToolsService.getToolById (/app/dist/modules/tools/tools.service.js:261:22) {
+oasm-api         |   query: 'SELECT "Tool"."id" AS "Tool_id", "Tool"."createdAt" AS "Tool_createdAt", "Tool"."updatedAt" AS "Tool_updatedAt", "Tool"."name" AS "Tool_name", "Tool"."description" AS "Tool_description", "Tool"."command" AS "Tool_command", "Tool"."category" AS "Tool_category", "Tool"."version" AS "Tool_version", "Tool"."logoUrl" AS "Tool_logoUrl", "Tool"."isBuiltIn" AS "Tool_isBuiltIn", "Tool"."isOfficialSupport" AS "Tool_isOfficialSupport", "Tool"."type" AS "Tool_type", "Tool"."providerId" AS "Tool_providerId", "Tool"."priority" AS "Tool_priority", "Tool"."apiKeyId" AS "Tool_apiKeyId" FROM "tools" "Tool" WHERE (("Tool"."id" = $1)) LIMIT 1',
 oasm-api         |   parameters: [
-oasm-api         |     'pending',
-oasm-api         |     'subfinder',
-oasm-api         |     'httpx',
-oasm-api         |     'screenshot',
-oasm-api         |     'naabu',
-oasm-api         |     'nuclei'
+oasm-api         |     'undefined'
 oasm-api         |   ],
-oasm-api         |   driverError: error: canceling statement due to statement timeout
+oasm-api         |   driverError: error: invalid input syntax for type uuid: "undefined"
 oasm-api         |       at /app/node_modules/pg/lib/client.js:652:17
 oasm-api         |       at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
 oasm-api         |       at async PostgresQueryRunner.query (/app/node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:181:25)
@@ -97,69 +83,60 @@ oasm-api         |       at async SelectQueryBuilder.loadRawResults (/app/node_m
 oasm-api         |       at async SelectQueryBuilder.executeEntitiesAndRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2068:26)
 oasm-api         |       at async SelectQueryBuilder.getRawAndEntities (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:662:29)
 oasm-api         |       at async SelectQueryBuilder.getOne (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:689:25)
-oasm-api         |       at async JobsRegistryService.getNextJob (/app/dist/modules/jobs-registry/jobs-registry.service.js:299:25)
-oasm-api         |       at async JobsRegistryController.next (/app/dist/modules/jobs-registry/jobs-registry.controller.js:68:21)
-oasm-api         |       at async Next (/app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32) {
-oasm-api         |     length: 109,
+oasm-api         |       at async ToolsService.getToolById (/app/dist/modules/tools/tools.service.js:261:22) {
+oasm-api         |     length: 141,
 oasm-api         |     severity: 'ERROR',
-oasm-api         |     code: '57014',
+oasm-api         |     code: '22P02',
 oasm-api         |     detail: undefined,
 oasm-api         |     hint: undefined,
 oasm-api         |     position: undefined,
 oasm-api         |     internalPosition: undefined,
 oasm-api         |     internalQuery: undefined,
-oasm-api         |     where: undefined,
+oasm-api         |     where: "unnamed portal parameter $1 = '...'",
 oasm-api         |     schema: undefined,
 oasm-api         |     table: undefined,
 oasm-api         |     column: undefined,
 oasm-api         |     dataType: undefined,
 oasm-api         |     constraint: undefined,
-oasm-api         |     file: 'postgres.c',
-oasm-api         |     line: '3406',
-oasm-api         |     routine: 'ProcessInterrupts'
+oasm-api         |     file: 'uuid.c',
+oasm-api         |     line: '138',
+oasm-api         |     routine: 'string_to_uuid'
 oasm-api         |   },
-oasm-api         |   length: 109,
+oasm-api         |   length: 141,
 oasm-api         |   severity: 'ERROR',
-oasm-api         |   code: '57014',
+oasm-api         |   code: '22P02',
 oasm-api         |   detail: undefined,
 oasm-api         |   hint: undefined,
 oasm-api         |   position: undefined,
 oasm-api         |   internalPosition: undefined,
 oasm-api         |   internalQuery: undefined,
-oasm-api         |   where: undefined,
+oasm-api         |   where: "unnamed portal parameter $1 = '...'",
 oasm-api         |   schema: undefined,
 oasm-api         |   table: undefined,
 oasm-api         |   column: undefined,
 oasm-api         |   dataType: undefined,
 oasm-api         |   constraint: undefined,
-oasm-api         |   file: 'postgres.c',
-oasm-api         |   line: '3406',
-oasm-api         |   routine: 'ProcessInterrupts'
+oasm-api         |   file: 'uuid.c',
+oasm-api         |   line: '138',
+oasm-api         |   routine: 'string_to_uuid'
 oasm-api         | }
-oasm-postgres    | 2026-06-23 23:15:29.152 UTC [163] ERROR:  canceling statement due to statement timeout
-oasm-postgres    | 2026-06-23 23:15:29.152 UTC [163] STATEMENT:  SELECT "jobs"."id" AS "jobs_id", "jobs"."createdAt" AS "jobs_createdAt", "jobs"."updatedAt" AS "jobs_updatedAt", "jobs"."category" AS "jobs_category", "jobs"."status" AS "jobs_status", "jobs"."pickJobAt" AS "jobs_pickJobAt", "jobs"."priority" AS "jobs_priority", "jobs"."workerId" AS "jobs_workerId", "jobs"."rawResult" AS "jobs_rawResult", "jobs"."completedAt" AS "jobs_completedAt", "jobs"."isSaveRawResult" AS "jobs_isSaveRawResult", "jobs"."isSaveData" AS "jobs_isSaveData", "jobs"."isPublishEvent" AS "jobs_isPublishEvent", "jobs"."pathResult" AS "jobs_pathResult", "jobs"."command" AS "jobs_command", "jobs"."assetServiceId" AS "jobs_assetServiceId", "jobs"."retryCount" AS "jobs_retryCount", "jobs"."assetId" AS "jobs_assetId", "jobs"."toolId" AS "jobs_toolId", "jobs"."jobHistoryId" AS "jobs_jobHistoryId", "asset"."id" AS "asset_id", "asset"."createdAt" AS "asset_createdAt", "asset"."updatedAt" AS "asset_updatedAt", "asset"."value" AS "asset_value", "asset"."targetId" AS "asset_targetId", "asset"."isPrimary" AS "asset_isPrimary", "asset"."dnsRecords" AS "asset_dnsRecords", "asset"."isEnabled" AS "asset_isEnabled", "assetService"."id" AS "assetService_id", "assetService"."createdAt" AS "assetService_createdAt", "assetService"."updatedAt" AS "assetService_updatedAt", "assetService"."value" AS "assetService_value", "assetService"."port" AS "assetService_port", "assetService"."assetId" AS "assetService_assetId", "assetService"."isErrorPage" AS "assetService_isErrorPage", "assetService"."screenshotPath" AS "assetService_screenshotPath" FROM "jobs" "jobs" INNER JOIN "assets" "asset" ON "asset"."id"="jobs"."assetId"  INNER JOIN "targets" "target" ON "target"."id"="asset"."targetId"  LEFT JOIN "tools" "tool" ON "tool"."id"="jobs"."toolId"  LEFT JOIN "asset_services" "assetService" ON "assetService"."id"="jobs"."assetServiceId" WHERE "jobs"."status" = $1 AND "tool"."name" IN ($2, $3, $4, $5, $6) ORDER BY "jobs"."priority" DESC, "jobs"."createdAt" ASC LIMIT 1 FOR UPDATE OF jobs SKIP LOCKED
-oasm-api         | [Nest] 1  - 06/23/2026, 11:15:29 PM   ERROR Error in getNextJob
-oasm-api         | [Nest] 1  - 06/23/2026, 11:15:29 PM   ERROR QueryFailedError: canceling statement due to statement timeout
+oasm-postgres    | 2026-06-30 03:38:53.827 UTC [604] ERROR:  invalid input syntax for type uuid: "undefined"
+oasm-postgres    | 2026-06-30 03:38:53.827 UTC [604] CONTEXT:  unnamed portal parameter $1 = '...'
+oasm-postgres    | 2026-06-30 03:38:53.827 UTC [604] STATEMENT:  SELECT "Tool"."id" AS "Tool_id", "Tool"."createdAt" AS "Tool_createdAt", "Tool"."updatedAt" AS "Tool_updatedAt", "Tool"."name" AS "Tool_name", "Tool"."description" AS "Tool_description", "Tool"."command" AS "Tool_command", "Tool"."category" AS "Tool_category", "Tool"."version" AS "Tool_version", "Tool"."logoUrl" AS "Tool_logoUrl", "Tool"."isBuiltIn" AS "Tool_isBuiltIn", "Tool"."isOfficialSupport" AS "Tool_isOfficialSupport", "Tool"."type" AS "Tool_type", "Tool"."providerId" AS "Tool_providerId", "Tool"."priority" AS "Tool_priority", "Tool"."apiKeyId" AS "Tool_apiKeyId" FROM "tools" "Tool" WHERE (("Tool"."id" = $1)) LIMIT 1
+oasm-console     | 192.168.1.9 - - [30/Jun/2026:03:38:53 +0000] "GET /api/tools/undefined HTTP/1.1" 500 52 "http://hercules.home.lan:7000/tools/undefined" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36" "-"
+oasm-api         | [Nest] 1  - 06/30/2026, 3:38:53 AM   ERROR [ExceptionsHandler] QueryFailedError: invalid input syntax for type uuid: "undefined"
 oasm-api         |     at PostgresQueryRunner.query (/app/node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:216:19)
 oasm-api         |     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
 oasm-api         |     at async SelectQueryBuilder.loadRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2220:25)
 oasm-api         |     at async SelectQueryBuilder.executeEntitiesAndRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2068:26)
 oasm-api         |     at async SelectQueryBuilder.getRawAndEntities (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:662:29)
 oasm-api         |     at async SelectQueryBuilder.getOne (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:689:25)
-oasm-api         |     at async JobsRegistryService.getNextJob (/app/dist/modules/jobs-registry/jobs-registry.service.js:299:25)
-oasm-api         |     at async JobsRegistryController.next (/app/dist/modules/jobs-registry/jobs-registry.controller.js:68:21)
-oasm-api         |     at async Next (/app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32)
-oasm-api         |     at async /app/node_modules/@nestjs/microservices/server/server-grpc.js:190:44 {
-oasm-api         |   query: 'SELECT "jobs"."id" AS "jobs_id", "jobs"."createdAt" AS "jobs_createdAt", "jobs"."updatedAt" AS "jobs_updatedAt", "jobs"."category" AS "jobs_category", "jobs"."status" AS "jobs_status", "jobs"."pickJobAt" AS "jobs_pickJobAt", "jobs"."priority" AS "jobs_priority", "jobs"."workerId" AS "jobs_workerId", "jobs"."rawResult" AS "jobs_rawResult", "jobs"."completedAt" AS "jobs_completedAt", "jobs"."isSaveRawResult" AS "jobs_isSaveRawResult", "jobs"."isSaveData" AS "jobs_isSaveData", "jobs"."isPublishEvent" AS "jobs_isPublishEvent", "jobs"."pathResult" AS "jobs_pathResult", "jobs"."command" AS "jobs_command", "jobs"."assetServiceId" AS "jobs_assetServiceId", "jobs"."retryCount" AS "jobs_retryCount", "jobs"."assetId" AS "jobs_assetId", "jobs"."toolId" AS "jobs_toolId", "jobs"."jobHistoryId" AS "jobs_jobHistoryId", "asset"."id" AS "asset_id", "asset"."createdAt" AS "asset_createdAt", "asset"."updatedAt" AS "asset_updatedAt", "asset"."value" AS "asset_value", "asset"."targetId" AS "asset_targetId", "asset"."isPrimary" AS "asset_isPrimary", "asset"."dnsRecords" AS "asset_dnsRecords", "asset"."isEnabled" AS "asset_isEnabled", "assetService"."id" AS "assetService_id", "assetService"."createdAt" AS "assetService_createdAt", "assetService"."updatedAt" AS "assetService_updatedAt", "assetService"."value" AS "assetService_value", "assetService"."port" AS "assetService_port", "assetService"."assetId" AS "assetService_assetId", "assetService"."isErrorPage" AS "assetService_isErrorPage", "assetService"."screenshotPath" AS "assetService_screenshotPath" FROM "jobs" "jobs" INNER JOIN "assets" "asset" ON "asset"."id"="jobs"."assetId"  INNER JOIN "targets" "target" ON "target"."id"="asset"."targetId"  LEFT JOIN "tools" "tool" ON "tool"."id"="jobs"."toolId"  LEFT JOIN "asset_services" "assetService" ON "assetService"."id"="jobs"."assetServiceId" WHERE "jobs"."status" = $1 AND "tool"."name" IN ($2, $3, $4, $5, $6) ORDER BY "jobs"."priority" DESC, "jobs"."createdAt" ASC LIMIT 1 FOR UPDATE OF jobs SKIP LOCKED',
+oasm-api         |     at async ToolsService.getToolById (/app/dist/modules/tools/tools.service.js:261:22) {
+oasm-api         |   query: 'SELECT "Tool"."id" AS "Tool_id", "Tool"."createdAt" AS "Tool_createdAt", "Tool"."updatedAt" AS "Tool_updatedAt", "Tool"."name" AS "Tool_name", "Tool"."description" AS "Tool_description", "Tool"."command" AS "Tool_command", "Tool"."category" AS "Tool_category", "Tool"."version" AS "Tool_version", "Tool"."logoUrl" AS "Tool_logoUrl", "Tool"."isBuiltIn" AS "Tool_isBuiltIn", "Tool"."isOfficialSupport" AS "Tool_isOfficialSupport", "Tool"."type" AS "Tool_type", "Tool"."providerId" AS "Tool_providerId", "Tool"."priority" AS "Tool_priority", "Tool"."apiKeyId" AS "Tool_apiKeyId" FROM "tools" "Tool" WHERE (("Tool"."id" = $1)) LIMIT 1',
 oasm-api         |   parameters: [
-oasm-api         |     'pending',
-oasm-api         |     'subfinder',
-oasm-api         |     'httpx',
-oasm-api         |     'screenshot',
-oasm-api         |     'naabu',
-oasm-api         |     'nuclei'
+oasm-api         |     'undefined'
 oasm-api         |   ],
-oasm-api         |   driverError: error: canceling statement due to statement timeout
+oasm-api         |   driverError: error: invalid input syntax for type uuid: "undefined"
 oasm-api         |       at /app/node_modules/pg/lib/client.js:652:17
 oasm-api         |       at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
 oasm-api         |       at async PostgresQueryRunner.query (/app/node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:181:25)
@@ -167,69 +144,63 @@ oasm-api         |       at async SelectQueryBuilder.loadRawResults (/app/node_m
 oasm-api         |       at async SelectQueryBuilder.executeEntitiesAndRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2068:26)
 oasm-api         |       at async SelectQueryBuilder.getRawAndEntities (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:662:29)
 oasm-api         |       at async SelectQueryBuilder.getOne (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:689:25)
-oasm-api         |       at async JobsRegistryService.getNextJob (/app/dist/modules/jobs-registry/jobs-registry.service.js:299:25)
-oasm-api         |       at async JobsRegistryController.next (/app/dist/modules/jobs-registry/jobs-registry.controller.js:68:21)
-oasm-api         |       at async Next (/app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32) {
-oasm-api         |     length: 109,
+oasm-api         |       at async ToolsService.getToolById (/app/dist/modules/tools/tools.service.js:261:22) {
+oasm-api         |     length: 141,
 oasm-api         |     severity: 'ERROR',
-oasm-api         |     code: '57014',
+oasm-api         |     code: '22P02',
 oasm-api         |     detail: undefined,
 oasm-api         |     hint: undefined,
 oasm-api         |     position: undefined,
 oasm-api         |     internalPosition: undefined,
 oasm-api         |     internalQuery: undefined,
-oasm-api         |     where: undefined,
+oasm-api         |     where: "unnamed portal parameter $1 = '...'",
 oasm-api         |     schema: undefined,
 oasm-api         |     table: undefined,
 oasm-api         |     column: undefined,
 oasm-api         |     dataType: undefined,
 oasm-api         |     constraint: undefined,
-oasm-api         |     file: 'postgres.c',
-oasm-api         |     line: '3406',
-oasm-api         |     routine: 'ProcessInterrupts'
+oasm-api         |     file: 'uuid.c',
+oasm-api         |     line: '138',
+oasm-api         |     routine: 'string_to_uuid'
 oasm-api         |   },
-oasm-api         |   length: 109,
+oasm-api         |   length: 141,
 oasm-api         |   severity: 'ERROR',
-oasm-api         |   code: '57014',
+oasm-api         |   code: '22P02',
 oasm-api         |   detail: undefined,
 oasm-api         |   hint: undefined,
 oasm-api         |   position: undefined,
 oasm-api         |   internalPosition: undefined,
 oasm-api         |   internalQuery: undefined,
-oasm-api         |   where: undefined,
+oasm-api         |   where: "unnamed portal parameter $1 = '...'",
 oasm-api         |   schema: undefined,
 oasm-api         |   table: undefined,
 oasm-api         |   column: undefined,
 oasm-api         |   dataType: undefined,
 oasm-api         |   constraint: undefined,
-oasm-api         |   file: 'postgres.c',
-oasm-api         |   line: '3406',
-oasm-api         |   routine: 'ProcessInterrupts'
+oasm-api         |   file: 'uuid.c',
+oasm-api         |   line: '138',
+oasm-api         |   routine: 'string_to_uuid'
 oasm-api         | }
-oasm-postgres    | 2026-06-23 23:15:29.336 UTC [164] ERROR:  canceling statement due to statement timeout
-oasm-postgres    | 2026-06-23 23:15:29.336 UTC [164] STATEMENT:  SELECT "jobs"."id" AS "jobs_id", "jobs"."createdAt" AS "jobs_createdAt", "jobs"."updatedAt" AS "jobs_updatedAt", "jobs"."category" AS "jobs_category", "jobs"."status" AS "jobs_status", "jobs"."pickJobAt" AS "jobs_pickJobAt", "jobs"."priority" AS "jobs_priority", "jobs"."workerId" AS "jobs_workerId", "jobs"."rawResult" AS "jobs_rawResult", "jobs"."completedAt" AS "jobs_completedAt", "jobs"."isSaveRawResult" AS "jobs_isSaveRawResult", "jobs"."isSaveData" AS "jobs_isSaveData", "jobs"."isPublishEvent" AS "jobs_isPublishEvent", "jobs"."pathResult" AS "jobs_pathResult", "jobs"."command" AS "jobs_command", "jobs"."assetServiceId" AS "jobs_assetServiceId", "jobs"."retryCount" AS "jobs_retryCount", "jobs"."assetId" AS "jobs_assetId", "jobs"."toolId" AS "jobs_toolId", "jobs"."jobHistoryId" AS "jobs_jobHistoryId", "asset"."id" AS "asset_id", "asset"."createdAt" AS "asset_createdAt", "asset"."updatedAt" AS "asset_updatedAt", "asset"."value" AS "asset_value", "asset"."targetId" AS "asset_targetId", "asset"."isPrimary" AS "asset_isPrimary", "asset"."dnsRecords" AS "asset_dnsRecords", "asset"."isEnabled" AS "asset_isEnabled", "assetService"."id" AS "assetService_id", "assetService"."createdAt" AS "assetService_createdAt", "assetService"."updatedAt" AS "assetService_updatedAt", "assetService"."value" AS "assetService_value", "assetService"."port" AS "assetService_port", "assetService"."assetId" AS "assetService_assetId", "assetService"."isErrorPage" AS "assetService_isErrorPage", "assetService"."screenshotPath" AS "assetService_screenshotPath" FROM "jobs" "jobs" INNER JOIN "assets" "asset" ON "asset"."id"="jobs"."assetId"  INNER JOIN "targets" "target" ON "target"."id"="asset"."targetId"  LEFT JOIN "tools" "tool" ON "tool"."id"="jobs"."toolId"  LEFT JOIN "asset_services" "assetService" ON "assetService"."id"="jobs"."assetServiceId" WHERE "jobs"."status" = $1 AND "tool"."name" IN ($2, $3, $4, $5, $6) ORDER BY "jobs"."priority" DESC, "jobs"."createdAt" ASC LIMIT 1 FOR UPDATE OF jobs SKIP LOCKED
-oasm-api         | [Nest] 1  - 06/23/2026, 11:15:29 PM   ERROR Error in getNextJob
-oasm-api         | [Nest] 1  - 06/23/2026, 11:15:29 PM   ERROR QueryFailedError: canceling statement due to statement timeout
+oasm-worker-3    | [Worker.Alive] 2026-06-30 03:38:54 | INFO  | Heartbeat - WorkerID: 890c8f7c-4ddf-45fd-bf62-ac4c6664c80c, LastSeen: 2026-06-30T03:38:54.404Z, Alive: true
+oasm-worker-2    | [Worker.Alive] 2026-06-30 03:38:54 | INFO  | Heartbeat - WorkerID: c9f04fbf-6ec9-40f1-af19-e208c446607d, LastSeen: 2026-06-30T03:38:54.573Z, Alive: true
+oasm-worker-1    | [Worker.Alive] 2026-06-30 03:38:54 | INFO  | Heartbeat - WorkerID: 139c95f5-0b66-4967-9355-08003527368f, LastSeen: 2026-06-30T03:38:54.757Z, Alive: true
+oasm-postgres    | 2026-06-30 03:38:57.850 UTC [781] ERROR:  invalid input syntax for type uuid: "undefined"
+oasm-postgres    | 2026-06-30 03:38:57.850 UTC [781] CONTEXT:  unnamed portal parameter $1 = '...'
+oasm-postgres    | 2026-06-30 03:38:57.850 UTC [781] STATEMENT:  SELECT "Tool"."id" AS "Tool_id", "Tool"."createdAt" AS "Tool_createdAt", "Tool"."updatedAt" AS "Tool_updatedAt", "Tool"."name" AS "Tool_name", "Tool"."description" AS "Tool_description", "Tool"."command" AS "Tool_command", "Tool"."category" AS "Tool_category", "Tool"."version" AS "Tool_version", "Tool"."logoUrl" AS "Tool_logoUrl", "Tool"."isBuiltIn" AS "Tool_isBuiltIn", "Tool"."isOfficialSupport" AS "Tool_isOfficialSupport", "Tool"."type" AS "Tool_type", "Tool"."providerId" AS "Tool_providerId", "Tool"."priority" AS "Tool_priority", "Tool"."apiKeyId" AS "Tool_apiKeyId" FROM "tools" "Tool" WHERE (("Tool"."id" = $1)) LIMIT 1
+oasm-console     | 192.168.1.9 - - [30/Jun/2026:03:38:57 +0000] "GET /api/tools/undefined HTTP/1.1" 500 52 "http://hercules.home.lan:7000/tools/undefined" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36" "-"
+oasm-api         | [Nest] 1  - 06/30/2026, 3:38:57 AM   ERROR [ExceptionsHandler] QueryFailedError: invalid input syntax for type uuid: "undefined"
 oasm-api         |     at PostgresQueryRunner.query (/app/node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:216:19)
 oasm-api         |     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
 oasm-api         |     at async SelectQueryBuilder.loadRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2220:25)
 oasm-api         |     at async SelectQueryBuilder.executeEntitiesAndRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2068:26)
 oasm-api         |     at async SelectQueryBuilder.getRawAndEntities (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:662:29)
 oasm-api         |     at async SelectQueryBuilder.getOne (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:689:25)
-oasm-api         |     at async JobsRegistryService.getNextJob (/app/dist/modules/jobs-registry/jobs-registry.service.js:299:25)
-oasm-api         |     at async JobsRegistryController.next (/app/dist/modules/jobs-registry/jobs-registry.controller.js:68:21)
-oasm-api         |     at async Next (/app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32)
-oasm-api         |     at async /app/node_modules/@nestjs/microservices/server/server-grpc.js:190:44 {
-oasm-api         |   query: 'SELECT "jobs"."id" AS "jobs_id", "jobs"."createdAt" AS "jobs_createdAt", "jobs"."updatedAt" AS "jobs_updatedAt", "jobs"."category" AS "jobs_category", "jobs"."status" AS "jobs_status", "jobs"."pickJobAt" AS "jobs_pickJobAt", "jobs"."priority" AS "jobs_priority", "jobs"."workerId" AS "jobs_workerId", "jobs"."rawResult" AS "jobs_rawResult", "jobs"."completedAt" AS "jobs_completedAt", "jobs"."isSaveRawResult" AS "jobs_isSaveRawResult", "jobs"."isSaveData" AS "jobs_isSaveData", "jobs"."isPublishEvent" AS "jobs_isPublishEvent", "jobs"."pathResult" AS "jobs_pathResult", "jobs"."command" AS "jobs_command", "jobs"."assetServiceId" AS "jobs_assetServiceId", "jobs"."retryCount" AS "jobs_retryCount", "jobs"."assetId" AS "jobs_assetId", "jobs"."toolId" AS "jobs_toolId", "jobs"."jobHistoryId" AS "jobs_jobHistoryId", "asset"."id" AS "asset_id", "asset"."createdAt" AS "asset_createdAt", "asset"."updatedAt" AS "asset_updatedAt", "asset"."value" AS "asset_value", "asset"."targetId" AS "asset_targetId", "asset"."isPrimary" AS "asset_isPrimary", "asset"."dnsRecords" AS "asset_dnsRecords", "asset"."isEnabled" AS "asset_isEnabled", "assetService"."id" AS "assetService_id", "assetService"."createdAt" AS "assetService_createdAt", "assetService"."updatedAt" AS "assetService_updatedAt", "assetService"."value" AS "assetService_value", "assetService"."port" AS "assetService_port", "assetService"."assetId" AS "assetService_assetId", "assetService"."isErrorPage" AS "assetService_isErrorPage", "assetService"."screenshotPath" AS "assetService_screenshotPath" FROM "jobs" "jobs" INNER JOIN "assets" "asset" ON "asset"."id"="jobs"."assetId"  INNER JOIN "targets" "target" ON "target"."id"="asset"."targetId"  LEFT JOIN "tools" "tool" ON "tool"."id"="jobs"."toolId"  LEFT JOIN "asset_services" "assetService" ON "assetService"."id"="jobs"."assetServiceId" WHERE "jobs"."status" = $1 AND "tool"."name" IN ($2, $3, $4, $5, $6) ORDER BY "jobs"."priority" DESC, "jobs"."createdAt" ASC LIMIT 1 FOR UPDATE OF jobs SKIP LOCKED',
+oasm-api         |     at async ToolsService.getToolById (/app/dist/modules/tools/tools.service.js:261:22) {
+oasm-api         |   query: 'SELECT "Tool"."id" AS "Tool_id", "Tool"."createdAt" AS "Tool_createdAt", "Tool"."updatedAt" AS "Tool_updatedAt", "Tool"."name" AS "Tool_name", "Tool"."description" AS "Tool_description", "Tool"."command" AS "Tool_command", "Tool"."category" AS "Tool_category", "Tool"."version" AS "Tool_version", "Tool"."logoUrl" AS "Tool_logoUrl", "Tool"."isBuiltIn" AS "Tool_isBuiltIn", "Tool"."isOfficialSupport" AS "Tool_isOfficialSupport", "Tool"."type" AS "Tool_type", "Tool"."providerId" AS "Tool_providerId", "Tool"."priority" AS "Tool_priority", "Tool"."apiKeyId" AS "Tool_apiKeyId" FROM "tools" "Tool" WHERE (("Tool"."id" = $1)) LIMIT 1',
 oasm-api         |   parameters: [
-oasm-api         |     'pending',
-oasm-api         |     'subfinder',
-oasm-api         |     'httpx',
-oasm-api         |     'screenshot',
-oasm-api         |     'naabu',
-oasm-api         |     'nuclei'
+oasm-api         |     'undefined'
 oasm-api         |   ],
-oasm-api         |   driverError: error: canceling statement due to statement timeout
+oasm-api         |   driverError: error: invalid input syntax for type uuid: "undefined"
 oasm-api         |       at /app/node_modules/pg/lib/client.js:652:17
 oasm-api         |       at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
 oasm-api         |       at async PostgresQueryRunner.query (/app/node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:181:25)
@@ -237,69 +208,63 @@ oasm-api         |       at async SelectQueryBuilder.loadRawResults (/app/node_m
 oasm-api         |       at async SelectQueryBuilder.executeEntitiesAndRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2068:26)
 oasm-api         |       at async SelectQueryBuilder.getRawAndEntities (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:662:29)
 oasm-api         |       at async SelectQueryBuilder.getOne (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:689:25)
-oasm-api         |       at async JobsRegistryService.getNextJob (/app/dist/modules/jobs-registry/jobs-registry.service.js:299:25)
-oasm-api         |       at async JobsRegistryController.next (/app/dist/modules/jobs-registry/jobs-registry.controller.js:68:21)
-oasm-api         |       at async Next (/app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32) {
-oasm-api         |     length: 109,
+oasm-api         |       at async ToolsService.getToolById (/app/dist/modules/tools/tools.service.js:261:22) {
+oasm-api         |     length: 141,
 oasm-api         |     severity: 'ERROR',
-oasm-api         |     code: '57014',
+oasm-api         |     code: '22P02',
 oasm-api         |     detail: undefined,
 oasm-api         |     hint: undefined,
 oasm-api         |     position: undefined,
 oasm-api         |     internalPosition: undefined,
 oasm-api         |     internalQuery: undefined,
-oasm-api         |     where: undefined,
+oasm-api         |     where: "unnamed portal parameter $1 = '...'",
 oasm-api         |     schema: undefined,
 oasm-api         |     table: undefined,
 oasm-api         |     column: undefined,
 oasm-api         |     dataType: undefined,
 oasm-api         |     constraint: undefined,
-oasm-api         |     file: 'postgres.c',
-oasm-api         |     line: '3406',
-oasm-api         |     routine: 'ProcessInterrupts'
+oasm-api         |     file: 'uuid.c',
+oasm-api         |     line: '138',
+oasm-api         |     routine: 'string_to_uuid'
 oasm-api         |   },
-oasm-api         |   length: 109,
+oasm-api         |   length: 141,
 oasm-api         |   severity: 'ERROR',
-oasm-api         |   code: '57014',
+oasm-api         |   code: '22P02',
 oasm-api         |   detail: undefined,
 oasm-api         |   hint: undefined,
 oasm-api         |   position: undefined,
 oasm-api         |   internalPosition: undefined,
 oasm-api         |   internalQuery: undefined,
-oasm-api         |   where: undefined,
+oasm-api         |   where: "unnamed portal parameter $1 = '...'",
 oasm-api         |   schema: undefined,
 oasm-api         |   table: undefined,
 oasm-api         |   column: undefined,
 oasm-api         |   dataType: undefined,
 oasm-api         |   constraint: undefined,
-oasm-api         |   file: 'postgres.c',
-oasm-api         |   line: '3406',
-oasm-api         |   routine: 'ProcessInterrupts'
+oasm-api         |   file: 'uuid.c',
+oasm-api         |   line: '138',
+oasm-api         |   routine: 'string_to_uuid'
 oasm-api         | }
-oasm-postgres    | 2026-06-23 23:15:29.341 UTC [165] ERROR:  canceling statement due to statement timeout
-oasm-postgres    | 2026-06-23 23:15:29.341 UTC [165] STATEMENT:  SELECT "jobs"."id" AS "jobs_id", "jobs"."createdAt" AS "jobs_createdAt", "jobs"."updatedAt" AS "jobs_updatedAt", "jobs"."category" AS "jobs_category", "jobs"."status" AS "jobs_status", "jobs"."pickJobAt" AS "jobs_pickJobAt", "jobs"."priority" AS "jobs_priority", "jobs"."workerId" AS "jobs_workerId", "jobs"."rawResult" AS "jobs_rawResult", "jobs"."completedAt" AS "jobs_completedAt", "jobs"."isSaveRawResult" AS "jobs_isSaveRawResult", "jobs"."isSaveData" AS "jobs_isSaveData", "jobs"."isPublishEvent" AS "jobs_isPublishEvent", "jobs"."pathResult" AS "jobs_pathResult", "jobs"."command" AS "jobs_command", "jobs"."assetServiceId" AS "jobs_assetServiceId", "jobs"."retryCount" AS "jobs_retryCount", "jobs"."assetId" AS "jobs_assetId", "jobs"."toolId" AS "jobs_toolId", "jobs"."jobHistoryId" AS "jobs_jobHistoryId", "asset"."id" AS "asset_id", "asset"."createdAt" AS "asset_createdAt", "asset"."updatedAt" AS "asset_updatedAt", "asset"."value" AS "asset_value", "asset"."targetId" AS "asset_targetId", "asset"."isPrimary" AS "asset_isPrimary", "asset"."dnsRecords" AS "asset_dnsRecords", "asset"."isEnabled" AS "asset_isEnabled", "assetService"."id" AS "assetService_id", "assetService"."createdAt" AS "assetService_createdAt", "assetService"."updatedAt" AS "assetService_updatedAt", "assetService"."value" AS "assetService_value", "assetService"."port" AS "assetService_port", "assetService"."assetId" AS "assetService_assetId", "assetService"."isErrorPage" AS "assetService_isErrorPage", "assetService"."screenshotPath" AS "assetService_screenshotPath" FROM "jobs" "jobs" INNER JOIN "assets" "asset" ON "asset"."id"="jobs"."assetId"  INNER JOIN "targets" "target" ON "target"."id"="asset"."targetId"  LEFT JOIN "tools" "tool" ON "tool"."id"="jobs"."toolId"  LEFT JOIN "asset_services" "assetService" ON "assetService"."id"="jobs"."assetServiceId" WHERE "jobs"."status" = $1 AND "tool"."name" IN ($2, $3, $4, $5, $6) ORDER BY "jobs"."priority" DESC, "jobs"."createdAt" ASC LIMIT 1 FOR UPDATE OF jobs SKIP LOCKED
-oasm-api         | [Nest] 1  - 06/23/2026, 11:15:29 PM   ERROR Error in getNextJob
-oasm-api         | [Nest] 1  - 06/23/2026, 11:15:29 PM   ERROR QueryFailedError: canceling statement due to statement timeout
+oasm-worker-3    | [Worker.Alive] 2026-06-30 03:39:04 | INFO  | Heartbeat - WorkerID: 890c8f7c-4ddf-45fd-bf62-ac4c6664c80c, LastSeen: 2026-06-30T03:39:04.404Z, Alive: true
+oasm-worker-2    | [Worker.Alive] 2026-06-30 03:39:04 | INFO  | Heartbeat - WorkerID: c9f04fbf-6ec9-40f1-af19-e208c446607d, LastSeen: 2026-06-30T03:39:04.573Z, Alive: true
+oasm-worker-1    | [Worker.Alive] 2026-06-30 03:39:04 | INFO  | Heartbeat - WorkerID: 139c95f5-0b66-4967-9355-08003527368f, LastSeen: 2026-06-30T03:39:04.758Z, Alive: true
+oasm-postgres    | 2026-06-30 03:39:05.883 UTC [781] ERROR:  invalid input syntax for type uuid: "undefined"
+oasm-postgres    | 2026-06-30 03:39:05.883 UTC [781] CONTEXT:  unnamed portal parameter $1 = '...'
+oasm-postgres    | 2026-06-30 03:39:05.883 UTC [781] STATEMENT:  SELECT "Tool"."id" AS "Tool_id", "Tool"."createdAt" AS "Tool_createdAt", "Tool"."updatedAt" AS "Tool_updatedAt", "Tool"."name" AS "Tool_name", "Tool"."description" AS "Tool_description", "Tool"."command" AS "Tool_command", "Tool"."category" AS "Tool_category", "Tool"."version" AS "Tool_version", "Tool"."logoUrl" AS "Tool_logoUrl", "Tool"."isBuiltIn" AS "Tool_isBuiltIn", "Tool"."isOfficialSupport" AS "Tool_isOfficialSupport", "Tool"."type" AS "Tool_type", "Tool"."providerId" AS "Tool_providerId", "Tool"."priority" AS "Tool_priority", "Tool"."apiKeyId" AS "Tool_apiKeyId" FROM "tools" "Tool" WHERE (("Tool"."id" = $1)) LIMIT 1
+oasm-console     | 192.168.1.9 - - [30/Jun/2026:03:39:05 +0000] "GET /api/tools/undefined HTTP/1.1" 500 52 "http://hercules.home.lan:7000/tools/undefined" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36" "-"
+oasm-api         | [Nest] 1  - 06/30/2026, 3:39:05 AM   ERROR [ExceptionsHandler] QueryFailedError: invalid input syntax for type uuid: "undefined"
 oasm-api         |     at PostgresQueryRunner.query (/app/node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:216:19)
 oasm-api         |     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
 oasm-api         |     at async SelectQueryBuilder.loadRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2220:25)
 oasm-api         |     at async SelectQueryBuilder.executeEntitiesAndRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2068:26)
 oasm-api         |     at async SelectQueryBuilder.getRawAndEntities (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:662:29)
 oasm-api         |     at async SelectQueryBuilder.getOne (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:689:25)
-oasm-api         |     at async JobsRegistryService.getNextJob (/app/dist/modules/jobs-registry/jobs-registry.service.js:299:25)
-oasm-api         |     at async JobsRegistryController.next (/app/dist/modules/jobs-registry/jobs-registry.controller.js:68:21)
-oasm-api         |     at async Next (/app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32)
-oasm-api         |     at async /app/node_modules/@nestjs/microservices/server/server-grpc.js:190:44 {
-oasm-api         |   query: 'SELECT "jobs"."id" AS "jobs_id", "jobs"."createdAt" AS "jobs_createdAt", "jobs"."updatedAt" AS "jobs_updatedAt", "jobs"."category" AS "jobs_category", "jobs"."status" AS "jobs_status", "jobs"."pickJobAt" AS "jobs_pickJobAt", "jobs"."priority" AS "jobs_priority", "jobs"."workerId" AS "jobs_workerId", "jobs"."rawResult" AS "jobs_rawResult", "jobs"."completedAt" AS "jobs_completedAt", "jobs"."isSaveRawResult" AS "jobs_isSaveRawResult", "jobs"."isSaveData" AS "jobs_isSaveData", "jobs"."isPublishEvent" AS "jobs_isPublishEvent", "jobs"."pathResult" AS "jobs_pathResult", "jobs"."command" AS "jobs_command", "jobs"."assetServiceId" AS "jobs_assetServiceId", "jobs"."retryCount" AS "jobs_retryCount", "jobs"."assetId" AS "jobs_assetId", "jobs"."toolId" AS "jobs_toolId", "jobs"."jobHistoryId" AS "jobs_jobHistoryId", "asset"."id" AS "asset_id", "asset"."createdAt" AS "asset_createdAt", "asset"."updatedAt" AS "asset_updatedAt", "asset"."value" AS "asset_value", "asset"."targetId" AS "asset_targetId", "asset"."isPrimary" AS "asset_isPrimary", "asset"."dnsRecords" AS "asset_dnsRecords", "asset"."isEnabled" AS "asset_isEnabled", "assetService"."id" AS "assetService_id", "assetService"."createdAt" AS "assetService_createdAt", "assetService"."updatedAt" AS "assetService_updatedAt", "assetService"."value" AS "assetService_value", "assetService"."port" AS "assetService_port", "assetService"."assetId" AS "assetService_assetId", "assetService"."isErrorPage" AS "assetService_isErrorPage", "assetService"."screenshotPath" AS "assetService_screenshotPath" FROM "jobs" "jobs" INNER JOIN "assets" "asset" ON "asset"."id"="jobs"."assetId"  INNER JOIN "targets" "target" ON "target"."id"="asset"."targetId"  LEFT JOIN "tools" "tool" ON "tool"."id"="jobs"."toolId"  LEFT JOIN "asset_services" "assetService" ON "assetService"."id"="jobs"."assetServiceId" WHERE "jobs"."status" = $1 AND "tool"."name" IN ($2, $3, $4, $5, $6) ORDER BY "jobs"."priority" DESC, "jobs"."createdAt" ASC LIMIT 1 FOR UPDATE OF jobs SKIP LOCKED',
+oasm-api         |     at async ToolsService.getToolById (/app/dist/modules/tools/tools.service.js:261:22) {
+oasm-api         |   query: 'SELECT "Tool"."id" AS "Tool_id", "Tool"."createdAt" AS "Tool_createdAt", "Tool"."updatedAt" AS "Tool_updatedAt", "Tool"."name" AS "Tool_name", "Tool"."description" AS "Tool_description", "Tool"."command" AS "Tool_command", "Tool"."category" AS "Tool_category", "Tool"."version" AS "Tool_version", "Tool"."logoUrl" AS "Tool_logoUrl", "Tool"."isBuiltIn" AS "Tool_isBuiltIn", "Tool"."isOfficialSupport" AS "Tool_isOfficialSupport", "Tool"."type" AS "Tool_type", "Tool"."providerId" AS "Tool_providerId", "Tool"."priority" AS "Tool_priority", "Tool"."apiKeyId" AS "Tool_apiKeyId" FROM "tools" "Tool" WHERE (("Tool"."id" = $1)) LIMIT 1',
 oasm-api         |   parameters: [
-oasm-api         |     'pending',
-oasm-api         |     'subfinder',
-oasm-api         |     'httpx',
-oasm-api         |     'screenshot',
-oasm-api         |     'naabu',
-oasm-api         |     'nuclei'
+oasm-api         |     'undefined'
 oasm-api         |   ],
-oasm-api         |   driverError: error: canceling statement due to statement timeout
+oasm-api         |   driverError: error: invalid input syntax for type uuid: "undefined"
 oasm-api         |       at /app/node_modules/pg/lib/client.js:652:17
 oasm-api         |       at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
 oasm-api         |       at async PostgresQueryRunner.query (/app/node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:181:25)
@@ -307,42 +272,40 @@ oasm-api         |       at async SelectQueryBuilder.loadRawResults (/app/node_m
 oasm-api         |       at async SelectQueryBuilder.executeEntitiesAndRawResults (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:2068:26)
 oasm-api         |       at async SelectQueryBuilder.getRawAndEntities (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:662:29)
 oasm-api         |       at async SelectQueryBuilder.getOne (/app/node_modules/typeorm/query-builder/SelectQueryBuilder.js:689:25)
-oasm-api         |       at async JobsRegistryService.getNextJob (/app/dist/modules/jobs-registry/jobs-registry.service.js:299:25)
-oasm-api         |       at async JobsRegistryController.next (/app/dist/modules/jobs-registry/jobs-registry.controller.js:68:21)
-oasm-api         |       at async Next (/app/node_modules/@nestjs/microservices/context/rpc-proxy.js:11:32) {
-oasm-api         |     length: 109,
+oasm-api         |       at async ToolsService.getToolById (/app/dist/modules/tools/tools.service.js:261:22) {
+oasm-api         |     length: 141,
 oasm-api         |     severity: 'ERROR',
-oasm-api         |     code: '57014',
+oasm-api         |     code: '22P02',
 oasm-api         |     detail: undefined,
 oasm-api         |     hint: undefined,
 oasm-api         |     position: undefined,
 oasm-api         |     internalPosition: undefined,
 oasm-api         |     internalQuery: undefined,
-oasm-api         |     where: undefined,
+oasm-api         |     where: "unnamed portal parameter $1 = '...'",
 oasm-api         |     schema: undefined,
 oasm-api         |     table: undefined,
 oasm-api         |     column: undefined,
 oasm-api         |     dataType: undefined,
 oasm-api         |     constraint: undefined,
-oasm-api         |     file: 'postgres.c',
-oasm-api         |     line: '3406',
-oasm-api         |     routine: 'ProcessInterrupts'
+oasm-api         |     file: 'uuid.c',
+oasm-api         |     line: '138',
+oasm-api         |     routine: 'string_to_uuid'
 oasm-api         |   },
-oasm-api         |   length: 109,
+oasm-api         |   length: 141,
 oasm-api         |   severity: 'ERROR',
-oasm-api         |   code: '57014',
+oasm-api         |   code: '22P02',
 oasm-api         |   detail: undefined,
 oasm-api         |   hint: undefined,
 oasm-api         |   position: undefined,
 oasm-api         |   internalPosition: undefined,
 oasm-api         |   internalQuery: undefined,
-oasm-api         |   where: undefined,
+oasm-api         |   where: "unnamed portal parameter $1 = '...'",
 oasm-api         |   schema: undefined,
 oasm-api         |   table: undefined,
 oasm-api         |   column: undefined,
 oasm-api         |   dataType: undefined,
 oasm-api         |   constraint: undefined,
-oasm-api         |   file: 'postgres.c',
-oasm-api         |   line: '3406',
-oasm-api         |   routine: 'ProcessInterrupts'
+oasm-api         |   file: 'uuid.c',
+oasm-api         |   line: '138',
+oasm-api         |   routine: 'string_to_uuid'
 oasm-api         | }
