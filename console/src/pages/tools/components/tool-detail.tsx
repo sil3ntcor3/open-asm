@@ -20,6 +20,10 @@ export default function ToolDetail() {
     state: { selectedWorkspaceId },
   } = useWorkspaceState();
 
+  // Guard against missing/malformed ids (e.g. navigating to /tools/undefined),
+  // which would otherwise fire a request that fails server-side.
+  const isValidId = !!id && id !== 'undefined' && id !== 'null';
+
   const {
     data: toolResponse,
     isLoading,
@@ -28,6 +32,7 @@ export default function ToolDetail() {
   } = useToolsControllerGetToolById(id || '', {
     query: {
       queryKey: [selectedWorkspaceId, id],
+      enabled: isValidId,
     },
   });
 
