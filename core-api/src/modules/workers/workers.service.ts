@@ -501,19 +501,25 @@ export class WorkersService {
    * This ensures jobs can be picked up by available workers.
    */
   private async resetStuckAndFailedJobs() {
+    // Compare workerId as text against the worker ids to avoid a `::uuid` cast
+    // that Postgres may evaluate on rows the WHERE clause would otherwise
+    // exclude — an empty or malformed workerId would abort the whole cleanup.
+    // The WHERE branches are parenthesised so `AND` does not silently bind
+    // tighter than the intended `OR`.
     await this.repo.manager.query(`
       UPDATE jobs j
-      SET status = CASE 
-          WHEN j.status = '${JobStatus.IN_PROGRESS}' AND j."workerId"::uuid NOT IN (
-            SELECT id FROM workers
-          ) THEN '${JobStatus.PENDING}'
+      SET status = CASE
+          WHEN j.status = '${JobStatus.IN_PROGRESS}' THEN '${JobStatus.PENDING}'
           WHEN j.status = '${JobStatus.FAILED}' AND j."retryCount" < 4 THEN '${JobStatus.PENDING}'
           ELSE j.status
         END,
         "workerId" = NULL
-      WHERE j.status = '${JobStatus.IN_PROGRESS}'
-        AND j."workerId"::uuid NOT IN (
-          SELECT id FROM workers
+      WHERE (
+          j.status = '${JobStatus.IN_PROGRESS}'
+          AND (
+            j."workerId" IS NULL
+            OR j."workerId" NOT IN (SELECT id::text FROM workers)
+          )
         )
         OR j.status = '${JobStatus.FAILED}'
     `);

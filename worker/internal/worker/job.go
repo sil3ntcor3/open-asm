@@ -82,14 +82,25 @@ func processJob(ctx context.Context, client *oasm.Client, browser *rod.Browser, 
 		cmd.Env = setupCmdEnv(toolPath)
 
 		output, err := cmd.CombinedOutput()
-		if err != nil {
-			jobLogGlobal.Verbose("[%s] Process exited with error: %v", job.Id, err)
-		}
-
 		outStr := string(output)
-		payload = &jobs_registry.DataPayloadResult{
-			Error: false,
-			Raw:   &outStr,
+
+		// If the job context was cancelled the process was killed mid-scan
+		// (worker shutdown, or an operator stop signal). Reporting a killed
+		// scan as a successful completion would persist partial/empty output as
+		// the authoritative result and mark the asset "clean" — a dangerous
+		// false negative for attack-surface monitoring. Flag it as an error so
+		// Core re-queues the job instead of recording it as done.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			jobLogGlobal.Warning("[%s] Aborted before completion: %v", job.Id, ctxErr)
+			payload = oasm.NewErrorResult(fmt.Sprintf("job aborted before completion: %v", ctxErr))
+		} else {
+			if err != nil {
+				jobLogGlobal.Verbose("[%s] Process exited with error: %v", job.Id, err)
+			}
+			payload = &jobs_registry.DataPayloadResult{
+				Error: false,
+				Raw:   &outStr,
+			}
 		}
 	}
 

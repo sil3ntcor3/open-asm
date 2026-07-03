@@ -18,6 +18,7 @@ import {
 import { RedisService } from '@/services/redis/redis.service';
 import bindingCommand from '@/utils/bindingCommand';
 import { getManyResponse } from '@/utils/getManyResponse';
+import { resolveSortColumn } from '@/utils/resolveSortColumn';
 import { InjectQueue } from '@nestjs/bullmq';
 import {
   Injectable,
@@ -53,6 +54,25 @@ import { JobErrorLog } from './entities/job-error-log.entity';
 import { JobHistory } from './entities/job-history.entity';
 import { Job } from './entities/job.entity';
 
+/** Columns a client is allowed to sort `jobs` rows by. */
+const JOB_SORT_COLUMNS = [
+  'createdAt',
+  'updatedAt',
+  'status',
+  'priority',
+  'category',
+  'pickJobAt',
+  'completedAt',
+  'retryCount',
+] as const;
+
+/** Columns a client is allowed to sort `job_histories` rows by. */
+const JOB_HISTORY_SORT_COLUMNS = [
+  'createdAt',
+  'updatedAt',
+  'jobHistoryName',
+] as const;
+
 @Injectable()
 export class JobsRegistryService {
   constructor(
@@ -73,11 +93,11 @@ export class JobsRegistryService {
   ): Promise<GetManyBaseResponseDto<Job>> {
     const { limit, page, sortOrder, jobHistoryId, jobStatus, workspaceId } =
       query;
-    let { sortBy } = query;
-
-    if (!(sortBy in Job)) {
-      sortBy = 'createdAt';
-    }
+    const sortBy = resolveSortColumn(
+      query.sortBy,
+      JOB_SORT_COLUMNS,
+      'createdAt',
+    );
 
     const qb = this.repo
       .createQueryBuilder('job')
@@ -551,10 +571,7 @@ export class JobsRegistryService {
     query: GetManyJobsQueryParams,
   ): Promise<GetManyBaseResponseDto<Job>> {
     const { page, limit, sortOrder, jobStatus, workerName } = query;
-    let { sortBy } = query;
-    if (!sortBy) {
-      sortBy = 'createdAt';
-    }
+    const sortBy = resolveSortColumn(query.sortBy, JOB_SORT_COLUMNS, 'createdAt');
 
     const qb = this.repo
       .createQueryBuilder('job')
@@ -586,10 +603,7 @@ export class JobsRegistryService {
     query: GetManyJobsQueryParams,
   ): Promise<GetManyBaseResponseDto<Job>> {
     const { page, limit, sortOrder, jobStatus, workerName } = query;
-    let { sortBy } = query;
-    if (!sortBy) {
-      sortBy = 'createdAt';
-    }
+    const sortBy = resolveSortColumn(query.sortBy, JOB_SORT_COLUMNS, 'createdAt');
 
     const qb = this.repo
       .createQueryBuilder('job')
@@ -887,11 +901,11 @@ export class JobsRegistryService {
     query: GetManyBaseQueryParams,
   ): Promise<GetManyBaseResponseDto<JobHistoryResponseDto>> {
     const { limit, page, sortOrder } = query;
-    let { sortBy } = query;
-
-    if (!(sortBy in JobHistory)) {
-      sortBy = 'createdAt';
-    }
+    const sortBy = resolveSortColumn(
+      query.sortBy,
+      JOB_HISTORY_SORT_COLUMNS,
+      'createdAt',
+    );
 
     // Define interface for raw query result
     interface RawJobHistoryResult {
