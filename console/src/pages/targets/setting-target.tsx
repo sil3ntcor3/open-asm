@@ -13,6 +13,7 @@ import {
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import type { Target } from '@/services/apis/gen/queries';
 import {
+  getTargetsControllerGetTargetByIdQueryKey,
   JobStatus,
   UpdateTargetDtoScanSchedule,
   useTargetsControllerDeleteTargetFromWorkspace,
@@ -75,9 +76,12 @@ const SettingTarget = ({
   const { mutate: updateTargetScanSchedule, isPending: isUpdatingTarget } =
     useTargetsControllerUpdateTarget({
       mutation: {
-        onSuccess: () => {
+        onSuccess: (updatedTarget, variables) => {
+          queryClient.setQueryData(
+            getTargetsControllerGetTargetByIdQueryKey(variables.id),
+            updatedTarget,
+          );
           toast.success('Updated');
-          refetch();
         },
         onError: () => toast.error('Failed to update target scan settings'),
       },

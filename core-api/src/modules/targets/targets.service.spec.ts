@@ -148,6 +148,47 @@ describe('TargetsService', () => {
     });
   });
 
+  describe('updateTarget', () => {
+    it('returns the updated target after persisting scan window changes', async () => {
+      const targetId = randomUUID();
+      const existingTarget = {
+        id: targetId,
+        value: 'example.com',
+        type: TargetType.DOMAIN,
+      } as Target;
+      const updatedTarget = {
+        ...existingTarget,
+        scanWindowStart: '22:00',
+        scanWindowEnd: '06:00',
+        scanWindowTimezone: 'America/Chicago',
+        scanWindowDays: [1, 2, 3, 4, 5],
+      } as Target;
+
+      (mockTargetRepository.findOneBy as jest.Mock)
+        .mockResolvedValueOnce(existingTarget)
+        .mockResolvedValueOnce(updatedTarget);
+      (mockTargetRepository.update as jest.Mock).mockResolvedValue({
+        affected: 1,
+      });
+
+      const result = await service.updateTarget(targetId, {
+        scanWindowStart: '22:00',
+        scanWindowEnd: '06:00',
+        scanWindowTimezone: 'America/Chicago',
+        scanWindowDays: [1, 2, 3, 4, 5],
+      });
+
+      expect(mockTargetRepository.update).toHaveBeenCalledWith(targetId, {
+        scanWindowStart: '22:00',
+        scanWindowEnd: '06:00',
+        scanWindowTimezone: 'America/Chicago',
+        scanWindowDays: [1, 2, 3, 4, 5],
+        jobId: undefined,
+      });
+      expect(result).toEqual(updatedTarget);
+    });
+  });
+
   describe('createMultipleTargets', () => {
     const workspaceId = randomUUID();
     const userContext = {

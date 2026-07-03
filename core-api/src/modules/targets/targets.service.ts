@@ -1,4 +1,7 @@
-import { GetManyBaseResponseDto } from '@/common/dtos/get-many-base.dto';
+import {
+  GetManyBaseResponseDto,
+  SortOrder,
+} from '@/common/dtos/get-many-base.dto';
 import { BullMQName, CronSchedule, JobStatus, TargetScopeType } from '@/common/enums/enum';
 import { UserContextPayload } from '@/common/interfaces/app.interface';
 import { getManyResponse } from '@/utils/getManyResponse';
@@ -228,7 +231,7 @@ export class TargetsService implements OnModuleInit {
     // which exceeds statement_timeout. Aggregate each child in its own LATERAL
     // subquery instead, same shape as getTargetsInWorkspace.
     // Job-status enum values are hard-coded constants, so inlining them is safe.
-    const rows = (await this.repo.query(
+    const rows = await this.repo.query<Target[]>(
       `SELECT
          t.id AS id,
          t.value AS value,
@@ -258,7 +261,7 @@ export class TargetsService implements OnModuleInit {
        ) js ON TRUE
        WHERE t.id = $1 AND w.id = $2`,
       [id, workspaceId],
-    )) as Target[];
+    );
 
     return rows[0];
   }
@@ -544,10 +547,12 @@ export class TargetsService implements OnModuleInit {
       totalAssetServices: '"totalAssetServices"',
     };
     const orderColumn = sortColumns[sortBy] ?? 't."createdAt"';
-    const orderDir = sortOrder === 'ASC' ? 'ASC' : 'DESC';
+    const orderDir = sortOrder === SortOrder.ASC ? 'ASC' : 'DESC';
 
     const listParams = [...params, limit, offset];
-    const targets = await this.repo.query(
+    const targets = await this.repo.query<
+      Array<Target & { totalAssetServices: number; status: string; duration: number }>
+    >(
       `SELECT
          t.id AS id,
          t.value AS value,
@@ -627,7 +632,7 @@ export class TargetsService implements OnModuleInit {
    * @throws NotFoundException if the target is not found.
    * @returns The updated target entity.
    */
-  public async updateTarget(id: string, dto: UpdateTargetDto) {
+  public async updateTarget(id: string, dto: UpdateTargetDto): Promise<Target> {
     const target = await this.repo.findOneBy({ id });
     if (!target) {
       throw new NotFoundException('Target not found');
@@ -646,12 +651,17 @@ export class TargetsService implements OnModuleInit {
     }
 
     // Update the target in the database
-    const result = await this.repo.update(id, {
+    await this.repo.update(id, {
       ...dto,
       jobId,
     });
 
-    return result;
+    const updatedTarget = await this.repo.findOneBy({ id });
+    if (!updatedTarget) {
+      throw new NotFoundException('Target not found');
+    }
+
+    return updatedTarget;
   }
 
   /**
