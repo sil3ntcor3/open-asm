@@ -412,54 +412,72 @@ export class SummaryReportService {
     options?: { startDate?: Date; endDate?: Date; targetIds?: string[] },
     limit = 10,
   ) {
-    const qb = this.targetRepo
-      .createQueryBuilder('t')
-      .leftJoin('t.workspaceTargets', 'wt')
-      .leftJoin('wt.workspace', 'workspace')
-      .leftJoin('t.assets', 'asset')
-      .leftJoin('asset.vulnerabilities', 'v')
-      .leftJoin('asset.jobs', 'job')
-      .where('workspace.id = :workspaceId', { workspaceId })
-      .andWhere('v.isArchived = :isArchived', { isArchived: false })
-      .select('t.id', 't_id')
-      .addSelect('t.value', 't_value')
-      .addSelect('t.type', 't_type')
-      .addSelect('t.lastDiscoveredAt', 't_lastDiscoveredAt')
-      .addSelect('COUNT(DISTINCT v.id)', 'vulnCount')
-      .addSelect(
-        `CASE
-          WHEN COUNT(CASE WHEN job.status = '${JobStatus.IN_PROGRESS}' THEN 1 END) > 0 THEN '${JobStatus.IN_PROGRESS}'
-          WHEN COUNT(CASE WHEN job.status = '${JobStatus.PENDING}' THEN 1 END) > 0 THEN '${JobStatus.PENDING}'
-          WHEN COUNT(CASE WHEN job.status = '${JobStatus.COMPLETED}' THEN 1 END) > 0 THEN '${JobStatus.COMPLETED}'
-          ELSE '${JobStatus.COMPLETED}'
-        END`,
-        'targetStatus',
-      )
-      .groupBy('t.id')
-      .addGroupBy('t.value')
-      .addGroupBy('t.type')
-      .addGroupBy('t.lastDiscoveredAt')
-      .orderBy('COUNT(DISTINCT v.id)', 'DESC')
-      .limit(limit);
-
+    // `vulnerabilities` and `jobs` are both one-to-many off `asset`. Joining
+    // them as siblings forms a cartesian product (vulns x jobs) per asset,
+    // which exceeds statement_timeout on well-scanned targets. Aggregate each
+    // child in its own LATERAL subquery instead, same shape as
+    // TargetsService.getTargetsInWorkspace.
+    // Job-status enum values are hard-coded constants, so inlining them is safe.
+    const params: unknown[] = [workspaceId];
+    const vulnConditions: string[] = [
+      'a."targetId" = t.id',
+      'v."isArchived" = false',
+    ];
     if (options?.startDate) {
-      qb.andWhere('v.createdAt >= :startDate', { startDate: options.startDate });
+      params.push(options.startDate);
+      vulnConditions.push(`v."createdAt" >= $${params.length}`);
     }
     if (options?.endDate) {
-      qb.andWhere('v.createdAt <= :endDate', { endDate: options.endDate });
-    }
-    if (options?.targetIds?.length) {
-      qb.andWhere('t.id IN (:...targetIds)', { targetIds: options.targetIds });
+      params.push(options.endDate);
+      vulnConditions.push(`v."createdAt" <= $${params.length}`);
     }
 
-    const targets = await qb.getRawMany<{
+    const outerConditions: string[] = ['w.id = $1'];
+    if (options?.targetIds?.length) {
+      params.push(options.targetIds);
+      outerConditions.push(`t.id = ANY($${params.length})`);
+    }
+    params.push(limit);
+
+    const targets = (await this.targetRepo.query(
+      `SELECT
+         t.id AS t_id,
+         t.value AS t_value,
+         t.type AS t_type,
+         t."lastDiscoveredAt" AS "t_lastDiscoveredAt",
+         vl.cnt AS "vulnCount",
+         js.status AS "targetStatus"
+       FROM targets t
+       INNER JOIN workspace_targets wt ON wt."targetId" = t.id
+       INNER JOIN workspaces w ON w.id = wt."workspaceId" AND w."deletedAt" IS NULL
+       INNER JOIN LATERAL (
+         SELECT COUNT(DISTINCT v.id) AS cnt
+         FROM assets a
+         JOIN vulnerabilities v ON v."assetId" = a.id
+         WHERE ${vulnConditions.join(' AND ')}
+       ) vl ON vl.cnt > 0
+       LEFT JOIN LATERAL (
+         SELECT CASE
+             WHEN COUNT(*) FILTER (WHERE j.status = '${JobStatus.IN_PROGRESS}') > 0 THEN '${JobStatus.IN_PROGRESS}'
+             WHEN COUNT(*) FILTER (WHERE j.status = '${JobStatus.PENDING}') > 0 THEN '${JobStatus.PENDING}'
+             ELSE '${JobStatus.COMPLETED}'
+           END AS status
+         FROM assets a
+         JOIN jobs j ON j."assetId" = a.id
+         WHERE a."targetId" = t.id
+       ) js ON TRUE
+       WHERE ${outerConditions.join(' AND ')}
+       ORDER BY vl.cnt DESC
+       LIMIT $${params.length}`,
+      params,
+    )) as Array<{
       t_id: string;
       t_value: string;
       t_type: TargetType;
       t_lastDiscoveredAt: Date | null;
       vulnCount: string;
       targetStatus: string;
-    }>();
+    }>;
 
     return targets.map((t) => ({
       id: t.t_id,

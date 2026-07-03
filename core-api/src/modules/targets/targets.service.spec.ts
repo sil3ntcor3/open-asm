@@ -26,6 +26,7 @@ describe('TargetsService', () => {
     mockTargetRepository = {
       findOneBy: jest.fn(),
       upsert: jest.fn(),
+      query: jest.fn(),
       createQueryBuilder: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       leftJoin: jest.fn().mockReturnThis(),
@@ -109,6 +110,42 @@ describe('TargetsService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('getTargetById', () => {
+    const targetId = randomUUID();
+    const workspaceId = randomUUID();
+
+    it('fetches the target with one parameterized query and returns the first row', async () => {
+      const row = {
+        id: targetId,
+        value: 'example.com',
+        type: TargetType.DOMAIN,
+        totalAssetServices: 5,
+        status: 'completed',
+      };
+      (mockTargetRepository.query as jest.Mock).mockResolvedValue([row]);
+
+      const result = await service.getTargetById(targetId, workspaceId);
+
+      expect(result).toBe(row);
+      const [sql, params] = (mockTargetRepository.query as jest.Mock).mock
+        .calls[0] as [string, unknown[]];
+      expect(params).toEqual([targetId, workspaceId]);
+      // Regression guard: asset_services and jobs must each be aggregated in
+      // their own LATERAL subquery. Joining them as siblings off assets forms
+      // a services x jobs cartesian product per asset, which exceeds
+      // statement_timeout on large targets (see getTargetsInWorkspace).
+      expect(sql).toContain('LATERAL');
+    });
+
+    it('returns undefined when the target is not in the workspace', async () => {
+      (mockTargetRepository.query as jest.Mock).mockResolvedValue([]);
+
+      await expect(
+        service.getTargetById(targetId, workspaceId),
+      ).resolves.toBeUndefined();
+    });
   });
 
   describe('createMultipleTargets', () => {

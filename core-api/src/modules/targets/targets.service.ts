@@ -222,36 +222,45 @@ export class TargetsService implements OnModuleInit {
    * @returns A promise that resolves to the target entity if found, otherwise null.
    */
   public async getTargetById(id: string, workspaceId: string): Promise<Target> {
-    const result = (await this.repo
-      .createQueryBuilder('targets')
-      .leftJoin('targets.workspaceTargets', 'workspaceTarget')
-      .leftJoin('workspaceTarget.workspace', 'workspace')
-      .leftJoin('workspace.workspaceMembers', 'workspaceMember')
-      .leftJoin('targets.assets', 'asset')
-      .leftJoin('asset.assetServices', 'assetService')
-      .leftJoin('asset.jobs', 'job')
-      .where('targets.id = :id', { id })
-      .andWhere('workspace.id = :workspaceId', { workspaceId })
-      .select([
-        'targets.id as id',
-        'targets.value as value',
-        'targets.type as type',
-        'targets.lastDiscoveredAt as "lastDiscoveredAt"',
-        `COALESCE(COUNT(DISTINCT CASE WHEN "assetService"."isErrorPage" = false THEN "assetService"."id" END), 0) AS "totalAssetServices"`,
-        'targets.scanSchedule as "scanSchedule"',
-        `CASE
-        WHEN COUNT(CASE WHEN job.status = '${JobStatus.IN_PROGRESS}' THEN 1 END) > 0 THEN '${JobStatus.IN_PROGRESS}'
-        WHEN COUNT(CASE WHEN job.status = '${JobStatus.PENDING}' THEN 1 END) > 0 THEN '${JobStatus.PENDING}'
-        WHEN COUNT(CASE WHEN job.status = '${JobStatus.COMPLETED}' THEN 1 END) > 0 THEN '${JobStatus.COMPLETED}'
-        ELSE '${JobStatus.COMPLETED}'
-      END AS status`,
-      ])
-      .groupBy(
-        'targets.id, targets.value, targets.type, targets.lastDiscoveredAt, targets.scanSchedule',
-      )
-      .getRawOne()) as Target;
+    // `asset_services` and `jobs` are both one-to-many off `asset`. Joining
+    // them as siblings forms a cartesian product (services x jobs) per asset —
+    // hundreds of millions of intermediate rows for a well-scanned target —
+    // which exceeds statement_timeout. Aggregate each child in its own LATERAL
+    // subquery instead, same shape as getTargetsInWorkspace.
+    // Job-status enum values are hard-coded constants, so inlining them is safe.
+    const rows = (await this.repo.query(
+      `SELECT
+         t.id AS id,
+         t.value AS value,
+         t.type AS type,
+         t."lastDiscoveredAt" AS "lastDiscoveredAt",
+         svc.cnt AS "totalAssetServices",
+         t."scanSchedule" AS "scanSchedule",
+         js.status AS status
+       FROM targets t
+       INNER JOIN workspace_targets wt ON wt."targetId" = t.id
+       INNER JOIN workspaces w ON w.id = wt."workspaceId" AND w."deletedAt" IS NULL
+       LEFT JOIN LATERAL (
+         SELECT COUNT(DISTINCT s.id)::int AS cnt
+         FROM assets a
+         JOIN asset_services s ON s."assetId" = a.id
+         WHERE a."targetId" = t.id AND s."isErrorPage" = false
+       ) svc ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT CASE
+             WHEN COUNT(*) FILTER (WHERE j.status = '${JobStatus.IN_PROGRESS}') > 0 THEN '${JobStatus.IN_PROGRESS}'
+             WHEN COUNT(*) FILTER (WHERE j.status = '${JobStatus.PENDING}') > 0 THEN '${JobStatus.PENDING}'
+             ELSE '${JobStatus.COMPLETED}'
+           END AS status
+         FROM assets a
+         JOIN jobs j ON j."assetId" = a.id
+         WHERE a."targetId" = t.id
+       ) js ON TRUE
+       WHERE t.id = $1 AND w.id = $2`,
+      [id, workspaceId],
+    )) as Target[];
 
-    return result;
+    return rows[0];
   }
 
   /**
