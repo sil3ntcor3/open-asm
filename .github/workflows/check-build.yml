@@ -96,7 +96,8 @@ jobs:
       - name: Build Docker image (Worker)
         uses: docker/build-push-action@v5
         with:
-          context: ./worker
+          context: .
+          file: ./worker/Dockerfile
           push: false
           load: true
           tags: oasm/oasm-worker:test

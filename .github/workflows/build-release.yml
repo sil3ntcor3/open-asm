@@ -94,6 +94,21 @@ jobs:
 
       - name: Build and push
         run: |
+          case "${{ matrix.service }}" in
+            api)
+              context="core-api"
+              dockerfile="core-api/Dockerfile"
+              ;;
+            worker)
+              context="."
+              dockerfile="worker/Dockerfile"
+              ;;
+            console)
+              context="console"
+              dockerfile="console/Dockerfile"
+              ;;
+          esac
+
           docker buildx build \
             --platform linux/amd64 \
             --push \
@@ -102,5 +117,5 @@ jobs:
             --build-arg APP_VERSION=${{ github.ref_name }} \
             --tag ${{ env.IMAGE_NAME }}-${{ matrix.service }}:latest \
             --tag ${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ github.ref_name }} \
-            --file ./${{ matrix.service == 'api' && 'core-api' || matrix.service }}/Dockerfile \
-            ./${{ matrix.service == 'api' && 'core-api' || matrix.service }}
+            --file "$dockerfile" \
+            "$context"

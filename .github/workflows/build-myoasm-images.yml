@@ -66,9 +66,9 @@ jobs:
           fi
 
           CHANGED=()
-          $add_console && CHANGED+=('{"image":"sil3ntcor3/myoasm-console:latest","context":"console"}')
-          $add_api && CHANGED+=('{"image":"sil3ntcor3/myoasm-api:latest","context":"core-api"}')
-          $add_worker && CHANGED+=('{"image":"sil3ntcor3/myoasm-worker:latest","context":"worker"}')
+          $add_console && CHANGED+=( '{"image":"sil3ntcor3/myoasm-console:latest","context":"console","dockerfile":"console/Dockerfile"}' )
+          $add_api && CHANGED+=( '{"image":"sil3ntcor3/myoasm-api:latest","context":"core-api","dockerfile":"core-api/Dockerfile"}' )
+          $add_worker && CHANGED+=( '{"image":"sil3ntcor3/myoasm-worker:latest","context":".","dockerfile":"worker/Dockerfile"}' )
 
           if [ ${#CHANGED[@]} -eq 0 ]; then
             MATRIX='{"include":[]}'
@@ -106,4 +106,4 @@ jobs:
 
       - name: Build and push
         run: |
-          docker buildx build --platform linux/amd64,linux/arm64 -t "${{ matrix.image }}" --push ${{ matrix.context }}/
+          docker buildx build --platform linux/amd64,linux/arm64 -t "${{ matrix.image }}" --push --file "${{ matrix.dockerfile }}" "${{ matrix.context }}"
