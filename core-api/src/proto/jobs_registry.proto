@@ -10,7 +10,10 @@ import "google/protobuf/struct.proto";
 // Service Definition
 service JobsRegistryService {
   rpc Next (Worker) returns (Job);
-  rpc Result (JobResultRequest) returns (JobResponse); 
+  rpc Result (JobResultRequest) returns (JobResponse);
+  // Control-plane poll: the worker reports its active job IDs and receives
+  // per-job directives (stop/pause/resume) plus desired runtime settings.
+  rpc Control (ControlRequest) returns (ControlResponse);
 }
 
 
@@ -19,6 +22,35 @@ service JobsRegistryService {
 
 message Worker {
   string id = 1;
+}
+
+message ControlRequest {
+  string worker_id = 1;
+  // Job IDs the worker is currently executing (including paused ones).
+  repeated string active_job_ids = 2;
+}
+
+enum JobControlAction {
+  JOB_CONTROL_NONE = 0;
+  // Kill the running process; core has already marked the job cancelled.
+  JOB_CONTROL_STOP = 1;
+  // Suspend the scan process group (SIGSTOP); slot stays occupied.
+  JOB_CONTROL_PAUSE = 2;
+  // Continue a previously paused process (no-op when not paused).
+  JOB_CONTROL_RESUME = 3;
+}
+
+message JobDirective {
+  string job_id = 1;
+  JobControlAction action = 2;
+}
+
+message ControlResponse {
+  repeated JobDirective directives = 1;
+  // Desired concurrent-job limit; 0 = keep the worker's local default.
+  int32 max_concurrency = 2;
+  // Worker-level pause: stop pulling new jobs (running jobs unaffected).
+  bool dispatch_paused = 3;
 }
 
 message Job {

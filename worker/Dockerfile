@@ -1,19 +1,23 @@
 # Stage 1: Build
+# Build context is the REPO ROOT (see docker-compose.yml): worker/go.mod
+# replaces github.com/oasm-platform/open-asm/grpc-client/go with the local
+# ../grpc-client/go, so both directories must be inside the context.
 FROM golang:1.26-alpine AS builder
 
-WORKDIR /app
+WORKDIR /src/worker
 
 # Install git for go mod download
 RUN apk add --no-cache git ca-certificates
 
-# Copy go mod files first (for better layer caching)
-COPY go.mod go.sum ./
+# Copy the locally-replaced module and go mod files first (for layer caching)
+COPY grpc-client/go /src/grpc-client/go
+COPY worker/go.mod worker/go.sum ./
 
 # Download dependencies
 RUN go mod download
 
 # Copy source code
-COPY . .
+COPY worker/ .
 
 # Build static binary with optimizations from the new APP entrypoint
 RUN CGO_ENABLED=0 GOOS=linux go build \
@@ -40,7 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN mkdir -p /app/oasm-tools
 
 # Copy binary from builder
-COPY --from=builder /app/oasm-worker .
+COPY --from=builder /src/worker/oasm-worker .
 
 # Create non-root user for security
 RUN groupadd -g 1000 worker && \

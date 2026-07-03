@@ -3,6 +3,7 @@ import {
   BadgeCheckIcon,
   ClockIcon,
   Loader2Icon,
+  PauseIcon,
   XCircleIcon,
 } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
@@ -44,6 +45,12 @@ const statusConfigs: Record<JobStatus, StatusConfig> = {
     icon: <XCircleIcon className="h-4 w-4" />,
     className: 'text-gray-500',
     label: 'Cancelled',
+    variant: 'outline',
+  },
+  [JobStatus.paused]: {
+    icon: <PauseIcon className="h-4 w-4" />,
+    className: 'text-orange-500',
+    label: 'Paused',
     variant: 'outline',
   },
 };

@@ -6,9 +6,13 @@ import {
   IsArray,
   IsEnum,
   IsInt,
+  IsMilitaryTime,
   IsOptional,
   IsString,
+  IsTimeZone,
   IsUUID,
+  Max,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { Target, TargetType } from '../entities/target.entity';
@@ -169,4 +173,38 @@ export class UpdateTargetDto {
   @IsEnum(CronSchedule)
   @IsOptional()
   scanSchedule?: CronSchedule;
+
+  /**
+   * Start of the execution window (HH:MM, evaluated in scanWindowTimezone).
+   * Jobs for this target are only dispatched to workers while the window is
+   * open; both start and end must be set for the window to apply. Set both
+   * to null to return to continuous scanning.
+   */
+  @ApiProperty({ required: false, nullable: true, example: '22:00' })
+  @IsOptional()
+  @IsMilitaryTime()
+  scanWindowStart?: string | null;
+
+  @ApiProperty({ required: false, nullable: true, example: '06:00' })
+  @IsOptional()
+  @IsMilitaryTime()
+  scanWindowEnd?: string | null;
+
+  /**
+   * IANA timezone the window is evaluated in. Validated here because an
+   * unknown zone name would make the dispatch query error at runtime.
+   */
+  @ApiProperty({ required: false, nullable: true, example: 'America/Chicago' })
+  @IsOptional()
+  @IsTimeZone()
+  scanWindowTimezone?: string | null;
+
+  /** ISO days of week (1 = Monday … 7 = Sunday); null/empty = every day. */
+  @ApiProperty({ required: false, nullable: true, type: [Number], example: [6, 7] })
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  @Max(7, { each: true })
+  scanWindowDays?: number[] | null;
 }

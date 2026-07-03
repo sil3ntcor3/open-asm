@@ -6,6 +6,7 @@ import { ConnectWorkerTrigger } from '@/components/ui/connect-worker-trigger';
 import Image from '@/components/ui/image';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import WorkerSettingsControl from '@/components/ui/worker-settings-control';
 import { useNavigateWithParams } from '@/hooks/useNavigateWithParams';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import { useWorkersControllerGetWorkers } from '@/services/apis/gen/queries';
@@ -233,8 +234,13 @@ const ListWorkers = () => {
                   )}
                 </div>
               </div>
-              <div className="text-sm text-muted-foreground text-right">
-                Created {dayjs(worker.createdAt).fromNow()}
+              <div className="flex items-center justify-between border-t pt-2">
+                <div onClick={(e) => e.stopPropagation()}>
+                  <WorkerSettingsControl worker={worker} />
+                </div>
+                <span className="text-sm text-muted-foreground">
+                  Created {dayjs(worker.createdAt).fromNow()}
+                </span>
               </div>
             </CardContent>
             {/* <CardContent className="p-3 space-y-3">

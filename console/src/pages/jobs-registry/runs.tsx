@@ -26,6 +26,8 @@ import {
   useJobsRegistryControllerDeleteJob,
   useJobsRegistryControllerGetJobHistoryDetail,
   useJobsRegistryControllerGetManyJobs,
+  useJobsRegistryControllerPauseJob,
+  useJobsRegistryControllerResumeJob,
 } from '@/services/apis/gen/queries';
 import { useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -47,6 +49,8 @@ export default function Runs() {
 
   const { mutate: deleteJobMutate } = useJobsRegistryControllerDeleteJob();
   const { mutate: cancelJobMutate } = useJobsRegistryControllerCancelJob();
+  const { mutate: pauseJobMutate } = useJobsRegistryControllerPauseJob();
+  const { mutate: resumeJobMutate } = useJobsRegistryControllerResumeJob();
 
   const { tableParams, tableHandlers } = useServerDataTable({
     defaultPage: 1,
@@ -237,6 +241,22 @@ export default function Runs() {
         const canCancel =
           row.original.status === JobStatus.pending ||
           row.original.status === JobStatus.in_progress;
+        const canPause =
+          row.original.status === JobStatus.pending ||
+          row.original.status === JobStatus.in_progress;
+        const canResume = row.original.status === JobStatus.paused;
+
+        const invalidateJobs = () => {
+          queryClient.invalidateQueries({
+            queryKey: [
+              'JobsRegistryControllerGetJobHistoryDetail',
+              jobHistoryId,
+            ],
+          });
+          queryClient.invalidateQueries({
+            queryKey: paginatedJobsQueryKey,
+          });
+        };
 
         return (
           <div className="flex justify-end">
@@ -254,6 +274,32 @@ export default function Runs() {
                 align="end"
                 onClick={(e) => e.stopPropagation()}
               >
+                {canPause && (
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      pauseJobMutate(
+                        { id: row.original.id },
+                        { onSuccess: invalidateJobs },
+                      );
+                    }}
+                  >
+                    Pause
+                  </DropdownMenuItem>
+                )}
+                {canResume && (
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      resumeJobMutate(
+                        { id: row.original.id },
+                        { onSuccess: invalidateJobs },
+                      );
+                    }}
+                  >
+                    Resume
+                  </DropdownMenuItem>
+                )}
                 {canCancel && (
                   <ConfirmDialog
                     title="Cancel Job"
@@ -261,19 +307,7 @@ export default function Runs() {
                     onConfirm={() =>
                       cancelJobMutate(
                         { id: row.original.id },
-                        {
-                          onSuccess: () => {
-                            queryClient.invalidateQueries({
-                              queryKey: [
-                                'JobsRegistryControllerGetJobHistoryDetail',
-                                jobHistoryId,
-                              ],
-                            });
-                            queryClient.invalidateQueries({
-                              queryKey: paginatedJobsQueryKey,
-                            });
-                          },
-                        },
+                        { onSuccess: invalidateJobs },
                       )
                     }
                     trigger={
@@ -289,19 +323,7 @@ export default function Runs() {
                   onConfirm={() =>
                     deleteJobMutate(
                       { id: row.original.id },
-                      {
-                        onSuccess: () => {
-                          queryClient.invalidateQueries({
-                            queryKey: [
-                              'JobsRegistryControllerGetJobHistoryDetail',
-                              jobHistoryId,
-                            ],
-                          });
-                          queryClient.invalidateQueries({
-                            queryKey: paginatedJobsQueryKey,
-                          });
-                        },
-                      },
+                      { onSuccess: invalidateJobs },
                     )
                   }
                   trigger={

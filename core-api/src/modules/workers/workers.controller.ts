@@ -11,6 +11,8 @@ import {
   Controller,
   Get,
   Logger,
+  Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -23,6 +25,7 @@ import { join } from 'path';
 import { Observable } from 'rxjs';
 import {
   GetManyWorkersDto,
+  UpdateWorkerSettingsDto,
   WorkerAliveDto,
   WorkerJoinDto,
 } from './dto/workers.dto';
@@ -88,6 +91,22 @@ export class WorkersController {
   @Get()
   getWorkers(@Query() query: GetManyWorkersDto) {
     return this.workersService.getWorkers(query);
+  }
+
+  @Doc({
+    summary: 'Update worker runtime settings',
+    description:
+      'Change a worker instance\'s desired max concurrency and/or pause state at runtime. The worker applies the change on its next control poll (a few seconds); shrinking concurrency never kills running jobs.',
+    response: {
+      serialization: WorkerInstance,
+    },
+  })
+  @Patch('/:id/settings')
+  updateWorkerSettings(
+    @Param('id') id: string,
+    @Body() dto: UpdateWorkerSettingsDto,
+  ) {
+    return this.workersService.updateWorkerSettings(id, dto);
   }
 
   @GrpcMethod('WorkersService', 'GetManifest')

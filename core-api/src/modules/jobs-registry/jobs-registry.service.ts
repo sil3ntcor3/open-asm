@@ -19,8 +19,10 @@ import { RedisService } from '@/services/redis/redis.service';
 import bindingCommand from '@/utils/bindingCommand';
 import { getManyResponse } from '@/utils/getManyResponse';
 import { resolveSortColumn } from '@/utils/resolveSortColumn';
+import { WORKER_TIMEOUT } from '@/common/constants/app.constants';
 import { InjectQueue } from '@nestjs/bullmq';
 import {
+  BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
@@ -45,10 +47,13 @@ import {
   CreateJobs,
   GetManyJobsQueryParams,
   GetNextJobResponseDto,
+  JobControlAction,
+  JobControlDirective,
   JobTimelineItem,
   JobTimelineQueryResult,
   JobTimelineResponseDto,
   UpdateResultDto,
+  WorkerControlResponseDto,
 } from './dto/jobs-registry.dto';
 import { JobErrorLog } from './entities/job-error-log.entity';
 import { JobHistory } from './entities/job-history.entity';
@@ -455,6 +460,14 @@ export class JobsRegistryService {
       throw new NotFoundException('Worker not found');
     }
 
+    // Operator paused the whole worker: hand out nothing. Running jobs are
+    // unaffected. (Worker row is cached ~30s above, so a pause can take up
+    // to 30s to gate dispatch; the worker-side dispatch_paused flag from the
+    // control poll usually kicks in sooner.)
+    if (worker.isPaused) {
+      return null;
+    }
+
     const isBuiltInTools = worker.type === WorkerType.BUILT_IN;
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -466,6 +479,32 @@ export class JobsRegistryService {
         .innerJoin('asset.target', 'target')
         .leftJoin('jobs.tool', 'tool')
         .where('jobs.status = :status', { status: JobStatus.PENDING })
+        // Scheduling window: a job is only dispatchable while its target's
+        // scan window (evaluated in the target's timezone) is open. Targets
+        // without a window are always dispatchable. Windows crossing
+        // midnight (start > end, e.g. 22:00–06:00) are handled by the ELSE
+        // branch. Jobs stay PENDING outside the window — no state changes.
+        .andWhere(
+          `(
+            target."scanWindowStart" IS NULL
+            OR target."scanWindowEnd" IS NULL
+            OR (
+              (
+                target."scanWindowDays" IS NULL
+                OR cardinality(target."scanWindowDays") = 0
+                OR EXTRACT(ISODOW FROM (now() AT TIME ZONE COALESCE(target."scanWindowTimezone", 'UTC')))::int = ANY(target."scanWindowDays")
+              )
+              AND CASE
+                WHEN target."scanWindowStart" <= target."scanWindowEnd" THEN
+                  (now() AT TIME ZONE COALESCE(target."scanWindowTimezone", 'UTC'))::time >= target."scanWindowStart"
+                  AND (now() AT TIME ZONE COALESCE(target."scanWindowTimezone", 'UTC'))::time < target."scanWindowEnd"
+                ELSE
+                  (now() AT TIME ZONE COALESCE(target."scanWindowTimezone", 'UTC'))::time >= target."scanWindowStart"
+                  OR (now() AT TIME ZONE COALESCE(target."scanWindowTimezone", 'UTC'))::time < target."scanWindowEnd"
+              END
+            )
+          )`,
+        )
         // [OPT-1] Use addOrderBy for compound sort (priority first, then createdAt)
         .orderBy('jobs.priority', 'DESC')
         .addOrderBy('jobs.createdAt', 'ASC');
@@ -1127,7 +1166,20 @@ export class JobsRegistryService {
       // Verify job exists and belongs to workspace
       const job = await this.verifyJobBelongsToWorkspace(jobId, workspaceId);
 
-      // Update job status to cancelled
+      if (
+        job.status !== JobStatus.PENDING &&
+        job.status !== JobStatus.IN_PROGRESS &&
+        job.status !== JobStatus.PAUSED
+      ) {
+        throw new BadRequestException(
+          `Job in status '${job.status}' cannot be cancelled`,
+        );
+      }
+
+      // Update job status to cancelled. If a worker is currently running the
+      // job it learns about the cancellation on its next control poll and
+      // kills the process; the late/partial result is dropped because result
+      // processing only accepts IN_PROGRESS jobs.
       job.status = JobStatus.CANCELLED;
 
       await queryRunner.manager.save(job);
@@ -1141,6 +1193,160 @@ export class JobsRegistryService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  /**
+   * Pauses a job. A PENDING job is simply excluded from dispatch; an
+   * IN_PROGRESS job additionally gets a PAUSE directive delivered to its
+   * worker on the next control poll (SIGSTOP of the scan process group —
+   * the job keeps holding its concurrency slot so capacity is not
+   * oversubscribed when it resumes).
+   */
+  public async pauseJob(
+    workspaceId: string,
+    jobId: string,
+  ): Promise<DefaultMessageResponseDto> {
+    const job = await this.verifyJobBelongsToWorkspace(jobId, workspaceId);
+
+    if (
+      job.status !== JobStatus.PENDING &&
+      job.status !== JobStatus.IN_PROGRESS
+    ) {
+      throw new BadRequestException(
+        `Job in status '${job.status}' cannot be paused`,
+      );
+    }
+
+    await this.repo.update(job.id, { status: JobStatus.PAUSED });
+
+    return { message: 'Job paused successfully' };
+  }
+
+  /**
+   * Resumes a paused job.
+   * - Paused while PENDING (no worker claim): back to PENDING.
+   * - Paused while IN_PROGRESS and the worker is still alive: back to
+   *   IN_PROGRESS; the worker SIGCONTs the process on its next control poll.
+   * - Paused while IN_PROGRESS but the worker has since died: requeued as
+   *   PENDING so another worker picks it up from scratch.
+   */
+  public async resumeJob(
+    workspaceId: string,
+    jobId: string,
+  ): Promise<DefaultMessageResponseDto> {
+    const job = await this.verifyJobBelongsToWorkspace(jobId, workspaceId);
+
+    if (job.status !== JobStatus.PAUSED) {
+      throw new BadRequestException(
+        `Job in status '${job.status}' cannot be resumed`,
+      );
+    }
+
+    if (job.workerId) {
+      const worker = await this.dataSource
+        .getRepository(WorkerInstance)
+        .findOne({ where: { id: job.workerId } });
+      const workerAlive =
+        worker &&
+        worker.lastSeenAt &&
+        new Date(worker.lastSeenAt).getTime() > Date.now() - WORKER_TIMEOUT;
+
+      if (workerAlive) {
+        await this.repo.update(job.id, { status: JobStatus.IN_PROGRESS });
+        return { message: 'Job resumed successfully' };
+      }
+    }
+
+    await this.repo
+      .createQueryBuilder()
+      .update()
+      .set({ status: JobStatus.PENDING, workerId: () => 'NULL' })
+      .where('id = :id', { id: job.id })
+      .execute();
+
+    return { message: 'Job requeued successfully' };
+  }
+
+  /**
+   * Control-plane poll answered to a worker every few seconds. Derives
+   * per-job directives statelessly from the current DB state of the jobs
+   * the worker reports as active, returns the worker's desired settings
+   * (concurrency, pause flag), and reconciles orphaned job claims.
+   */
+  public async getWorkerControl(
+    workerId: string,
+    activeJobIds: string[],
+  ): Promise<WorkerControlResponseDto> {
+    const worker = await this.dataSource
+      .getRepository(WorkerInstance)
+      .findOne({ where: { id: workerId } });
+
+    if (!worker) {
+      throw new NotFoundException('Worker not found');
+    }
+
+    const ids = (activeJobIds ?? []).filter((id) => !!id);
+    const directives: JobControlDirective[] = [];
+
+    if (ids.length > 0) {
+      const jobs = await this.repo.find({
+        where: { id: In(ids) },
+        select: { id: true, status: true },
+      });
+      const statusById = new Map(jobs.map((j) => [j.id, j.status]));
+
+      for (const id of ids) {
+        const status = statusById.get(id);
+        if (!status || status === JobStatus.CANCELLED) {
+          // Cancelled or deleted while running: kill it.
+          directives.push({ jobId: id, action: JobControlAction.STOP });
+        } else if (status === JobStatus.PAUSED) {
+          directives.push({ jobId: id, action: JobControlAction.PAUSE });
+        } else if (status === JobStatus.IN_PROGRESS) {
+          // Idempotent: only has an effect on a currently-paused process.
+          directives.push({ jobId: id, action: JobControlAction.RESUME });
+        }
+      }
+    }
+
+    // Reconcile orphaned claims: jobs the DB says this worker holds but the
+    // worker no longer reports (worker restarted mid-job, or a result was
+    // dropped). The pickJobAt cutoff protects jobs claimed between the
+    // worker building its active list and this request arriving.
+    const orphanCutoff = new Date(Date.now() - 2 * WORKER_TIMEOUT);
+
+    // IN_PROGRESS orphans are requeued for any worker to pick up.
+    const requeueQb = this.repo
+      .createQueryBuilder()
+      .update()
+      .set({ status: JobStatus.PENDING, workerId: () => 'NULL' })
+      .where('"workerId" = :workerId', { workerId })
+      .andWhere('status = :status', { status: JobStatus.IN_PROGRESS })
+      .andWhere('"pickJobAt" < :cutoff', { cutoff: orphanCutoff });
+    if (ids.length > 0) {
+      requeueQb.andWhere('id NOT IN (:...ids)', { ids });
+    }
+    await requeueQb.execute();
+
+    // PAUSED orphans stay paused (the pause was an operator decision) but
+    // the dead worker's claim is released so a later resume requeues them.
+    const releaseQb = this.repo
+      .createQueryBuilder()
+      .update()
+      .set({ workerId: () => 'NULL' })
+      .where('"workerId" = :workerId', { workerId })
+      .andWhere('status = :status', { status: JobStatus.PAUSED })
+      .andWhere('"pickJobAt" < :cutoff', { cutoff: orphanCutoff });
+    if (ids.length > 0) {
+      releaseQb.andWhere('id NOT IN (:...ids)', { ids });
+    }
+    await releaseQb.execute();
+
+    return {
+      directives,
+      maxConcurrency: worker.maxConcurrency ?? 0,
+      dispatchPaused: worker.isPaused === true,
+    };
   }
 
   public async deleteJob(

@@ -1,4 +1,5 @@
 import { ScanScheduleSelect } from '@/components/scan-schedule-select';
+import { ScanWindowSettings } from '@/components/scan-window-settings';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
@@ -70,18 +71,17 @@ const SettingTarget = ({
     },
   });
 
-  // Update target scan schedule
-  const { mutate: updateTargetScanSchedule } = useTargetsControllerUpdateTarget(
-    {
+  // Update target scan schedule / scan window
+  const { mutate: updateTargetScanSchedule, isPending: isUpdatingTarget } =
+    useTargetsControllerUpdateTarget({
       mutation: {
         onSuccess: () => {
           toast.success('Updated');
           refetch();
         },
-        onError: () => toast.error('Failed to update target scan schedule'),
+        onError: () => toast.error('Failed to update target scan settings'),
       },
-    },
-  );
+    });
 
   return (
     <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
@@ -131,6 +131,14 @@ const SettingTarget = ({
                   </div>
                 </div>
               </div>
+
+              <ScanWindowSettings
+                target={target}
+                isSaving={isUpdatingTarget}
+                onSave={(data) =>
+                  updateTargetScanSchedule({ id: target.id, data })
+                }
+              />
 
               <div className="space-y-0.5">
                 <div className="space-y-1">

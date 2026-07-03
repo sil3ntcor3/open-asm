@@ -14,6 +14,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -34,6 +35,7 @@ import { Workspace } from '../workspaces/entities/workspace.entity';
 import { AliveStreamManager } from './alive-stream-manager.service';
 import {
   GetManyWorkersDto,
+  UpdateWorkerSettingsDto,
   WorkerAliveDto,
   WorkerJoinDto,
 } from './dto/workers.dto';
@@ -151,10 +153,56 @@ export class WorkersService {
     await this.jobsRegistryService.repo
       .createQueryBuilder('jobs')
       .update()
-      .set({ status: JobStatus.PENDING, workerId: undefined })
+      .set({ status: JobStatus.PENDING, workerId: () => 'NULL' })
       .where('jobs."workerId" = :id', { id: workerId })
       .andWhere('jobs.status = :status', { status: JobStatus.IN_PROGRESS })
       .execute();
+
+    // Jobs paused mid-run stay paused (operator decision) but the dead
+    // worker's claim is released so a later resume requeues them instead of
+    // waiting for a worker that no longer exists.
+    await this.jobsRegistryService.repo
+      .createQueryBuilder('jobs')
+      .update()
+      .set({ workerId: () => 'NULL' })
+      .where('jobs."workerId" = :id', { id: workerId })
+      .andWhere('jobs.status = :status', { status: JobStatus.PAUSED })
+      .execute();
+  }
+
+  /**
+   * Updates runtime settings of a worker (desired concurrency, pause flag).
+   * The worker itself applies the change on its next control poll; the DB
+   * row is the durable source of truth so settings survive both core and
+   * worker restarts.
+   */
+  public async updateWorkerSettings(
+    id: string,
+    dto: UpdateWorkerSettingsDto,
+  ): Promise<WorkerInstance> {
+    const worker = await this.repo.findOne({ where: { id } });
+    if (!worker) {
+      throw new NotFoundException('Worker not found');
+    }
+
+    const update: Partial<WorkerInstance> = {};
+    if (dto.maxConcurrency !== undefined) {
+      update.maxConcurrency = dto.maxConcurrency;
+    }
+    if (dto.isPaused !== undefined) {
+      update.isPaused = dto.isPaused;
+    }
+
+    if (Object.keys(update).length > 0) {
+      await this.repo.update(id, update);
+      // getNextJob caches the worker row for 30s; drop it so a pause takes
+      // effect on the next dispatch attempt instead of after cache expiry.
+      await this.repo.manager.connection.queryResultCache?.remove([
+        `workers:${id}`,
+      ]);
+    }
+
+    return this.repo.findOneOrFail({ where: { id } });
   }
 
   /**

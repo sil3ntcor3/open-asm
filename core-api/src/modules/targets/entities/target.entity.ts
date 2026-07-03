@@ -102,6 +102,35 @@ export class Target extends BaseEntity {
   })
   scanSchedule: CronSchedule;
 
+  /**
+   * Execution window during which jobs for this target may be dispatched
+   * to workers (e.g. scan only 22:00–06:00 local time). Both start and end
+   * must be set for the window to apply; when null, jobs dispatch at any
+   * time. Windows crossing midnight (start > end) are supported. Jobs
+   * created outside the window stay PENDING until it opens; jobs already
+   * running when the window closes are allowed to finish.
+   */
+  @ApiProperty({ required: false, nullable: true, example: '22:00' })
+  @Column({ type: 'time', nullable: true })
+  scanWindowStart?: string | null;
+
+  @ApiProperty({ required: false, nullable: true, example: '06:00' })
+  @Column({ type: 'time', nullable: true })
+  scanWindowEnd?: string | null;
+
+  /** IANA timezone the window is evaluated in (defaults to UTC). */
+  @ApiProperty({ required: false, nullable: true, example: 'America/Chicago' })
+  @Column({ type: 'varchar', nullable: true })
+  scanWindowTimezone?: string | null;
+
+  /**
+   * ISO days of week (1 = Monday … 7 = Sunday) the window applies to.
+   * Null or empty means every day.
+   */
+  @ApiProperty({ required: false, nullable: true, type: [Number], example: [6, 7] })
+  @Column({ type: 'int', array: true, nullable: true })
+  scanWindowDays?: number[] | null;
+
   @Column({ nullable: true })
   jobId: string;
 

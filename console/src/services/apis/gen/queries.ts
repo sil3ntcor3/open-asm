@@ -45,6 +45,7 @@ export const JobStatus = {
   completed: 'completed',
   failed: 'failed',
   cancelled: 'cancelled',
+  paused: 'paused',
 } as const;
 
 export type CronSchedule = (typeof CronSchedule)[keyof typeof CronSchedule];
@@ -70,6 +71,10 @@ export type Target = {
   totalAssetServices: number;
   status: JobStatus;
   scanSchedule: CronSchedule;
+  scanWindowStart?: string | null;
+  scanWindowEnd?: string | null;
+  scanWindowTimezone?: string | null;
+  scanWindowDays?: number[] | null;
 };
 
 export type BulkTargetResultDto = {
@@ -166,7 +171,15 @@ export const UpdateTargetDtoScanSchedule = {
 } as const;
 
 export type UpdateTargetDto = {
-  scanSchedule: UpdateTargetDtoScanSchedule;
+  scanSchedule?: UpdateTargetDtoScanSchedule;
+  /** Start of the execution window (HH:MM) in scanWindowTimezone. */
+  scanWindowStart?: string | null;
+  /** End of the execution window (HH:MM) in scanWindowTimezone. */
+  scanWindowEnd?: string | null;
+  /** IANA timezone the window is evaluated in. */
+  scanWindowTimezone?: string | null;
+  /** ISO days of week (1 = Monday … 7 = Sunday); null/empty = every day. */
+  scanWindowDays?: number[] | null;
 };
 
 export type WorkspaceArchivedAt = { [key: string]: unknown };
@@ -968,7 +981,18 @@ export type WorkerInstance = {
   internalNetworkId: string;
   tools: Tool[];
   enabledAgentMode?: boolean;
+  /** Desired max concurrent jobs; null = worker's local default. */
+  maxConcurrency?: number | null;
+  /** When true the worker is handed no new jobs (running jobs unaffected). */
+  isPaused?: boolean;
   isOnline?: boolean;
+};
+
+export type UpdateWorkerSettingsDto = {
+  /** Desired number of concurrent jobs (1–100); null resets to local default. */
+  maxConcurrency?: number | null;
+  /** Pause/start the whole worker; running jobs are not affected. */
+  isPaused?: boolean;
 };
 
 export type WorkerMetadataDto = {
@@ -32072,3 +32096,277 @@ export function useStorageControllerForwardImage<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Pause a pending or in-progress job.
+ * @summary Pause a job
+ */
+export const jobsRegistryControllerPauseJob = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    { url: `/api/jobs-registry/${id}/pause`, method: 'POST', signal },
+    options,
+  );
+};
+
+export const getJobsRegistryControllerPauseJobMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof jobsRegistryControllerPauseJob>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof jobsRegistryControllerPauseJob>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ['jobsRegistryControllerPauseJob'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof jobsRegistryControllerPauseJob>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return jobsRegistryControllerPauseJob(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type JobsRegistryControllerPauseJobMutationResult = NonNullable<
+  Awaited<ReturnType<typeof jobsRegistryControllerPauseJob>>
+>;
+
+export type JobsRegistryControllerPauseJobMutationError = unknown;
+
+/**
+ * @summary Pause a job
+ */
+export const useJobsRegistryControllerPauseJob = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof jobsRegistryControllerPauseJob>>,
+      TError,
+      { id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof jobsRegistryControllerPauseJob>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getJobsRegistryControllerPauseJobMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Resume a paused job.
+ * @summary Resume a paused job
+ */
+export const jobsRegistryControllerResumeJob = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    { url: `/api/jobs-registry/${id}/resume`, method: 'POST', signal },
+    options,
+  );
+};
+
+export const getJobsRegistryControllerResumeJobMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof jobsRegistryControllerResumeJob>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof jobsRegistryControllerResumeJob>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ['jobsRegistryControllerResumeJob'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof jobsRegistryControllerResumeJob>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return jobsRegistryControllerResumeJob(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type JobsRegistryControllerResumeJobMutationResult = NonNullable<
+  Awaited<ReturnType<typeof jobsRegistryControllerResumeJob>>
+>;
+
+export type JobsRegistryControllerResumeJobMutationError = unknown;
+
+/**
+ * @summary Resume a paused job
+ */
+export const useJobsRegistryControllerResumeJob = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof jobsRegistryControllerResumeJob>>,
+      TError,
+      { id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof jobsRegistryControllerResumeJob>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getJobsRegistryControllerResumeJobMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Change a worker instance's desired max concurrency and/or pause state at runtime.
+ * @summary Update worker runtime settings
+ */
+export const workersControllerUpdateWorkerSettings = (
+  id: string,
+  updateWorkerSettingsDto: UpdateWorkerSettingsDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<WorkerInstance>(
+    {
+      url: `/api/workers/${id}/settings`,
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      data: updateWorkerSettingsDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getWorkersControllerUpdateWorkerSettingsMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof workersControllerUpdateWorkerSettings>>,
+    TError,
+    { id: string; data: UpdateWorkerSettingsDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof workersControllerUpdateWorkerSettings>>,
+  TError,
+  { id: string; data: UpdateWorkerSettingsDto },
+  TContext
+> => {
+  const mutationKey = ['workersControllerUpdateWorkerSettings'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof workersControllerUpdateWorkerSettings>>,
+    { id: string; data: UpdateWorkerSettingsDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return workersControllerUpdateWorkerSettings(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type WorkersControllerUpdateWorkerSettingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof workersControllerUpdateWorkerSettings>>
+>;
+
+export type WorkersControllerUpdateWorkerSettingsMutationBody =
+  UpdateWorkerSettingsDto;
+
+export type WorkersControllerUpdateWorkerSettingsMutationError = unknown;
+
+/**
+ * @summary Update worker runtime settings
+ */
+export const useWorkersControllerUpdateWorkerSettings = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof workersControllerUpdateWorkerSettings>>,
+      TError,
+      { id: string; data: UpdateWorkerSettingsDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof workersControllerUpdateWorkerSettings>>,
+  TError,
+  { id: string; data: UpdateWorkerSettingsDto },
+  TContext
+> => {
+  return useMutation(
+    getWorkersControllerUpdateWorkerSettingsMutationOptions(options),
+    queryClient,
+  );
+};

@@ -25,6 +25,55 @@ export interface Worker {
     id: string;
 }
 /**
+ * @generated from protobuf message jobs_registry.ControlRequest
+ */
+export interface ControlRequest {
+    /**
+     * @generated from protobuf field: string worker_id = 1
+     */
+    workerId: string;
+    /**
+     * Job IDs the worker is currently executing (including paused ones).
+     *
+     * @generated from protobuf field: repeated string active_job_ids = 2
+     */
+    activeJobIds: string[];
+}
+/**
+ * @generated from protobuf message jobs_registry.JobDirective
+ */
+export interface JobDirective {
+    /**
+     * @generated from protobuf field: string job_id = 1
+     */
+    jobId: string;
+    /**
+     * @generated from protobuf field: jobs_registry.JobControlAction action = 2
+     */
+    action: JobControlAction;
+}
+/**
+ * @generated from protobuf message jobs_registry.ControlResponse
+ */
+export interface ControlResponse {
+    /**
+     * @generated from protobuf field: repeated jobs_registry.JobDirective directives = 1
+     */
+    directives: JobDirective[];
+    /**
+     * Desired concurrent-job limit; 0 = keep the worker's local default.
+     *
+     * @generated from protobuf field: int32 max_concurrency = 2
+     */
+    maxConcurrency: number;
+    /**
+     * Worker-level pause: stop pulling new jobs (running jobs unaffected).
+     *
+     * @generated from protobuf field: bool dispatch_paused = 3
+     */
+    dispatchPaused: boolean;
+}
+/**
  * @generated from protobuf message jobs_registry.Job
  */
 export interface Job {
@@ -501,6 +550,33 @@ export interface AssetTag {
      */
     toolId: string;
 }
+/**
+ * @generated from protobuf enum jobs_registry.JobControlAction
+ */
+export enum JobControlAction {
+    /**
+     * @generated from protobuf enum value: JOB_CONTROL_NONE = 0;
+     */
+    JOB_CONTROL_NONE = 0,
+    /**
+     * Kill the running process; core has already marked the job cancelled.
+     *
+     * @generated from protobuf enum value: JOB_CONTROL_STOP = 1;
+     */
+    JOB_CONTROL_STOP = 1,
+    /**
+     * Suspend the scan process group (SIGSTOP); slot stays occupied.
+     *
+     * @generated from protobuf enum value: JOB_CONTROL_PAUSE = 2;
+     */
+    JOB_CONTROL_PAUSE = 2,
+    /**
+     * Continue a previously paused process (no-op when not paused).
+     *
+     * @generated from protobuf enum value: JOB_CONTROL_RESUME = 3;
+     */
+    JOB_CONTROL_RESUME = 3
+}
 // --- Enums ---
 
 /**
@@ -575,6 +651,179 @@ class Worker$Type extends MessageType<Worker> {
  * @generated MessageType for protobuf message jobs_registry.Worker
  */
 export const Worker = new Worker$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ControlRequest$Type extends MessageType<ControlRequest> {
+    constructor() {
+        super("jobs_registry.ControlRequest", [
+            { no: 1, name: "worker_id", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "active_job_ids", kind: "scalar", repeat: 2 /*RepeatType.UNPACKED*/, T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<ControlRequest>): ControlRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.workerId = "";
+        message.activeJobIds = [];
+        if (value !== undefined)
+            reflectionMergePartial<ControlRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ControlRequest): ControlRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string worker_id */ 1:
+                    message.workerId = reader.string();
+                    break;
+                case /* repeated string active_job_ids */ 2:
+                    message.activeJobIds.push(reader.string());
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ControlRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string worker_id = 1; */
+        if (message.workerId !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.workerId);
+        /* repeated string active_job_ids = 2; */
+        for (let i = 0; i < message.activeJobIds.length; i++)
+            writer.tag(2, WireType.LengthDelimited).string(message.activeJobIds[i]);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message jobs_registry.ControlRequest
+ */
+export const ControlRequest = new ControlRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class JobDirective$Type extends MessageType<JobDirective> {
+    constructor() {
+        super("jobs_registry.JobDirective", [
+            { no: 1, name: "job_id", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "action", kind: "enum", T: () => ["jobs_registry.JobControlAction", JobControlAction] }
+        ]);
+    }
+    create(value?: PartialMessage<JobDirective>): JobDirective {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.jobId = "";
+        message.action = 0;
+        if (value !== undefined)
+            reflectionMergePartial<JobDirective>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: JobDirective): JobDirective {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string job_id */ 1:
+                    message.jobId = reader.string();
+                    break;
+                case /* jobs_registry.JobControlAction action */ 2:
+                    message.action = reader.int32();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: JobDirective, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string job_id = 1; */
+        if (message.jobId !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.jobId);
+        /* jobs_registry.JobControlAction action = 2; */
+        if (message.action !== 0)
+            writer.tag(2, WireType.Varint).int32(message.action);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message jobs_registry.JobDirective
+ */
+export const JobDirective = new JobDirective$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ControlResponse$Type extends MessageType<ControlResponse> {
+    constructor() {
+        super("jobs_registry.ControlResponse", [
+            { no: 1, name: "directives", kind: "message", repeat: 2 /*RepeatType.UNPACKED*/, T: () => JobDirective },
+            { no: 2, name: "max_concurrency", kind: "scalar", T: 5 /*ScalarType.INT32*/ },
+            { no: 3, name: "dispatch_paused", kind: "scalar", T: 8 /*ScalarType.BOOL*/ }
+        ]);
+    }
+    create(value?: PartialMessage<ControlResponse>): ControlResponse {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.directives = [];
+        message.maxConcurrency = 0;
+        message.dispatchPaused = false;
+        if (value !== undefined)
+            reflectionMergePartial<ControlResponse>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ControlResponse): ControlResponse {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* repeated jobs_registry.JobDirective directives */ 1:
+                    message.directives.push(JobDirective.internalBinaryRead(reader, reader.uint32(), options));
+                    break;
+                case /* int32 max_concurrency */ 2:
+                    message.maxConcurrency = reader.int32();
+                    break;
+                case /* bool dispatch_paused */ 3:
+                    message.dispatchPaused = reader.bool();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ControlResponse, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* repeated jobs_registry.JobDirective directives = 1; */
+        for (let i = 0; i < message.directives.length; i++)
+            JobDirective.internalBinaryWrite(message.directives[i], writer.tag(1, WireType.LengthDelimited).fork(), options).join();
+        /* int32 max_concurrency = 2; */
+        if (message.maxConcurrency !== 0)
+            writer.tag(2, WireType.Varint).int32(message.maxConcurrency);
+        /* bool dispatch_paused = 3; */
+        if (message.dispatchPaused !== false)
+            writer.tag(3, WireType.Varint).bool(message.dispatchPaused);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message jobs_registry.ControlResponse
+ */
+export const ControlResponse = new ControlResponse$Type();
 // @generated message type with reflection information, may provide speed optimized methods
 class Job$Type extends MessageType<Job> {
     constructor() {
@@ -1883,5 +2132,6 @@ export const AssetTag = new AssetTag$Type();
  */
 export const JobsRegistryService = new ServiceType("jobs_registry.JobsRegistryService", [
     { name: "Next", options: {}, I: Worker, O: Job },
-    { name: "Result", options: {}, I: JobResultRequest, O: JobResponse }
+    { name: "Result", options: {}, I: JobResultRequest, O: JobResponse },
+    { name: "Control", options: {}, I: ControlRequest, O: ControlResponse }
 ]);

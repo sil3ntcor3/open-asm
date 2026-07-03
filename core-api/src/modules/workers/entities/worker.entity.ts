@@ -90,6 +90,25 @@ export class WorkerInstance extends BaseEntity {
   @Column({ nullable: true, default: false })
   enabledAgentMode: boolean;
 
+  /**
+   * Desired max concurrent jobs for this worker instance.
+   * Null means the worker uses its own local configuration
+   * (WORKER_MAX_CONCURRENCY). Delivered to the worker on its
+   * next control poll; shrinking takes effect as running jobs finish.
+   */
+  @ApiProperty({ required: false, nullable: true })
+  @Column({ type: 'int', nullable: true })
+  maxConcurrency?: number | null;
+
+  /**
+   * When true the worker stops being handed new jobs (getNextJob
+   * returns nothing and the worker suspends polling). Running jobs
+   * are not affected.
+   */
+  @ApiProperty({ required: false })
+  @Column({ default: false })
+  isPaused: boolean;
+
   @ApiProperty({ required: false })
   isOnline?: boolean;
 }
