@@ -34,7 +34,7 @@ vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
       logoUrl: '',
     },
     createdAt: '2026-01-01T00:00:00',
-    updatedAt: '2026-01-01T00:01:30',
+    updatedAt: '2026-01-01T00:01:45',
     pickJobAt: '2026-01-01T00:00:30',
     completedAt: null,
     errorLogs: [],
@@ -55,7 +55,7 @@ vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
         data: [
           {
             id: 'history-1',
-            status: actual.JobStatus.completed,
+            status: actual.JobStatus.in_progress,
             totalJobs: 1,
             workflowName: 'Example workflow',
             jobHistoryName: 'Example run',
@@ -121,7 +121,7 @@ describe('Job runs', () => {
     expect(screen.getByRole('menuitem', { name: /delete/i })).toBeVisible();
   });
 
-  it('shows column headers with started and ended timestamps', async () => {
+  it('shows headers and leaves ended values blank while a job is running', async () => {
     renderWithProviders(<Runs />);
 
     expect(
@@ -139,7 +139,8 @@ describe('Job runs', () => {
     ).toBeVisible();
 
     expect(screen.getByText('2026-01-01 00:00:30')).toBeVisible();
-    expect(screen.getByText('2026-01-01 00:01:30')).toBeVisible();
+    expect(screen.queryByText('2026-01-01 00:01:45')).not.toBeInTheDocument();
+    expect(screen.queryByText('1m 15s')).not.toBeInTheDocument();
   });
 
   it('closes the row action menu after choosing delete', async () => {
@@ -201,7 +202,7 @@ describe('Jobs registry', () => {
     mockNavigate.mockClear();
   });
 
-  it('shows column headers with started and ended timestamps', async () => {
+  it('shows headers and leaves ended values blank while a run is in progress', async () => {
     renderWithProviders(<JobsRegistryPage />);
 
     expect(
@@ -219,6 +220,6 @@ describe('Jobs registry', () => {
     expect(screen.getByRole('columnheader', { name: /run type/i })).toBeVisible();
 
     expect(screen.getByText('2026-01-01 00:00:00')).toBeVisible();
-    expect(screen.getByText('2026-01-01 00:02:00')).toBeVisible();
+    expect(screen.queryByText('2026-01-01 00:02:00')).not.toBeInTheDocument();
   });
 });

@@ -59,9 +59,16 @@ const formatTimestamp = (value?: string | Date | null) => {
 
 const getJobStartedAt = (job: Job) => job.pickJobAt || job.createdAt;
 
-const getJobEndedAt = (job: Job) => job.completedAt || job.updatedAt;
+const isJobCompleted = (job: Job) => job.status === JobStatus.completed;
+
+const getJobEndedAt = (job: Job) => {
+  if (!isJobCompleted(job)) return null;
+  return job.completedAt || job.updatedAt;
+};
 
 const getJobDuration = (job: Job) => {
+  if (!isJobCompleted(job)) return null;
+
   const startedAt = dayjs(getJobStartedAt(job));
   const endedAt = dayjs(getJobEndedAt(job));
 
@@ -359,11 +366,14 @@ export default function Runs() {
       accessorKey: 'completedAt',
       header: 'Ended At',
       cell: ({ row }) => {
+        const endedAt = getJobEndedAt(row.original);
+        if (!endedAt) return null;
+
         return (
           <div className="text-sm text-muted-foreground">
             <span className="flex gap-2 items-center">
               <Calendar size={20} />
-              {formatTimestamp(getJobEndedAt(row.original))}
+              {formatTimestamp(endedAt)}
             </span>
           </div>
         );
@@ -374,12 +384,13 @@ export default function Runs() {
       header: 'Duration',
       cell: ({ row }) => {
         const durationDisplay = getJobDuration(row.original);
+        if (!durationDisplay) return null;
 
         return (
           <div className="text-sm text-muted-foreground">
             <span className="flex gap-2 items-center">
               <Clock size={20} />
-              {durationDisplay || '-'}
+              {durationDisplay}
             </span>
           </div>
         );

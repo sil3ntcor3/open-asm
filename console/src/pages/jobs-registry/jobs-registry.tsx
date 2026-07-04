@@ -96,6 +96,8 @@ const JobsRegistryPage = () => {
       header: 'Ended At',
       cell: ({ row }) => {
         const job = row.original;
+        if (job.status !== JobStatus.completed) return null;
+
         return (
           <div className="flex flex-col text-muted-foreground text-xs gap-3">
             <span className="flex items-center gap-1">
