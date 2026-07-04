@@ -139,6 +139,29 @@ describe('TargetsService', () => {
       expect(sql).toContain('LATERAL');
     });
 
+    it('includes persisted scan window fields in the target detail projection', async () => {
+      (mockTargetRepository.query as jest.Mock).mockResolvedValue([
+        {
+          id: targetId,
+          scanWindowStart: '22:00:00',
+          scanWindowEnd: '06:00:00',
+          scanWindowTimezone: 'America/Chicago',
+          scanWindowDays: [1, 2, 3],
+        },
+      ]);
+
+      await service.getTargetById(targetId, workspaceId);
+
+      const [sql] = (mockTargetRepository.query as jest.Mock).mock
+        .calls[0] as [string, unknown[]];
+      expect(sql).toContain('t."scanWindowStart" AS "scanWindowStart"');
+      expect(sql).toContain('t."scanWindowEnd" AS "scanWindowEnd"');
+      expect(sql).toContain(
+        't."scanWindowTimezone" AS "scanWindowTimezone"',
+      );
+      expect(sql).toContain('t."scanWindowDays" AS "scanWindowDays"');
+    });
+
     it('returns undefined when the target is not in the workspace', async () => {
       (mockTargetRepository.query as jest.Mock).mockResolvedValue([]);
 

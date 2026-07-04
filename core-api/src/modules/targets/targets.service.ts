@@ -239,6 +239,10 @@ export class TargetsService implements OnModuleInit {
          t."lastDiscoveredAt" AS "lastDiscoveredAt",
          svc.cnt AS "totalAssetServices",
          t."scanSchedule" AS "scanSchedule",
+         t."scanWindowStart" AS "scanWindowStart",
+         t."scanWindowEnd" AS "scanWindowEnd",
+         t."scanWindowTimezone" AS "scanWindowTimezone",
+         t."scanWindowDays" AS "scanWindowDays",
          js.status AS status
        FROM targets t
        INNER JOIN workspace_targets wt ON wt."targetId" = t.id
