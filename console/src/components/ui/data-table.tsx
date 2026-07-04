@@ -142,6 +142,7 @@ export function DataTable<TData, TValue>({
 
   const [searchValue, setSearchValue] = React.useState(filterValue);
   const debouncedSearchValue = useDebounce(searchValue, 500);
+  const pageCount = Math.max(1, Math.ceil(totalItems / pageSize));
 
   React.useEffect(() => {
     onFilterChange?.(debouncedSearchValue);
@@ -156,7 +157,7 @@ export function DataTable<TData, TValue>({
       pagination: { pageIndex: page - 1, pageSize }, // 0-based index for react-table
       sorting: sortBy ? [{ id: sortBy, desc: sortOrder === 'DESC' }] : [],
     },
-    pageCount: Math.ceil(totalItems / pageSize),
+    pageCount,
     manualPagination: true,
     manualFiltering: true,
     manualSorting: true,
@@ -187,7 +188,6 @@ export function DataTable<TData, TValue>({
 
   // Generate pagination page numbers with ellipsis
   const getPaginationPages = () => {
-    const pageCount = Math.ceil(totalItems / pageSize);
     const pages = Array.from({ length: pageCount }, (_, i) => i + 1).filter(
       (p) => p === 1 || p === pageCount || Math.abs(p - page) <= 2,
     );
@@ -348,12 +348,13 @@ export function DataTable<TData, TValue>({
                   onClick={() => onRowClick?.(row.original)}
                 >
                   {showCheckBox && (
-                    <TableCell className="w-10 cursor-pointer" onClick={(e) => e.stopPropagation()}>
+                    <TableCell
+                      className="w-10 cursor-pointer"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <Checkbox
                         checked={row.getIsSelected()}
-                        onCheckedChange={(value) =>
-                          row.toggleSelected(!!value)
-                        }
+                        onCheckedChange={(value) => row.toggleSelected(!!value)}
                         aria-label="Select row"
                       />
                     </TableCell>
@@ -371,9 +372,7 @@ export function DataTable<TData, TValue>({
             ) : (
               <TableRow>
                 <TableCell
-                  colSpan={
-                    columns.length + (showCheckBox ? 1 : 0)
-                  }
+                  colSpan={columns.length + (showCheckBox ? 1 : 0)}
                   className="h-24 text-center text-muted-foreground"
                 >
                   {emptyMessage}
@@ -385,9 +384,7 @@ export function DataTable<TData, TValue>({
               [...Array(minRows - table.getRowModel().rows.length)].map(
                 (_, idx) => (
                   <TableRow key={`placeholder-${idx}`}>
-                    {showCheckBox && (
-                      <TableCell className="w-10" />
-                    )}
+                    {showCheckBox && <TableCell className="w-10" />}
                     {[...Array(table.getAllLeafColumns().length)].map(
                       (_, colIndex) => (
                         <TableCell key={`placeholder-cell-${colIndex}`}>
@@ -469,9 +466,7 @@ export function DataTable<TData, TValue>({
                     onPageChange?.(page + 1);
                   }}
                   className={
-                    page >= Math.ceil(totalItems / pageSize)
-                      ? 'pointer-events-none opacity-50'
-                      : ''
+                    page >= pageCount ? 'pointer-events-none opacity-50' : ''
                   }
                 />
               </PaginationItem>

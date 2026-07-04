@@ -2,12 +2,42 @@ import { renderWithProviders, screen } from '@/test/utils';
 import JobsRegistryPage from '@/pages/jobs-registry/jobs-registry';
 import Runs from '@/pages/jobs-registry/runs';
 import { act } from '@testing-library/react';
+import { within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockMutate = vi.fn();
 const mockNavigate = vi.fn();
+const { createMockJobHistoriesResponse, mockJobHistoriesResponse } = vi.hoisted(
+  () => {
+    const createMockJobHistoriesResponse = () => ({
+      data: [
+        {
+          id: 'history-1',
+          status: 'in_progress',
+          totalJobs: 1,
+          pauseEligibleJobs: 1,
+          resumeEligibleJobs: 1,
+          cancelEligibleJobs: 1,
+          workflowName: 'Example workflow',
+          jobHistoryName: 'Example run',
+          jobRunType: 'manual',
+          createdAt: '2026-01-01T00:00:00',
+          updatedAt: '2026-01-01T00:02:00',
+        },
+      ],
+      page: 1,
+      limit: 10,
+      total: 1,
+    });
+
+    return {
+      createMockJobHistoriesResponse,
+      mockJobHistoriesResponse: { current: createMockJobHistoriesResponse() },
+    };
+  },
+);
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual =
@@ -51,29 +81,11 @@ vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
       },
     }),
     useJobsRegistryControllerGetManyJobHistories: () => ({
-      data: {
-        data: [
-          {
-            id: 'history-1',
-            status: actual.JobStatus.in_progress,
-            totalJobs: 1,
-            pauseEligibleJobs: 1,
-            resumeEligibleJobs: 1,
-            cancelEligibleJobs: 1,
-            workflowName: 'Example workflow',
-            jobHistoryName: 'Example run',
-            jobRunType: 'manual',
-            createdAt: '2026-01-01T00:00:00',
-            updatedAt: '2026-01-01T00:02:00',
-          },
-        ],
-        page: 1,
-        limit: 10,
-        total: 1,
-      },
+      data: mockJobHistoriesResponse.current,
       isLoading: false,
       isError: false,
       error: null,
+      queryKey: ['JobsRegistryControllerGetManyJobHistories'],
     }),
     useJobsRegistryControllerGetManyJobs: () => ({
       data: {
@@ -208,6 +220,7 @@ describe('Jobs registry', () => {
   beforeEach(() => {
     mockMutate.mockClear();
     mockNavigate.mockClear();
+    mockJobHistoriesResponse.current = createMockJobHistoriesResponse();
   });
 
   it('shows headers and leaves ended values blank while a run is in progress', async () => {
@@ -281,5 +294,33 @@ describe('Jobs registry', () => {
       expect.objectContaining({ onSuccess: expect.any(Function) }),
     );
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('shows one pagination page when there are no jobs', async () => {
+    mockJobHistoriesResponse.current = {
+      data: [],
+      page: 1,
+      limit: 10,
+      total: 0,
+    };
+
+    renderWithProviders(<JobsRegistryPage />);
+
+    expect(await screen.findByText('No data')).toBeVisible();
+
+    const pagination = screen.getByRole('navigation', {
+      name: /pagination/i,
+    });
+
+    expect(within(pagination).getByRole('link', { name: '1' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(
+      within(pagination).queryByRole('link', { name: '10' }),
+    ).not.toBeInTheDocument();
+    expect(within(pagination).getByLabelText(/go to next page/i)).toHaveClass(
+      'pointer-events-none',
+    );
   });
 });

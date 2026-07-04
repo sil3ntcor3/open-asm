@@ -331,9 +331,9 @@ const JobsRegistryPage = () => {
         columns={columns}
         data={jobsData?.data || []}
         isLoading={isLoading}
-        page={jobsData?.page || 1}
-        pageSize={jobsData?.limit || 100}
-        totalItems={jobsData?.total || 100}
+        page={jobsData?.page ?? page}
+        pageSize={jobsData?.limit ?? pageSize}
+        totalItems={jobsData?.total ?? 0}
         onPageChange={setPage}
         onPageSizeChange={setPageSize}
         sortBy={sortBy}
