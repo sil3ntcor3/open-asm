@@ -199,6 +199,7 @@ services:
       - POSTGRES_USERNAME=${POSTGRES_USERNAME:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-open_asm}
+      - REDIS_URL=redis://:password@redis:6379/0
     logging:
       driver: json-file
       options:
@@ -207,6 +208,8 @@ services:
     restart: 'no'
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     command: >
       sh -c "node node_modules/typeorm/cli.js migration:run -d dist/database/database-config.js"

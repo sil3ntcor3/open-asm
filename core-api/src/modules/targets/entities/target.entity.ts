@@ -144,7 +144,7 @@ export class Target extends BaseEntity {
   @Column({ type: 'int', array: true, nullable: true })
   scanWindowDays?: number[] | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   jobId: string | null;
 
   @Column({ type: 'uuid', nullable: true })
