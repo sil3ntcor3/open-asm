@@ -530,7 +530,7 @@ export class TargetsService implements OnModuleInit {
     const busyIds = new Set(busyRows.map((r) => r.targetId));
 
     const skipped: { id: string; value: string; reason: string }[] = [];
-    let totalStarted = 0;
+    const idleTargets: Target[] = [];
 
     for (const target of targets) {
       if (busyIds.has(target.id)) {
@@ -539,21 +539,35 @@ export class TargetsService implements OnModuleInit {
           value: target.value,
           reason: 'already scanning',
         });
-        continue;
+      } else {
+        idleTargets.push(target);
       }
+    }
 
-      await this.repo.update(target.id, {
-        reScanCount: target.reScanCount + 1,
-        lastDiscoveredAt: new Date(),
-      });
+    if (idleTargets.length > 0) {
+      // Single batched UPDATE with an atomic SQL-side increment: a per-target
+      // read-modify-write loop would be N+1 queries and could lose increments
+      // under concurrent discover requests.
+      await this.repo
+        .createQueryBuilder()
+        .update(Target)
+        .set({
+          reScanCount: () => '"reScanCount" + 1',
+          lastDiscoveredAt: new Date(),
+        })
+        .where({ id: In(idleTargets.map((t) => t.id)) })
+        .execute();
 
-      const typeToEvent = target.type.toLocaleLowerCase();
-      this.eventEmitter.emit(`target.${typeToEvent}.re-scan`, target);
-      totalStarted++;
+      for (const target of idleTargets) {
+        this.eventEmitter.emit(
+          `target.${target.type.toLocaleLowerCase()}.re-scan`,
+          target,
+        );
+      }
     }
 
     return {
-      totalStarted,
+      totalStarted: idleTargets.length,
       totalSkipped: skipped.length,
       skipped,
     };

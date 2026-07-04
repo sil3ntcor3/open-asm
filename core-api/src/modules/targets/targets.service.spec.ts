@@ -5,6 +5,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import type { Queue } from 'bullmq';
 import { randomUUID } from 'crypto';
+import { In } from 'typeorm';
 import type { EntityManager, Repository } from 'typeorm';
 import { AssetsService } from '../assets/assets.service';
 import type { Asset } from '../assets/entities/assets.entity';
@@ -1001,13 +1002,30 @@ describe('TargetsService', () => {
         reScanCount: 0,
       }) as unknown as Target;
 
+    // Chainable query-builder mock for the single batched
+    // UPDATE ... SET "reScanCount" = "reScanCount" + 1 statement.
+    let mockUpdateQueryBuilder: {
+      update: jest.Mock;
+      set: jest.Mock;
+      where: jest.Mock;
+      execute: jest.Mock;
+    };
+
     beforeEach(() => {
       mockWorkspacesService.getWorkspaceByIdAndOwner = jest.fn();
       mockWorkspacesService.getWorkspaceConfigValue = jest
         .fn()
         .mockResolvedValue({ isAssetsDiscovery: true });
       mockEventEmitter.emit = jest.fn();
-      (mockTargetRepository.update as jest.Mock) = jest.fn();
+      mockUpdateQueryBuilder = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 0 }),
+      };
+      (mockTargetRepository.createQueryBuilder as jest.Mock) = jest
+        .fn()
+        .mockReturnValue(mockUpdateQueryBuilder);
       (mockTargetRepository.query as jest.Mock) = jest
         .fn()
         .mockResolvedValue([]);
@@ -1045,7 +1063,18 @@ describe('TargetsService', () => {
         'target.cidr.re-scan',
         cidrTarget,
       );
-      expect(mockTargetRepository.update).toHaveBeenCalledTimes(3);
+      // One batched atomic UPDATE for all started targets, not N per-row
+      // read-modify-write updates.
+      expect(mockUpdateQueryBuilder.execute).toHaveBeenCalledTimes(1);
+      expect(mockUpdateQueryBuilder.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reScanCount: expect.any(Function),
+          lastDiscoveredAt: expect.any(Date),
+        }),
+      );
+      expect(mockUpdateQueryBuilder.where).toHaveBeenCalledWith({
+        id: In([domainTarget.id, ipTarget.id, cidrTarget.id]),
+      });
     });
 
     it('should skip targets with pending or in-progress jobs', async () => {
@@ -1074,6 +1103,10 @@ describe('TargetsService', () => {
         'target.domain.re-scan',
         idleTarget,
       );
+      expect(mockUpdateQueryBuilder.execute).toHaveBeenCalledTimes(1);
+      expect(mockUpdateQueryBuilder.where).toHaveBeenCalledWith({
+        id: In([idleTarget.id]),
+      });
     });
 
     it('should throw NotFoundException for targets outside the workspace', async () => {
