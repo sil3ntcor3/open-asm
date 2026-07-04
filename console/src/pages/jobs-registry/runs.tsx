@@ -138,7 +138,7 @@ function JobActionsMenu({
           if (!open) setConfirmAction(null);
         }}
       >
-        <DialogContent>
+        <DialogContent onClick={(e) => e.stopPropagation()}>
           <DialogHeader>
             <DialogTitle>
               {isDeleteConfirm ? 'Delete Job' : 'Cancel Job'}

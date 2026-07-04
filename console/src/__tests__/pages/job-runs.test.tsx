@@ -6,11 +6,13 @@ import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockMutate = vi.fn();
+const mockNavigate = vi.fn();
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>();
   return {
     ...actual,
+    useNavigate: () => mockNavigate,
     useParams: () => ({ id: 'history-1' }),
   };
 });
@@ -68,6 +70,7 @@ vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
 describe('Job runs', () => {
   beforeEach(() => {
     mockMutate.mockClear();
+    mockNavigate.mockClear();
   });
 
   it('keeps row action menu open when the jobs table rerenders', async () => {
@@ -128,5 +131,23 @@ describe('Job runs', () => {
     expect(
       screen.queryByRole('menuitem', { name: /pause/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it('does not navigate to assets after confirming delete', async () => {
+    const user = userEvent.setup();
+
+    renderWithProviders(<Runs />);
+
+    await user.click(
+      await screen.findByRole('button', { name: /open menu/i }),
+    );
+    await user.click(screen.getByRole('menuitem', { name: /delete/i }));
+    await user.click(screen.getByRole('button', { name: /confirm/i }));
+
+    expect(mockMutate).toHaveBeenCalledWith(
+      { id: 'job-1' },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });
