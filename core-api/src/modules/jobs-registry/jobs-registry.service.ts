@@ -495,7 +495,7 @@ export class JobsRegistryService {
         // without a window are always dispatchable. Windows crossing
         // midnight (start > end, e.g. 22:00–06:00) are handled by the ELSE
         // branch. Jobs stay PENDING outside the window; already-running jobs
-        // are paused/resumed from getWorkerControl.
+        // are paused from getWorkerControl.
         .andWhere(
           `(
             target."scanWindowStart" IS NULL
@@ -1218,9 +1218,7 @@ export class JobsRegistryService {
   /**
    * Pauses a job. A PENDING job is simply excluded from dispatch; an
    * IN_PROGRESS job additionally gets a PAUSE directive delivered to its
-   * worker on the next control poll (SIGSTOP of the scan process group —
-   * the job keeps holding its concurrency slot so capacity is not
-   * oversubscribed when it resumes).
+   * worker on the next control poll so the active scan process is stopped.
    */
   public async pauseJob(
     workspaceId: string,
@@ -1245,10 +1243,8 @@ export class JobsRegistryService {
   /**
    * Resumes a paused job.
    * - Paused while PENDING (no worker claim): back to PENDING.
-   * - Paused while IN_PROGRESS and the worker is still alive: back to
-   *   IN_PROGRESS; the worker SIGCONTs the process on its next control poll.
-   * - Paused while IN_PROGRESS but the worker has since died: requeued as
-   *   PENDING so another worker picks it up from scratch.
+   * - Paused while IN_PROGRESS: requeued as PENDING. The previous process was
+   *   interrupted when the pause was applied.
    */
   public async resumeJob(
     workspaceId: string,
@@ -1260,21 +1256,6 @@ export class JobsRegistryService {
       throw new BadRequestException(
         `Job in status '${job.status}' cannot be resumed`,
       );
-    }
-
-    if (job.workerId) {
-      const worker = await this.dataSource
-        .getRepository(WorkerInstance)
-        .findOne({ where: { id: job.workerId } });
-      const workerAlive =
-        worker &&
-        worker.lastSeenAt &&
-        new Date(worker.lastSeenAt).getTime() > Date.now() - WORKER_TIMEOUT;
-
-      if (workerAlive) {
-        await this.repo.update(job.id, { status: JobStatus.IN_PROGRESS });
-        return { message: 'Job resumed successfully' };
-      }
     }
 
     await this.repo
@@ -1339,10 +1320,12 @@ export class JobsRegistryService {
           directives.push({ jobId: id, action: JobControlAction.PAUSE });
         } else if (status === JobStatus.IN_PROGRESS) {
           if (!this.isTargetScanWindowOpen(job.asset?.target)) {
+            await this.repo.update(id, { status: JobStatus.PAUSED });
             directives.push({ jobId: id, action: JobControlAction.PAUSE });
             continue;
           }
-          // Idempotent: only has an effect on a currently-paused process.
+          // Idempotent: only has an effect on workers that still have a
+          // resumable local process from an older worker version.
           directives.push({ jobId: id, action: JobControlAction.RESUME });
         }
       }

@@ -221,7 +221,7 @@ export class JobsRegistryController {
   @Doc({
     summary: 'Pause a job',
     description:
-      'Pause a pending or in-progress job. Pending jobs are excluded from dispatch; in-progress jobs are suspended on the worker (SIGSTOP) until resumed.',
+      'Pause a pending or in-progress job. Pending jobs are excluded from dispatch; in-progress jobs are stopped on the worker and can be resumed later.',
     response: {
       serialization: DefaultMessageResponseDto,
     },

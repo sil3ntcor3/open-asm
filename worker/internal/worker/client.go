@@ -148,8 +148,7 @@ func Start(ctx context.Context, cfg *config.Config) {
 	}
 
 	// Bound to the signal ctx (not workerCtx): once shutdown starts, no more
-	// directives may be applied — a PAUSE landing during the drain would
-	// SIGSTOP a job after stopPaused() ran and hang wg.Wait() forever.
+	// directives may be applied while the worker drains active jobs.
 	go runControlLoop(ctx, client, semaphore, &dispatchPaused, cfg.MaxConcurrency, currentSession)
 
 	go func() {
@@ -236,11 +235,10 @@ func Start(ctx context.Context, cfg *config.Config) {
 	scheduler.Stop()
 	shutLog.Info("Scheduler stopped. Waiting for running jobs to finish...")
 
-	// A SIGSTOPped (paused) job never exits on its own and would block the
-	// drain below forever. Kill paused jobs; they report an abort error so
-	// Core requeues them instead of recording partial output.
+	// Paused jobs should already be interrupting, but repeat the stop request
+	// during shutdown so the drain cannot wait on a stale handle.
 	if stopped := activeJobs.stopPaused(); stopped > 0 {
-		shutLog.Warning("Killed %d paused job(s); they will be requeued by Core", stopped)
+		shutLog.Warning("Stopped %d paused job(s); they will be requeued by Core", stopped)
 	}
 
 	wg.Wait()

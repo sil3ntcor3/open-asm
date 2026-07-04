@@ -201,9 +201,9 @@ export enum JobControlAction {
   NONE = 0,
   /** Kill the running process; core has already marked the job cancelled. */
   STOP = 1,
-  /** SIGSTOP the scan process group; the job keeps its concurrency slot. */
+  /** Stop the running process and leave the job in paused state. */
   PAUSE = 2,
-  /** SIGCONT a previously paused process (no-op when not paused). */
+  /** Continue a previously paused process when a worker still has one. */
   RESUME = 3,
 }
 

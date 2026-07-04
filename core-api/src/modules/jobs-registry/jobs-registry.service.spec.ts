@@ -326,6 +326,45 @@ describe('JobsRegistryService', () => {
     });
   });
 
+  describe('resumeJob', () => {
+    const mockWorkspaceId = 'workspace-uuid';
+    const mockJobId = 'job-uuid';
+
+    it('requeues a paused in-progress job instead of resuming a local process', async () => {
+      const verifyQb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue({
+          id: mockJobId,
+          status: JobStatus.PAUSED,
+          workerId: 'worker-uuid',
+        }),
+      };
+      const updateQb = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 1 }),
+      };
+
+      mockJobRepository.createQueryBuilder
+        .mockReturnValueOnce(verifyQb)
+        .mockReturnValueOnce(updateQb);
+
+      const result = await service.resumeJob(mockWorkspaceId, mockJobId);
+
+      expect(updateQb.set).toHaveBeenCalledWith({
+        status: JobStatus.PENDING,
+        workerId: expect.any(Function),
+      });
+      expect(updateQb.where).toHaveBeenCalledWith('id = :id', {
+        id: mockJobId,
+      });
+      expect(result).toEqual({ message: 'Job requeued successfully' });
+    });
+  });
+
   describe('deleteJob', () => {
     const mockWorkspaceId = 'workspace-uuid';
     const mockJobId = 'job-uuid';
@@ -646,6 +685,9 @@ describe('JobsRegistryService', () => {
       expect(result.directives).toEqual([
         { jobId, action: JobControlAction.PAUSE },
       ]);
+      expect(mockJobRepository.update).toHaveBeenCalledWith(jobId, {
+        status: JobStatus.PAUSED,
+      });
     });
 
     it('resumes an active in-progress job while its target scan window is open', async () => {

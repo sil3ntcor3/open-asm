@@ -93,8 +93,8 @@ func processJob(ctx context.Context, client *oasm.Client, browser *rod.Browser, 
 		if startErr := cmd.Start(); startErr != nil {
 			err = startErr
 		} else {
-			// Expose the process group to the control loop so PAUSE/RESUME
-			// directives can SIGSTOP/SIGCONT it.
+			// Expose the process group to the control loop for diagnostics and
+			// platform-specific cancellation helpers.
 			handle.setPid(cmd.Process.Pid)
 			err = cmd.Wait()
 		}

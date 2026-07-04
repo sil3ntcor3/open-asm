@@ -12,9 +12,9 @@ import (
 
 const controlPollInterval = 3 * time.Second
 
-// jobHandle is the worker-side control surface of one running job. STOP
-// cancels the job context (which kills the process group), PAUSE/RESUME
-// SIGSTOP/SIGCONT the process group (unix only).
+// jobHandle is the worker-side control surface of one running job. STOP and
+// PAUSE both cancel the job context, which interrupts the process group. Core
+// owns the durable job status; a paused job can be requeued later.
 type jobHandle struct {
 	id     string
 	cancel context.CancelFunc
@@ -30,43 +30,31 @@ func (h *jobHandle) setPid(pid int) {
 	h.mu.Unlock()
 }
 
-// stop kills the job. A paused (SIGSTOPped) group still dies from the
-// SIGKILL sent by the command's Cancel hook, so no resume is needed first.
+// stop interrupts the job command and lets the command cancellation fallback
+// hard-kill the process group if it ignores the interrupt.
 func (h *jobHandle) stop() {
 	h.cancel()
 }
 
-// pause suspends the job's process group. Returns (changed, err); jobs
-// without a controllable process (not started yet, screenshots) or on
-// unsupported platforms report an error.
+// pause interrupts the job command. This stops external scan tools at the scan
+// window boundary instead of freezing them past the allowed run window.
 func (h *jobHandle) pause() (bool, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.paused {
 		return false, nil
 	}
-	if h.pid == 0 {
-		return false, errNoControllableProcess
-	}
-	if err := pauseProcessGroup(h.pid); err != nil {
-		return false, err
-	}
 	h.paused = true
+	h.cancel()
 	return true, nil
 }
 
-// resume continues a previously paused process group. No-op when not paused.
+// resume is retained for compatibility with repeated control directives. A
+// PAUSE now interrupts the command, so there is no local process to continue.
 func (h *jobHandle) resume() (bool, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if !h.paused {
-		return false, nil
-	}
-	if err := resumeProcessGroup(h.pid); err != nil {
-		return false, err
-	}
-	h.paused = false
-	return true, nil
+	return false, nil
 }
 
 func (h *jobHandle) isPaused() bool {
@@ -119,9 +107,7 @@ func (r *jobRegistry) activeIDs() []string {
 	return ids
 }
 
-// stopPaused kills every currently paused job. Used during shutdown: a
-// SIGSTOPped process never exits on its own, so leaving it paused would
-// block the drain of running jobs forever.
+// stopPaused interrupts every currently paused job during shutdown.
 func (r *jobRegistry) stopPaused() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -217,7 +203,7 @@ func applyDirective(log *oasm.LoggerType, d *jobs_registry.JobDirective) {
 		if changed, err := h.pause(); err != nil {
 			log.Warning("[%s] Pause not applied: %v", h.id, err)
 		} else if changed {
-			log.Info("[%s] Job paused (process group suspended)", h.id)
+			log.Info("[%s] Job paused (process interrupted)", h.id)
 		}
 	case jobs_registry.JobControlAction_JOB_CONTROL_RESUME:
 		if changed, err := h.resume(); err != nil {
