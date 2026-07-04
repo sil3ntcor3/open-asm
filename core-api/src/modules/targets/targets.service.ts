@@ -2,7 +2,12 @@ import {
   GetManyBaseResponseDto,
   SortOrder,
 } from '@/common/dtos/get-many-base.dto';
-import { BullMQName, CronSchedule, JobStatus, TargetScopeType } from '@/common/enums/enum';
+import {
+  BullMQName,
+  CronSchedule,
+  JobStatus,
+  TargetScopeType,
+} from '@/common/enums/enum';
 import { UserContextPayload } from '@/common/interfaces/app.interface';
 import { getManyResponse } from '@/utils/getManyResponse';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -14,7 +19,7 @@ import {
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Job, Queue } from 'bullmq';
+import type { Job, Queue, RepeatOptions } from 'bullmq';
 import { randomUUID } from 'crypto';
 import { In, Repository } from 'typeorm';
 import { AssetsService } from '../assets/assets.service';
@@ -588,7 +593,8 @@ export class TargetsService implements OnModuleInit {
       Target & { totalAssetServices: number; status: string; duration: number }
     >
   > {
-    const { limit, page, sortBy, sortOrder, value, type, status, scope } = query;
+    const { limit, page, sortBy, sortOrder, value, type, status, scope } =
+      query;
 
     const offset = (page - 1) * limit;
 
@@ -666,7 +672,13 @@ export class TargetsService implements OnModuleInit {
 
     const listParams = [...params, limit, offset];
     const targets = await this.repo.query<
-      Array<Target & { totalAssetServices: number; status: string; duration: number }>
+      Array<
+        Target & {
+          totalAssetServices: number;
+          status: string;
+          duration: number;
+        }
+      >
     >(
       `SELECT
          t.id AS id,
@@ -753,15 +765,29 @@ export class TargetsService implements OnModuleInit {
       throw new NotFoundException('Target not found');
     }
 
-    let jobId: string | undefined;
-    // If scanSchedule was updated, also update the job in BullMQ
-    if (dto.scanSchedule !== undefined) {
+    let jobId: string | null | undefined;
+    const nextTarget = { ...target, ...dto } as Target;
+    const scanSchedule = dto.scanSchedule ?? target.scanSchedule;
+    const scanWindowChanged =
+      dto.scanWindowStart !== undefined ||
+      dto.scanWindowEnd !== undefined ||
+      dto.scanWindowTimezone !== undefined ||
+      dto.scanWindowDays !== undefined;
+    const shouldUpdateScheduleJob =
+      dto.scanSchedule !== undefined ||
+      (scanWindowChanged &&
+        scanSchedule !== undefined &&
+        scanSchedule !== CronSchedule.DISABLED);
+
+    if (shouldUpdateScheduleJob) {
       const job = await this.updateTargetScanScheduleJob(
-        target,
-        dto.scanSchedule,
+        nextTarget,
+        scanSchedule,
       );
       if (job) {
         jobId = job.repeatJobKey;
+      } else if (scanSchedule === CronSchedule.DISABLED) {
+        jobId = null;
       }
     }
 
@@ -800,15 +826,46 @@ export class TargetsService implements OnModuleInit {
         target.id, // Job name is the target ID
         { id: target.id } as Target,
         {
-          repeat: {
-            pattern: scanSchedule,
-          },
+          repeat: this.buildTargetRepeatOptions(target, scanSchedule),
         },
       );
 
       return job;
     }
     return null;
+  }
+
+  private buildTargetRepeatOptions(
+    target: Target,
+    scanSchedule: CronSchedule,
+  ): RepeatOptions {
+    const repeat: RepeatOptions = {
+      pattern: this.buildTargetSchedulePattern(target, scanSchedule),
+    };
+
+    if (target.scanWindowStart && target.scanWindowTimezone) {
+      repeat.tz = target.scanWindowTimezone;
+    }
+
+    if (target.reScanCount === 0) {
+      repeat.immediately = true;
+    }
+
+    return repeat;
+  }
+
+  private buildTargetSchedulePattern(
+    target: Target,
+    scanSchedule: CronSchedule,
+  ): string {
+    if (!target.scanWindowStart) {
+      return scanSchedule;
+    }
+
+    const [hour, minute] = target.scanWindowStart.split(':');
+    const [, , dayOfMonth, month, dayOfWeek] = scanSchedule.split(' ');
+
+    return `${Number(minute)} ${Number(hour)} ${dayOfMonth} ${month} ${dayOfWeek}`;
   }
 
   /**
