@@ -972,6 +972,9 @@ export class JobsRegistryService {
       createdAt: Date;
       updatedAt: Date;
       totalJobs: string; // COUNT returns string in some databases
+      pauseEligibleJobs: string;
+      resumeEligibleJobs: string;
+      cancelEligibleJobs: string;
       status: JobStatus;
       workflowName: string;
       jobHistoryName: string;
@@ -997,13 +1000,30 @@ export class JobsRegistryService {
         '"jobHistory"."jobRunType" as "jobRunType"',
         // Subquery to count total jobs for this job history
         '(SELECT COUNT(*) FROM jobs WHERE "jobHistoryId" = "jobHistory".id) as "totalJobs"',
+        `(
+          SELECT COUNT(*) FROM jobs
+          WHERE "jobHistoryId" = "jobHistory".id
+          AND status IN ('${JobStatus.PENDING}', '${JobStatus.IN_PROGRESS}')
+        ) as "pauseEligibleJobs"`,
+        `(
+          SELECT COUNT(*) FROM jobs
+          WHERE "jobHistoryId" = "jobHistory".id
+          AND status = '${JobStatus.PAUSED}'
+        ) as "resumeEligibleJobs"`,
+        `(
+          SELECT COUNT(*) FROM jobs
+          WHERE "jobHistoryId" = "jobHistory".id
+          AND status IN ('${JobStatus.PENDING}', '${JobStatus.IN_PROGRESS}', '${JobStatus.PAUSED}')
+        ) as "cancelEligibleJobs"`,
         // Subquery with CASE to calculate status based on job statuses
         `(
           SELECT 
             CASE 
               WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.FAILED}') > 0 THEN '${JobStatus.FAILED}'
               WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.IN_PROGRESS}') > 0 THEN '${JobStatus.IN_PROGRESS}'
+              WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.PAUSED}') > 0 THEN '${JobStatus.PAUSED}'
               WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.COMPLETED}') = COUNT(*) AND COUNT(*) > 0 THEN '${JobStatus.COMPLETED}'
+              WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.CANCELLED}') = COUNT(*) AND COUNT(*) > 0 THEN '${JobStatus.CANCELLED}'
               ELSE '${JobStatus.PENDING}'
             END
           FROM jobs 
@@ -1033,6 +1053,9 @@ export class JobsRegistryService {
       createdAt: raw.createdAt,
       updatedAt: raw.updatedAt,
       totalJobs: parseInt(raw.totalJobs),
+      pauseEligibleJobs: parseInt(raw.pauseEligibleJobs),
+      resumeEligibleJobs: parseInt(raw.resumeEligibleJobs),
+      cancelEligibleJobs: parseInt(raw.cancelEligibleJobs),
       status: raw.status,
       workflowName: raw.workflowName,
       jobHistoryName: raw.jobHistoryName,
@@ -1144,6 +1167,110 @@ export class JobsRegistryService {
       // For other errors (like database errors), re-throw them as-is
       throw error;
     }
+  }
+
+  /**
+   * Verifies that a job history has jobs in the specified workspace.
+   * Batch operations intentionally target only the jobs table under the
+   * history; scan outputs and asset data are left untouched.
+   */
+  private async verifyJobHistoryBelongsToWorkspace(
+    jobHistoryId: string,
+    workspaceId: string,
+  ): Promise<void> {
+    const belongsToWorkspace = await this.jobHistoryRepo
+      .createQueryBuilder('jobHistory')
+      .innerJoin('jobHistory.jobs', 'job')
+      .innerJoin('job.asset', 'asset')
+      .innerJoin('asset.target', 'target')
+      .innerJoin('target.workspaceTargets', 'workspaceTarget')
+      .innerJoin('workspaceTarget.workspace', 'workspace')
+      .where('jobHistory.id = :jobHistoryId', { jobHistoryId })
+      .andWhere('workspace.id = :workspaceId', { workspaceId })
+      .getExists();
+
+    if (!belongsToWorkspace) {
+      throw new NotFoundException('Job history not found in workspace');
+    }
+  }
+
+  public async pauseJobHistoryJobs(
+    workspaceId: string,
+    jobHistoryId: string,
+  ): Promise<DefaultMessageResponseDto> {
+    await this.verifyJobHistoryBelongsToWorkspace(jobHistoryId, workspaceId);
+
+    const result = await this.repo
+      .createQueryBuilder()
+      .update(Job)
+      .set({ status: JobStatus.PAUSED })
+      .where('"jobHistoryId" = :jobHistoryId', { jobHistoryId })
+      .andWhere('status IN (:...statuses)', {
+        statuses: [JobStatus.PENDING, JobStatus.IN_PROGRESS],
+      })
+      .execute();
+
+    return {
+      message: `${result.affected ?? 0} job(s) paused successfully`,
+    };
+  }
+
+  public async resumeJobHistoryJobs(
+    workspaceId: string,
+    jobHistoryId: string,
+  ): Promise<DefaultMessageResponseDto> {
+    await this.verifyJobHistoryBelongsToWorkspace(jobHistoryId, workspaceId);
+
+    const result = await this.repo
+      .createQueryBuilder()
+      .update(Job)
+      .set({ status: JobStatus.PENDING, workerId: () => 'NULL' })
+      .where('"jobHistoryId" = :jobHistoryId', { jobHistoryId })
+      .andWhere('status = :status', { status: JobStatus.PAUSED })
+      .execute();
+
+    return {
+      message: `${result.affected ?? 0} job(s) resumed successfully`,
+    };
+  }
+
+  public async cancelJobHistoryJobs(
+    workspaceId: string,
+    jobHistoryId: string,
+  ): Promise<DefaultMessageResponseDto> {
+    await this.verifyJobHistoryBelongsToWorkspace(jobHistoryId, workspaceId);
+
+    const result = await this.repo
+      .createQueryBuilder()
+      .update(Job)
+      .set({ status: JobStatus.CANCELLED })
+      .where('"jobHistoryId" = :jobHistoryId', { jobHistoryId })
+      .andWhere('status IN (:...statuses)', {
+        statuses: [JobStatus.PENDING, JobStatus.IN_PROGRESS, JobStatus.PAUSED],
+      })
+      .execute();
+
+    return {
+      message: `${result.affected ?? 0} job(s) cancelled successfully`,
+    };
+  }
+
+  public async deleteJobHistoryJobs(
+    workspaceId: string,
+    jobHistoryId: string,
+  ): Promise<DefaultMessageResponseDto> {
+    await this.verifyJobHistoryBelongsToWorkspace(jobHistoryId, workspaceId);
+
+    const result = await this.repo
+      .createQueryBuilder()
+      .delete()
+      .from(Job)
+      .where('"jobHistoryId" = :jobHistoryId', { jobHistoryId })
+      .execute();
+
+    return {
+      message: `${result.affected ?? 0} job(s) deleted successfully`,
+    };
   }
 
   public async reRunJob(

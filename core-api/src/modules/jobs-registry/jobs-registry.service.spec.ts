@@ -73,6 +73,34 @@ describe('JobsRegistryService', () => {
   };
 
   beforeEach(async () => {
+    mockJobRepository.createQueryBuilder.mockReset().mockReturnThis();
+    mockJobRepository.innerJoin.mockReset().mockReturnThis();
+    mockJobRepository.where.mockReset().mockReturnThis();
+    mockJobRepository.andWhere.mockReset().mockReturnThis();
+    mockJobRepository.getOne.mockReset();
+    mockJobRepository.findOne.mockReset();
+    mockJobRepository.save.mockReset();
+    mockJobRepository.count.mockReset();
+    mockJobRepository.exists.mockReset();
+    mockJobRepository.find.mockReset();
+    mockJobRepository.update.mockReset();
+    mockJobHistoryRepository.createQueryBuilder.mockReset();
+    mockJobHistoryRepository.findOne.mockReset();
+    mockJobHistoryRepository.update.mockReset();
+    mockJobErrorLogRepository.createQueryBuilder.mockReset();
+    mockDataSource.createQueryRunner.mockReset();
+    mockDataSource.getRepository.mockReset();
+    mockDataAdapterService.syncData.mockReset();
+    mockStorageService.upload.mockReset();
+    mockRedisService.publish.mockReset();
+    mockRedisService.client.incr.mockReset();
+    mockRedisService.client.decr.mockReset();
+    mockRedisService.client.del.mockReset();
+    mockRedisService.client.get.mockReset();
+    mockRedisService.client.set.mockReset();
+    mockToolsService.getInstalledTools.mockReset();
+    mockToolsService.getToolByNames.mockReset();
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         {
@@ -123,6 +151,17 @@ describe('JobsRegistryService', () => {
     // Manually set optional toolsService since @Optional() dependencies may not be injected in tests
     (service as any).toolsService = mockToolsService;
   });
+
+  const mockHistoryWorkspaceCheck = (exists = true) => {
+    const qb = {
+      innerJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getExists: jest.fn().mockResolvedValue(exists),
+    };
+    mockJobHistoryRepository.createQueryBuilder.mockReturnValue(qb);
+    return qb;
+  };
 
   describe('reRunJob', () => {
     const mockWorkspaceId = 'workspace-uuid';
@@ -362,6 +401,141 @@ describe('JobsRegistryService', () => {
         id: mockJobId,
       });
       expect(result).toEqual({ message: 'Job requeued successfully' });
+    });
+  });
+
+  describe('job history batch actions', () => {
+    const mockWorkspaceId = 'workspace-uuid';
+    const mockHistoryId = 'history-uuid';
+
+    it('pauses only pending and in-progress jobs in a job history', async () => {
+      mockHistoryWorkspaceCheck();
+      const updateQb = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 2 }),
+      };
+      mockJobRepository.createQueryBuilder.mockReturnValue(updateQb);
+
+      const result = await service.pauseJobHistoryJobs(
+        mockWorkspaceId,
+        mockHistoryId,
+      );
+
+      expect(updateQb.set).toHaveBeenCalledWith({
+        status: JobStatus.PAUSED,
+      });
+      expect(updateQb.where).toHaveBeenCalledWith(
+        '"jobHistoryId" = :jobHistoryId',
+        { jobHistoryId: mockHistoryId },
+      );
+      expect(updateQb.andWhere).toHaveBeenCalledWith(
+        'status IN (:...statuses)',
+        {
+          statuses: [JobStatus.PENDING, JobStatus.IN_PROGRESS],
+        },
+      );
+      expect(result).toEqual({ message: '2 job(s) paused successfully' });
+    });
+
+    it('resumes only paused jobs in a job history and clears worker claims', async () => {
+      mockHistoryWorkspaceCheck();
+      const updateQb = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 1 }),
+      };
+      mockJobRepository.createQueryBuilder.mockReturnValue(updateQb);
+
+      const result = await service.resumeJobHistoryJobs(
+        mockWorkspaceId,
+        mockHistoryId,
+      );
+
+      expect(updateQb.set).toHaveBeenCalledWith({
+        status: JobStatus.PENDING,
+        workerId: expect.any(Function),
+      });
+      expect(updateQb.where).toHaveBeenCalledWith(
+        '"jobHistoryId" = :jobHistoryId',
+        { jobHistoryId: mockHistoryId },
+      );
+      expect(updateQb.andWhere).toHaveBeenCalledWith('status = :status', {
+        status: JobStatus.PAUSED,
+      });
+      expect(result).toEqual({ message: '1 job(s) resumed successfully' });
+    });
+
+    it('cancels only pending, in-progress, and paused jobs in a job history', async () => {
+      mockHistoryWorkspaceCheck();
+      const updateQb = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 3 }),
+      };
+      mockJobRepository.createQueryBuilder.mockReturnValue(updateQb);
+
+      const result = await service.cancelJobHistoryJobs(
+        mockWorkspaceId,
+        mockHistoryId,
+      );
+
+      expect(updateQb.set).toHaveBeenCalledWith({
+        status: JobStatus.CANCELLED,
+      });
+      expect(updateQb.where).toHaveBeenCalledWith(
+        '"jobHistoryId" = :jobHistoryId',
+        { jobHistoryId: mockHistoryId },
+      );
+      expect(updateQb.andWhere).toHaveBeenCalledWith(
+        'status IN (:...statuses)',
+        {
+          statuses: [
+            JobStatus.PENDING,
+            JobStatus.IN_PROGRESS,
+            JobStatus.PAUSED,
+          ],
+        },
+      );
+      expect(result).toEqual({ message: '3 job(s) cancelled successfully' });
+    });
+
+    it('deletes every job row in a job history', async () => {
+      mockHistoryWorkspaceCheck();
+      const deleteQb = {
+        delete: jest.fn().mockReturnThis(),
+        from: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 4 }),
+      };
+      mockJobRepository.createQueryBuilder.mockReturnValue(deleteQb);
+
+      const result = await service.deleteJobHistoryJobs(
+        mockWorkspaceId,
+        mockHistoryId,
+      );
+
+      expect(deleteQb.delete).toHaveBeenCalled();
+      expect(deleteQb.from).toHaveBeenCalledWith(Job);
+      expect(deleteQb.where).toHaveBeenCalledWith(
+        '"jobHistoryId" = :jobHistoryId',
+        { jobHistoryId: mockHistoryId },
+      );
+      expect(result).toEqual({ message: '4 job(s) deleted successfully' });
+    });
+
+    it('throws NotFoundException when a job history is outside the workspace', async () => {
+      mockHistoryWorkspaceCheck(false);
+
+      await expect(
+        service.pauseJobHistoryJobs(mockWorkspaceId, mockHistoryId),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 

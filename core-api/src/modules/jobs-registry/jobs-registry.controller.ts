@@ -180,6 +180,95 @@ export class JobsRegistryController {
 
   @UseGuards(WorkspaceOwnerGuard)
   @Doc({
+    summary: 'Pause jobs in a job history',
+    description:
+      'Pause pending and in-progress jobs under a job history. Jobs in other states are skipped.',
+    response: {
+      serialization: DefaultMessageResponseDto,
+    },
+    request: {
+      getWorkspaceId: true,
+    },
+  })
+  @Post('/histories/:id/pause')
+  pauseJobHistoryJobs(
+    @WorkspaceId() workspaceId: string,
+    @Param() params: IdQueryParamDto,
+  ) {
+    return this.jobsRegistryService.pauseJobHistoryJobs(workspaceId, params.id);
+  }
+
+  @UseGuards(WorkspaceOwnerGuard)
+  @Doc({
+    summary: 'Resume jobs in a job history',
+    description:
+      'Resume paused jobs under a job history. Jobs in other states are skipped.',
+    response: {
+      serialization: DefaultMessageResponseDto,
+    },
+    request: {
+      getWorkspaceId: true,
+    },
+  })
+  @Post('/histories/:id/resume')
+  resumeJobHistoryJobs(
+    @WorkspaceId() workspaceId: string,
+    @Param() params: IdQueryParamDto,
+  ) {
+    return this.jobsRegistryService.resumeJobHistoryJobs(
+      workspaceId,
+      params.id,
+    );
+  }
+
+  @UseGuards(WorkspaceOwnerGuard)
+  @Doc({
+    summary: 'Cancel jobs in a job history',
+    description:
+      'Cancel pending, in-progress, and paused jobs under a job history. Jobs in other states are skipped.',
+    response: {
+      serialization: DefaultMessageResponseDto,
+    },
+    request: {
+      getWorkspaceId: true,
+    },
+  })
+  @Post('/histories/:id/cancel')
+  cancelJobHistoryJobs(
+    @WorkspaceId() workspaceId: string,
+    @Param() params: IdQueryParamDto,
+  ) {
+    return this.jobsRegistryService.cancelJobHistoryJobs(
+      workspaceId,
+      params.id,
+    );
+  }
+
+  @UseGuards(WorkspaceOwnerGuard)
+  @Doc({
+    summary: 'Delete jobs in a job history',
+    description:
+      'Delete all jobs under a job history without deleting the job history, assets, or scan outputs.',
+    response: {
+      serialization: DefaultMessageResponseDto,
+    },
+    request: {
+      getWorkspaceId: true,
+    },
+  })
+  @Delete('/histories/:id/jobs')
+  deleteJobHistoryJobs(
+    @WorkspaceId() workspaceId: string,
+    @Param() params: IdQueryParamDto,
+  ) {
+    return this.jobsRegistryService.deleteJobHistoryJobs(
+      workspaceId,
+      params.id,
+    );
+  }
+
+  @UseGuards(WorkspaceOwnerGuard)
+  @Doc({
     summary: 'Re-run a job',
     description:
       'Reset job status to pending, clear workerId, and increment retry count',

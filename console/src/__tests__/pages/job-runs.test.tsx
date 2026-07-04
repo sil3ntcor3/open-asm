@@ -10,7 +10,8 @@ const mockMutate = vi.fn();
 const mockNavigate = vi.fn();
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@tanstack/react-router')>();
+  const actual =
+    await importOriginal<typeof import('@tanstack/react-router')>();
   return {
     ...actual,
     useNavigate: () => mockNavigate,
@@ -19,9 +20,8 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
 });
 
 vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import('@/services/apis/gen/queries')
-  >();
+  const actual =
+    await importOriginal<typeof import('@/services/apis/gen/queries')>();
   const activeJob = {
     id: 'job-1',
     status: actual.JobStatus.in_progress,
@@ -57,6 +57,9 @@ vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
             id: 'history-1',
             status: actual.JobStatus.in_progress,
             totalJobs: 1,
+            pauseEligibleJobs: 1,
+            resumeEligibleJobs: 1,
+            cancelEligibleJobs: 1,
             workflowName: 'Example workflow',
             jobHistoryName: 'Example run',
             jobRunType: 'manual',
@@ -87,6 +90,18 @@ vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
     useJobsRegistryControllerCancelJob: () => ({ mutate: mockMutate }),
     useJobsRegistryControllerPauseJob: () => ({ mutate: mockMutate }),
     useJobsRegistryControllerResumeJob: () => ({ mutate: mockMutate }),
+    useJobsRegistryControllerDeleteJobHistoryJobs: () => ({
+      mutate: mockMutate,
+    }),
+    useJobsRegistryControllerCancelJobHistoryJobs: () => ({
+      mutate: mockMutate,
+    }),
+    useJobsRegistryControllerPauseJobHistoryJobs: () => ({
+      mutate: mockMutate,
+    }),
+    useJobsRegistryControllerResumeJobHistoryJobs: () => ({
+      mutate: mockMutate,
+    }),
   };
 });
 
@@ -108,9 +123,7 @@ describe('Job runs', () => {
 
     renderWithProviders(<Harness />);
 
-    await user.click(
-      await screen.findByRole('button', { name: /open menu/i }),
-    );
+    await user.click(await screen.findByRole('button', { name: /open menu/i }));
 
     act(() => {
       rerenderJobsTable();
@@ -148,9 +161,7 @@ describe('Job runs', () => {
 
     renderWithProviders(<Runs />);
 
-    await user.click(
-      await screen.findByRole('button', { name: /open menu/i }),
-    );
+    await user.click(await screen.findByRole('button', { name: /open menu/i }));
     await user.click(screen.getByRole('menuitem', { name: /delete/i }));
 
     expect(
@@ -164,9 +175,7 @@ describe('Job runs', () => {
 
     renderWithProviders(<Runs />);
 
-    await user.click(
-      await screen.findByRole('button', { name: /open menu/i }),
-    );
+    await user.click(await screen.findByRole('button', { name: /open menu/i }));
     await user.click(screen.getByRole('menuitem', { name: /pause/i }));
 
     expect(mockMutate).toHaveBeenCalledWith(
@@ -183,9 +192,7 @@ describe('Job runs', () => {
 
     renderWithProviders(<Runs />);
 
-    await user.click(
-      await screen.findByRole('button', { name: /open menu/i }),
-    );
+    await user.click(await screen.findByRole('button', { name: /open menu/i }));
     await user.click(screen.getByRole('menuitem', { name: /delete/i }));
     await user.click(screen.getByRole('button', { name: /confirm/i }));
 
@@ -199,6 +206,7 @@ describe('Job runs', () => {
 
 describe('Jobs registry', () => {
   beforeEach(() => {
+    mockMutate.mockClear();
     mockNavigate.mockClear();
   });
 
@@ -217,9 +225,61 @@ describe('Jobs registry', () => {
     expect(
       screen.getByRole('columnheader', { name: /ended at/i }),
     ).toBeVisible();
-    expect(screen.getByRole('columnheader', { name: /run type/i })).toBeVisible();
+    expect(
+      screen.getByRole('columnheader', { name: /run type/i }),
+    ).toBeVisible();
 
     expect(screen.getByText('2026-01-01 00:00:00')).toBeVisible();
     expect(screen.queryByText('2026-01-01 00:02:00')).not.toBeInTheDocument();
+  });
+
+  it('shows all row actions when a run has mixed eligible jobs', async () => {
+    const user = userEvent.setup();
+
+    renderWithProviders(<JobsRegistryPage />);
+
+    await user.click(await screen.findByRole('button', { name: /open menu/i }));
+
+    expect(screen.getByRole('menuitem', { name: /pause/i })).toBeVisible();
+    expect(screen.getByRole('menuitem', { name: /resume/i })).toBeVisible();
+    expect(screen.getByRole('menuitem', { name: /cancel/i })).toBeVisible();
+    expect(screen.getByRole('menuitem', { name: /delete/i })).toBeVisible();
+  });
+
+  it('runs a history action without navigating to the run detail', async () => {
+    const user = userEvent.setup();
+
+    renderWithProviders(<JobsRegistryPage />);
+
+    await user.click(await screen.findByRole('button', { name: /open menu/i }));
+    await user.click(screen.getByRole('menuitem', { name: /pause/i }));
+
+    expect(mockMutate).toHaveBeenCalledWith(
+      { id: 'history-1' },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('confirms deletion of only jobs under the history', async () => {
+    const user = userEvent.setup();
+
+    renderWithProviders(<JobsRegistryPage />);
+
+    await user.click(await screen.findByRole('button', { name: /open menu/i }));
+    await user.click(screen.getByRole('menuitem', { name: /delete/i }));
+
+    expect(screen.getByRole('dialog', { name: /delete jobs/i })).toBeVisible();
+    expect(
+      screen.getByText(/delete all jobs under this registry entry/i),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: /confirm/i }));
+
+    expect(mockMutate).toHaveBeenCalledWith(
+      { id: 'history-1' },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });
