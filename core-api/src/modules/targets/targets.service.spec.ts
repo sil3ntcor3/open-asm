@@ -971,4 +971,136 @@ describe('TargetsService', () => {
       );
     });
   });
+
+  describe('discoverTargets', () => {
+    const workspaceId = randomUUID();
+    const userContext = {
+      userId: randomUUID(),
+      email: 'test@example.com',
+      expiresAt: new Date(),
+      token: 'token',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      name: 'Test User',
+      image: null,
+      role: 'USER',
+      lastLoginAt: new Date(),
+      isActive: true,
+      version: 1,
+      ipAddress: '127.0.0.1',
+      userAgent: 'jest',
+      id: randomUUID(),
+      emailVerified: new Date(),
+    } as unknown as UserContextPayload;
+
+    const makeTarget = (type: TargetType, value: string) =>
+      ({
+        id: randomUUID(),
+        value,
+        type,
+        reScanCount: 0,
+      }) as unknown as Target;
+
+    beforeEach(() => {
+      mockWorkspacesService.getWorkspaceByIdAndOwner = jest.fn();
+      mockWorkspacesService.getWorkspaceConfigValue = jest
+        .fn()
+        .mockResolvedValue({ isAssetsDiscovery: true });
+      mockEventEmitter.emit = jest.fn();
+      (mockTargetRepository.update as jest.Mock) = jest.fn();
+      (mockTargetRepository.query as jest.Mock) = jest
+        .fn()
+        .mockResolvedValue([]);
+    });
+
+    const arrangeWorkspaceTargets = (targets: Target[]) => {
+      (mockWorkspaceTargetRepository as any).find = jest
+        .fn()
+        .mockResolvedValue(targets.map((target) => ({ target })));
+    };
+
+    it('should emit type-correct re-scan events for idle targets', async () => {
+      const domainTarget = makeTarget(TargetType.DOMAIN, 'example.com');
+      const ipTarget = makeTarget(TargetType.IP, '8.8.8.8');
+      const cidrTarget = makeTarget(TargetType.CIDR, '203.0.113.0/24');
+      arrangeWorkspaceTargets([domainTarget, ipTarget, cidrTarget]);
+
+      const result = await service.discoverTargets(
+        { targetIds: [domainTarget.id, ipTarget.id, cidrTarget.id] },
+        workspaceId,
+        userContext,
+      );
+
+      expect(result.totalStarted).toBe(3);
+      expect(result.totalSkipped).toBe(0);
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith(
+        'target.domain.re-scan',
+        domainTarget,
+      );
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith(
+        'target.ip.re-scan',
+        ipTarget,
+      );
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith(
+        'target.cidr.re-scan',
+        cidrTarget,
+      );
+      expect(mockTargetRepository.update).toHaveBeenCalledTimes(3);
+    });
+
+    it('should skip targets with pending or in-progress jobs', async () => {
+      const busyTarget = makeTarget(TargetType.DOMAIN, 'busy.com');
+      const idleTarget = makeTarget(TargetType.DOMAIN, 'idle.com');
+      arrangeWorkspaceTargets([busyTarget, idleTarget]);
+      (mockTargetRepository.query as jest.Mock) = jest
+        .fn()
+        .mockResolvedValue([{ targetId: busyTarget.id }]);
+
+      const result = await service.discoverTargets(
+        { targetIds: [busyTarget.id, idleTarget.id] },
+        workspaceId,
+        userContext,
+      );
+
+      expect(result.totalStarted).toBe(1);
+      expect(result.totalSkipped).toBe(1);
+      expect(result.skipped[0]).toEqual({
+        id: busyTarget.id,
+        value: 'busy.com',
+        reason: 'already scanning',
+      });
+      expect(mockEventEmitter.emit).toHaveBeenCalledTimes(1);
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith(
+        'target.domain.re-scan',
+        idleTarget,
+      );
+    });
+
+    it('should throw NotFoundException for targets outside the workspace', async () => {
+      arrangeWorkspaceTargets([]);
+
+      await expect(
+        service.discoverTargets(
+          { targetIds: [randomUUID()] },
+          workspaceId,
+          userContext,
+        ),
+      ).rejects.toThrow('Targets not found in workspace');
+      expect(mockEventEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException when asset discovery is disabled', async () => {
+      mockWorkspacesService.getWorkspaceConfigValue = jest
+        .fn()
+        .mockResolvedValue({ isAssetsDiscovery: false });
+
+      await expect(
+        service.discoverTargets(
+          { targetIds: [randomUUID()] },
+          workspaceId,
+          userContext,
+        ),
+      ).rejects.toThrow('Asset discovery is disabled for this workspace');
+    });
+  });
 });

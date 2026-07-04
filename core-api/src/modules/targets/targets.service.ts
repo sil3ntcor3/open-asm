@@ -16,13 +16,15 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Job, Queue } from 'bullmq';
 import { randomUUID } from 'crypto';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { AssetsService } from '../assets/assets.service';
 import { Asset } from '../assets/entities/assets.entity';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import {
   BulkTargetResultDto,
   CreateMultipleTargetsDto,
+  DiscoverTargetsDto,
+  DiscoverTargetsResultDto,
   GetManyWorkspaceQueryParamsDto,
   UpdateTargetDto,
 } from './dto/targets.dto';
@@ -274,6 +276,8 @@ export class TargetsService implements OnModuleInit {
    * Creates multiple targets in a single transaction, skipping duplicates.
    *
    * @param dto - The data transfer object containing array of target details.
+   *   Set `startDiscovery: false` to suppress the discovery events emitted
+   *   for the created targets (targets are still registered, just not scanned).
    * @param workspaceId - The ID of the workspace to associate targets with.
    * @param userContext - The user's context data, which includes the user's ID.
    * @returns A promise that resolves to bulk creation result with created targets and skipped values.
@@ -453,7 +457,8 @@ export class TargetsService implements OnModuleInit {
       },
     );
 
-    // Emit events and update scan schedules for all created targets (outside transaction)
+    // Emit creation events for discovery workflows (outside transaction)
+    // unless discovery was opted out via dto.startDiscovery: false.
     if (dto.startDiscovery !== false) {
       for (const target of result.created) {
         const typeToEvent = target.type.toLocaleLowerCase(); // e.g. DOMAIN -> domain, CIDR -> cidr
@@ -462,6 +467,96 @@ export class TargetsService implements OnModuleInit {
     }
 
     return result;
+  }
+
+  /**
+   * Starts discovery on existing targets. Targets that already have pending
+   * or in-progress jobs are skipped rather than double-queued. Emits
+   * `target.<type>.re-scan` with the target's actual type so the matching
+   * discovery workflow fires (domain vs ip vs cidr).
+   *
+   * @param dto - Contains the target IDs to start discovery on.
+   * @param workspaceId - The workspace the targets must belong to.
+   * @param userContext - The user's context data (ownership check).
+   * @returns Counts of started and skipped targets.
+   */
+  public async discoverTargets(
+    dto: DiscoverTargetsDto,
+    workspaceId: string,
+    userContext: UserContextPayload,
+  ): Promise<DiscoverTargetsResultDto> {
+    const { targetIds } = dto;
+
+    await this.workspacesService.getWorkspaceByIdAndOwner(
+      workspaceId,
+      userContext,
+    );
+
+    const workspaceConfigs =
+      await this.workspacesService.getWorkspaceConfigValue(workspaceId);
+    if (!workspaceConfigs.isAssetsDiscovery) {
+      throw new BadRequestException(
+        'Asset discovery is disabled for this workspace',
+      );
+    }
+
+    const workspaceTargets = await this.workspaceTargetRepository.find({
+      where: {
+        workspace: { id: workspaceId },
+        target: { id: In(targetIds) },
+      },
+      relations: ['target'],
+    });
+    const targets = workspaceTargets.map((wt) => wt.target);
+
+    const foundIds = new Set(targets.map((t) => t.id));
+    const missing = targetIds.filter((id) => !foundIds.has(id));
+    if (missing.length > 0) {
+      throw new NotFoundException(
+        `Targets not found in workspace: ${missing.join(', ')}`,
+      );
+    }
+
+    // A target is busy if any of its assets has a queued or running job —
+    // same definition the list view's status column uses.
+    const busyRows: { targetId: string }[] = await this.repo.query(
+      `SELECT DISTINCT a."targetId" AS "targetId"
+       FROM jobs j
+       JOIN assets a ON a.id = j."assetId"
+       WHERE a."targetId" = ANY($1)
+         AND j.status IN ('${JobStatus.PENDING}', '${JobStatus.IN_PROGRESS}')`,
+      [targetIds],
+    );
+    const busyIds = new Set(busyRows.map((r) => r.targetId));
+
+    const skipped: { id: string; value: string; reason: string }[] = [];
+    let totalStarted = 0;
+
+    for (const target of targets) {
+      if (busyIds.has(target.id)) {
+        skipped.push({
+          id: target.id,
+          value: target.value,
+          reason: 'already scanning',
+        });
+        continue;
+      }
+
+      await this.repo.update(target.id, {
+        reScanCount: target.reScanCount + 1,
+        lastDiscoveredAt: new Date(),
+      });
+
+      const typeToEvent = target.type.toLocaleLowerCase();
+      this.eventEmitter.emit(`target.${typeToEvent}.re-scan`, target);
+      totalStarted++;
+    }
+
+    return {
+      totalStarted,
+      totalSkipped: skipped.length,
+      skipped,
+    };
   }
 
   /**

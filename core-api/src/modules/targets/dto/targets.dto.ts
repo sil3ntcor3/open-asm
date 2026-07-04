@@ -219,3 +219,53 @@ export class UpdateTargetDto {
   @Max(7, { each: true })
   scanWindowDays?: number[] | null;
 }
+
+/**
+ * DTO for starting discovery on existing targets in bulk
+ */
+export class DiscoverTargetsDto {
+  @ApiProperty({
+    description: 'IDs of the targets to start discovery on',
+    type: [String],
+    example: ['4b3b9c2e-1f2a-4d5e-8f6a-7b8c9d0e1f2a'],
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  targetIds: string[];
+}
+
+export class SkippedTargetDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  value: string;
+
+  @ApiProperty({ example: 'already scanning' })
+  reason: string;
+}
+
+/**
+ * DTO representing the result of a bulk discovery request
+ */
+export class DiscoverTargetsResultDto {
+  @ApiProperty({
+    description: 'Number of targets discovery was started on',
+    example: 3,
+  })
+  @IsInt()
+  totalStarted: number;
+
+  @ApiProperty({
+    description: 'Number of targets skipped (already scanning)',
+    example: 1,
+  })
+  @IsInt()
+  totalSkipped: number;
+
+  @ApiProperty({
+    description: 'Details of skipped targets',
+    type: [SkippedTargetDto],
+  })
+  skipped: SkippedTargetDto[];
+}
