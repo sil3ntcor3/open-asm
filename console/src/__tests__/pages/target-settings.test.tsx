@@ -132,4 +132,47 @@ describe('Target settings', () => {
       screen.getByRole('switch', { name: /enable scan window/i }),
     ).toBeChecked();
   });
+
+  it('disables the persisted scan window when the switch is turned off', async () => {
+    const user = userEvent.setup();
+    let patchedBody: unknown;
+
+    server.use(
+      http.patch('/api/targets/:id', async ({ request }) => {
+        patchedBody = await request.json();
+        return HttpResponse.json(baseTarget);
+      }),
+    );
+
+    renderWithProviders(
+      <SettingTarget target={savedTarget} refetch={() => undefined} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('button')).toHaveLength(1);
+    });
+
+    await user.click(screen.getAllByRole('button')[0]);
+
+    const scanWindowSwitch = screen.getByRole('switch', {
+      name: /enable scan window/i,
+    });
+
+    expect(scanWindowSwitch).toBeChecked();
+
+    await user.click(scanWindowSwitch);
+
+    await waitFor(() => {
+      expect(patchedBody).toMatchObject({
+        scanWindowStart: null,
+        scanWindowEnd: null,
+        scanWindowTimezone: null,
+        scanWindowDays: null,
+      });
+    });
+
+    expect(
+      screen.queryByRole('button', { name: /disable scan window/i }),
+    ).not.toBeInTheDocument();
+  });
 });

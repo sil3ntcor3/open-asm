@@ -88,6 +88,23 @@ export const ScanWindowSettings = ({
   );
   const [days, setDays] = useState<number[]>(target.scanWindowDays ?? []);
 
+  const clearScanWindow = () => {
+    onSave({
+      scanWindowStart: null,
+      scanWindowEnd: null,
+      scanWindowTimezone: null,
+      scanWindowDays: null,
+    });
+  };
+
+  const handleEnabledChange = (checked: boolean) => {
+    setEnabled(checked);
+
+    if (!checked) {
+      clearScanWindow();
+    }
+  };
+
   const toggleDay = (iso: number) => {
     setDays((prev) =>
       prev.includes(iso)
@@ -97,16 +114,6 @@ export const ScanWindowSettings = ({
   };
 
   const handleSave = () => {
-    if (!enabled) {
-      // Clear the window → continuous scanning.
-      onSave({
-        scanWindowStart: null,
-        scanWindowEnd: null,
-        scanWindowTimezone: null,
-        scanWindowDays: null,
-      });
-      return;
-    }
     onSave({
       scanWindowStart: start,
       scanWindowEnd: end,
@@ -133,8 +140,9 @@ export const ScanWindowSettings = ({
         </div>
         <Switch
           checked={enabled}
-          onCheckedChange={setEnabled}
+          onCheckedChange={handleEnabledChange}
           aria-label="Enable scan window"
+          disabled={isSaving}
         />
       </div>
 
@@ -217,14 +225,16 @@ export const ScanWindowSettings = ({
         </div>
       )}
 
-      <Button
-        size="sm"
-        className="w-full"
-        onClick={handleSave}
-        disabled={isSaving}
-      >
-        {enabled ? 'Save scan window' : 'Disable scan window'}
-      </Button>
+      {enabled && (
+        <Button
+          size="sm"
+          className="w-full"
+          onClick={handleSave}
+          disabled={isSaving}
+        >
+          Save scan window
+        </Button>
+      )}
     </div>
   );
 };
