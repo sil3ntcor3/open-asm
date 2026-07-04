@@ -135,7 +135,7 @@ const validateIp = (input: string): string | true => {
   return true;
 };
 
-export default function StartDiscovery() {
+export default function AddTarget() {
   const [targetType, setTargetType] = useState<TargetType>('DOMAIN');
   const {
     register,
@@ -161,7 +161,7 @@ export default function StartDiscovery() {
     return validateDomains(input);
   };
 
-  function onSubmit(data: FormValues) {
+  function onSubmit(data: FormValues, startDiscovery: boolean) {
     const targets = parseTargetsInput(data.value);
     const duplicates = findDuplicates(targets);
 
@@ -185,6 +185,7 @@ export default function StartDiscovery() {
       {
         data: {
           targets: uniqueTargets.map((value) => ({ value, type: targetType })),
+          startDiscovery,
         },
       },
       {
@@ -222,17 +223,20 @@ export default function StartDiscovery() {
   }
 
   return (
-    <Page title="Start discovery" isShowButtonGoBack>
+    <Page title="Add Target" isShowButtonGoBack>
       <div className="max-w-4xl mx-auto py-6">
         <div className={`bg-card rounded-lg border ${targetTypeBg[targetType]} p-4`}>
           <div className="mb-6">
             <p className="text-muted-foreground mt-2">
-              Enter one or more targets to scan, separated by commas or new
+              Enter one or more targets to register, separated by commas or new
               lines.
             </p>
           </div>
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form
+            onSubmit={handleSubmit((data) => onSubmit(data, false))}
+            className="space-y-4"
+          >
             <div className="space-y-2">
               <RadioGroup
                 value={targetType}
@@ -340,7 +344,7 @@ export default function StartDiscovery() {
               )}
             </div>
 
-            <div className="pt-4 flex justify-between">
+            <div className="pt-4 flex flex-col gap-2 sm:flex-row sm:justify-between">
               <Button
                 variant="outline"
                 type="button"
@@ -348,10 +352,21 @@ export default function StartDiscovery() {
               >
                 Cancel
               </Button>
-              <Button disabled={isPending} type="submit" className={targetTypeButton[targetType]}>
-                {isPending && <Loader2Icon className="animate-spin" />}
-                Start Discovery
-              </Button>
+              <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                <Button disabled={isPending} type="submit" variant="outline">
+                  {isPending && <Loader2Icon className="animate-spin" />}
+                  Add Target
+                </Button>
+                <Button
+                  disabled={isPending}
+                  type="button"
+                  className={targetTypeButton[targetType]}
+                  onClick={handleSubmit((data) => onSubmit(data, true))}
+                >
+                  {isPending && <Loader2Icon className="animate-spin" />}
+                  Add & Start Discovery
+                </Button>
+              </div>
             </div>
           </form>
         </div>

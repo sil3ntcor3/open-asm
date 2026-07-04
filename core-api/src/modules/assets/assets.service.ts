@@ -328,7 +328,10 @@ export class AssetsService {
       lastDiscoveredAt: new Date(),
     });
 
-    this.eventEmitter.emit('target.domain.re-scan', target);
+    this.eventEmitter.emit(
+      `target.${target.type.toLocaleLowerCase()}.re-scan`,
+      target,
+    );
 
     return {
       message: 'Scan started',

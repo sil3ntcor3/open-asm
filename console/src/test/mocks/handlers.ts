@@ -42,13 +42,26 @@ export const handlers = [
     return HttpResponse.json({ id: 'new-target', ...body });
   }),
   http.post('/api/targets/bulk', async ({ request }) => {
-    const body = (await request.json()) as { targets: string[] };
+    const body = (await request.json()) as {
+      targets: Array<{ value: string }>;
+    };
     return HttpResponse.json({
-      created: body.targets.map((v) => ({ id: `target-${v}`, value: v })),
+      created: body.targets.map((target) => ({
+        id: `target-${target.value}`,
+        value: target.value,
+      })),
       skipped: [],
       totalRequested: body.targets.length,
       totalCreated: body.targets.length,
       totalSkipped: 0,
+    });
+  }),
+  http.post('/api/targets/discover', async ({ request }) => {
+    const body = (await request.json()) as { targetIds: string[] };
+    return HttpResponse.json({
+      totalStarted: body.targetIds.length,
+      totalSkipped: 0,
+      skipped: [],
     });
   }),
   http.delete('/api/targets/:id', () => {

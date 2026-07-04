@@ -102,6 +102,28 @@ export type CreateTargetDto = {
 export type CreateMultipleTargetsDto = {
   /** Array of target values to create. Supports DOMAIN (root domain), CIDR (/24 range only), and IP (single IP address) types. */
   targets: CreateTargetDto[];
+  /** Whether to start discovery workflows for the created targets. Defaults to true. Set to false to register targets without scanning them. */
+  startDiscovery?: boolean;
+};
+
+export type DiscoverTargetsDto = {
+  /** IDs of the targets to start discovery on */
+  targetIds: string[];
+};
+
+export type SkippedTargetDto = {
+  id: string;
+  value: string;
+  reason: string;
+};
+
+export type DiscoverTargetsResultDto = {
+  /** Number of targets discovery was started on */
+  totalStarted: number;
+  /** Number of targets skipped (already scanning) */
+  totalSkipped: number;
+  /** Details of skipped targets */
+  skipped: SkippedTargetDto[];
 };
 
 export type GetManyTargetResponseDtoScanSchedule =
@@ -2960,6 +2982,100 @@ export const useTargetsControllerCreateMultipleTargets = <
 > => {
   return useMutation(
     getTargetsControllerCreateMultipleTargetsMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Starts discovery workflows for the specified targets. Targets that already have pending or in-progress jobs are skipped and reported in the response.
+ * @summary Start discovery on existing targets
+ */
+export const targetsControllerDiscoverTargets = (
+  discoverTargetsDto: DiscoverTargetsDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DiscoverTargetsResultDto>(
+    {
+      url: `/api/targets/discover`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: discoverTargetsDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getTargetsControllerDiscoverTargetsMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof targetsControllerDiscoverTargets>>,
+    TError,
+    { data: DiscoverTargetsDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof targetsControllerDiscoverTargets>>,
+  TError,
+  { data: DiscoverTargetsDto },
+  TContext
+> => {
+  const mutationKey = ['targetsControllerDiscoverTargets'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof targetsControllerDiscoverTargets>>,
+    { data: DiscoverTargetsDto }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return targetsControllerDiscoverTargets(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type TargetsControllerDiscoverTargetsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof targetsControllerDiscoverTargets>>
+>;
+export type TargetsControllerDiscoverTargetsMutationBody = DiscoverTargetsDto;
+export type TargetsControllerDiscoverTargetsMutationError = unknown;
+
+/**
+ * @summary Start discovery on existing targets
+ */
+export const useTargetsControllerDiscoverTargets = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof targetsControllerDiscoverTargets>>,
+      TError,
+      { data: DiscoverTargetsDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof targetsControllerDiscoverTargets>>,
+  TError,
+  { data: DiscoverTargetsDto },
+  TContext
+> => {
+  return useMutation(
+    getTargetsControllerDiscoverTargetsMutationOptions(options),
     queryClient,
   );
 };
