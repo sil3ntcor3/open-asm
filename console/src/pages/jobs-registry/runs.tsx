@@ -42,6 +42,13 @@ import {
 } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 
+const getJobTitle = (row: Job) => {
+  const value = row?.assetService
+    ? `${row.assetService.value}`
+    : row?.asset?.value;
+  return value;
+};
+
 export default function Runs() {
   const { id: jobHistoryId } = useParams({ strict: false });
   const [jobError, setJobError] = useState<Job | null>();
@@ -109,6 +116,8 @@ export default function Runs() {
       refetchInterval: hasActiveJobs ? 1000 : false,
     },
   });
+  const paginatedJobsQueryKeyRef = useRef(paginatedJobsQueryKey);
+  paginatedJobsQueryKeyRef.current = paginatedJobsQueryKey;
 
   // Memoize jobs grouped by tool ID for efficient lookups, with name-based fallback
   const jobsByToolId = useMemo(() => {
@@ -138,14 +147,7 @@ export default function Runs() {
     return [];
   }, [jobsByToolId]);
 
-  const getTitle = (row: Job) => {
-    const value = row?.assetService
-      ? `${row.assetService.value}`
-      : row?.asset?.value;
-    return value;
-  };
-
-  const columns: ColumnDef<Job>[] = [
+  const columns = useMemo<ColumnDef<Job>[]>(() => [
     {
       accessorKey: 'status',
       cell: ({ row }) => {
@@ -155,7 +157,7 @@ export default function Runs() {
               onlyIcon
               status={row.original.status as JobStatus}
             />
-            <pre>{getTitle(row.original)}</pre>
+            <pre>{getJobTitle(row.original)}</pre>
           </div>
         );
       },
@@ -254,7 +256,7 @@ export default function Runs() {
             ],
           });
           queryClient.invalidateQueries({
-            queryKey: paginatedJobsQueryKey,
+            queryKey: paginatedJobsQueryKeyRef.current,
           });
         };
 
@@ -341,7 +343,14 @@ export default function Runs() {
         );
       },
     },
-  ];
+  ], [
+    cancelJobMutate,
+    deleteJobMutate,
+    jobHistoryId,
+    pauseJobMutate,
+    queryClient,
+    resumeJobMutate,
+  ]);
 
   const getToolStatus = useMemo(() => {
     return (toolIndex: number) => {
@@ -493,7 +502,7 @@ export default function Runs() {
       <Dialog open={!!jobError} onOpenChange={() => setJobError(null)}>
         <DialogContent className="max-h-[80vh] flex flex-col max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{jobError && getTitle(jobError)}</DialogTitle>
+            <DialogTitle>{jobError && getJobTitle(jobError)}</DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto pr-2 -mr-2 space-y-3">
             {jobError?.errorLogs?.map((errorLog, index) => (
