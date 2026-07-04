@@ -2,11 +2,13 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 
 import Page from '@/components/common/page';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -48,6 +50,125 @@ const getJobTitle = (row: Job) => {
     : row?.asset?.value;
   return value;
 };
+
+type JobActionHandler = (id: string, onSuccess: () => void) => void;
+
+type JobActionsMenuProps = {
+  job: Job;
+  onActionSuccess: () => void;
+  onCancel: JobActionHandler;
+  onDelete: JobActionHandler;
+  onPause: JobActionHandler;
+  onResume: JobActionHandler;
+};
+
+function JobActionsMenu({
+  job,
+  onActionSuccess,
+  onCancel,
+  onDelete,
+  onPause,
+  onResume,
+}: JobActionsMenuProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<
+    'cancel' | 'delete' | null
+  >(null);
+  const canCancel =
+    job.status === JobStatus.pending || job.status === JobStatus.in_progress;
+  const canPause =
+    job.status === JobStatus.pending || job.status === JobStatus.in_progress;
+  const canResume = job.status === JobStatus.paused;
+  const isDeleteConfirm = confirmAction === 'delete';
+
+  const runAction = (action: JobActionHandler) => {
+    setMenuOpen(false);
+    action(job.id, onActionSuccess);
+  };
+  const openConfirmation = (action: 'cancel' | 'delete') => {
+    setMenuOpen(false);
+    setConfirmAction(action);
+  };
+
+  return (
+    <>
+      <div className="flex justify-end">
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="h-8 w-8 p-0 flex items-center justify-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <span className="sr-only">Open menu</span>
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {canPause && (
+              <DropdownMenuItem onSelect={() => runAction(onPause)}>
+                Pause
+              </DropdownMenuItem>
+            )}
+            {canResume && (
+              <DropdownMenuItem onSelect={() => runAction(onResume)}>
+                Resume
+              </DropdownMenuItem>
+            )}
+            {canCancel && (
+              <DropdownMenuItem onSelect={() => openConfirmation('cancel')}>
+                Cancel
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem
+              variant="destructive"
+              onSelect={() => openConfirmation('delete')}
+            >
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      <Dialog
+        open={confirmAction !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmAction(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {isDeleteConfirm ? 'Delete Job' : 'Cancel Job'}
+            </DialogTitle>
+            <DialogDescription>
+              {isDeleteConfirm
+                ? 'Are you sure you want to delete this job?'
+                : 'Are you sure you want to cancel this job?'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmAction(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant={isDeleteConfirm ? 'destructive' : 'default'}
+              onClick={() => {
+                if (confirmAction === 'delete') runAction(onDelete);
+                if (confirmAction === 'cancel') runAction(onCancel);
+                setConfirmAction(null);
+              }}
+            >
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
 
 export default function Runs() {
   const { id: jobHistoryId } = useParams({ strict: false });
@@ -240,14 +361,6 @@ export default function Runs() {
     {
       id: 'actions',
       cell: ({ row }) => {
-        const canCancel =
-          row.original.status === JobStatus.pending ||
-          row.original.status === JobStatus.in_progress;
-        const canPause =
-          row.original.status === JobStatus.pending ||
-          row.original.status === JobStatus.in_progress;
-        const canResume = row.original.status === JobStatus.paused;
-
         const invalidateJobs = () => {
           queryClient.invalidateQueries({
             queryKey: [
@@ -261,85 +374,22 @@ export default function Runs() {
         };
 
         return (
-          <div className="flex justify-end">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className="h-8 w-8 p-0 flex items-center justify-center"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <span className="sr-only">Open menu</span>
-                  <MoreHorizontal className="h-4 w-4" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {canPause && (
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      pauseJobMutate(
-                        { id: row.original.id },
-                        { onSuccess: invalidateJobs },
-                      );
-                    }}
-                  >
-                    Pause
-                  </DropdownMenuItem>
-                )}
-                {canResume && (
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      resumeJobMutate(
-                        { id: row.original.id },
-                        { onSuccess: invalidateJobs },
-                      );
-                    }}
-                  >
-                    Resume
-                  </DropdownMenuItem>
-                )}
-                {canCancel && (
-                  <ConfirmDialog
-                    title="Cancel Job"
-                    description="Are you sure you want to cancel this job?"
-                    onConfirm={() =>
-                      cancelJobMutate(
-                        { id: row.original.id },
-                        { onSuccess: invalidateJobs },
-                      )
-                    }
-                    trigger={
-                      <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                        Cancel
-                      </DropdownMenuItem>
-                    }
-                  />
-                )}
-                <ConfirmDialog
-                  title="Delete Job"
-                  description="Are you sure you want to delete this job?"
-                  onConfirm={() =>
-                    deleteJobMutate(
-                      { id: row.original.id },
-                      { onSuccess: invalidateJobs },
-                    )
-                  }
-                  trigger={
-                    <DropdownMenuItem
-                      variant="destructive"
-                      onSelect={(e) => e.preventDefault()}
-                    >
-                      Delete
-                    </DropdownMenuItem>
-                  }
-                />
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+          <JobActionsMenu
+            job={row.original}
+            onActionSuccess={invalidateJobs}
+            onCancel={(id, onSuccess) =>
+              cancelJobMutate({ id }, { onSuccess })
+            }
+            onDelete={(id, onSuccess) =>
+              deleteJobMutate({ id }, { onSuccess })
+            }
+            onPause={(id, onSuccess) =>
+              pauseJobMutate({ id }, { onSuccess })
+            }
+            onResume={(id, onSuccess) =>
+              resumeJobMutate({ id }, { onSuccess })
+            }
+          />
         );
       },
     },

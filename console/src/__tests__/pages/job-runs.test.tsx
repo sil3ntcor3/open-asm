@@ -3,7 +3,7 @@ import Runs from '@/pages/jobs-registry/runs';
 import { act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockMutate = vi.fn();
 
@@ -66,6 +66,10 @@ vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
 });
 
 describe('Job runs', () => {
+  beforeEach(() => {
+    mockMutate.mockClear();
+  });
+
   it('keeps row action menu open when the jobs table rerenders', async () => {
     const user = userEvent.setup();
     let rerenderJobsTable = () => {};
@@ -89,5 +93,40 @@ describe('Job runs', () => {
     expect(screen.getByRole('menuitem', { name: /pause/i })).toBeVisible();
     expect(screen.getByRole('menuitem', { name: /cancel/i })).toBeVisible();
     expect(screen.getByRole('menuitem', { name: /delete/i })).toBeVisible();
+  });
+
+  it('closes the row action menu after choosing delete', async () => {
+    const user = userEvent.setup();
+
+    renderWithProviders(<Runs />);
+
+    await user.click(
+      await screen.findByRole('button', { name: /open menu/i }),
+    );
+    await user.click(screen.getByRole('menuitem', { name: /delete/i }));
+
+    expect(
+      screen.queryByRole('menuitem', { name: /delete/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: /delete job/i })).toBeVisible();
+  });
+
+  it('closes the row action menu after choosing pause', async () => {
+    const user = userEvent.setup();
+
+    renderWithProviders(<Runs />);
+
+    await user.click(
+      await screen.findByRole('button', { name: /open menu/i }),
+    );
+    await user.click(screen.getByRole('menuitem', { name: /pause/i }));
+
+    expect(mockMutate).toHaveBeenCalledWith(
+      { id: 'job-1' },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+    expect(
+      screen.queryByRole('menuitem', { name: /pause/i }),
+    ).not.toBeInTheDocument();
   });
 });
