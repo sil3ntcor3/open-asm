@@ -1,4 +1,5 @@
 import type { UserContextPayload } from '@/common/interfaces/app.interface';
+import { CronSchedule } from '@/common/enums/enum';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { TestingModule } from '@nestjs/testing';
 import { Test } from '@nestjs/testing';
@@ -153,13 +154,13 @@ describe('TargetsService', () => {
 
       await service.getTargetById(targetId, workspaceId);
 
-      const [sql] = (mockTargetRepository.query as jest.Mock).mock
-        .calls[0] as [string, unknown[]];
+      const [sql] = (mockTargetRepository.query as jest.Mock).mock.calls[0] as [
+        string,
+        unknown[],
+      ];
       expect(sql).toContain('t."scanWindowStart" AS "scanWindowStart"');
       expect(sql).toContain('t."scanWindowEnd" AS "scanWindowEnd"');
-      expect(sql).toContain(
-        't."scanWindowTimezone" AS "scanWindowTimezone"',
-      );
+      expect(sql).toContain('t."scanWindowTimezone" AS "scanWindowTimezone"');
       expect(sql).toContain('t."scanWindowDays" AS "scanWindowDays"');
     });
 
@@ -211,6 +212,61 @@ describe('TargetsService', () => {
       });
       expect(result).toEqual(updatedTarget);
     });
+
+    it('reschedules an enabled target when scan window timing changes', async () => {
+      const targetId = randomUUID();
+      const existingTarget = {
+        id: targetId,
+        value: 'example.com',
+        type: TargetType.DOMAIN,
+        scanSchedule: CronSchedule.MONTHLY,
+        jobId: 'old-repeat-key',
+        reScanCount: 0,
+      } as Target;
+      const updatedTarget = {
+        ...existingTarget,
+        scanWindowStart: '23:05',
+        scanWindowEnd: '23:10',
+        scanWindowTimezone: 'America/Chicago',
+        scanWindowDays: [1, 2, 3, 4, 5, 6, 7],
+      } as Target;
+
+      (mockTargetRepository.findOneBy as jest.Mock)
+        .mockResolvedValueOnce(existingTarget)
+        .mockResolvedValueOnce(updatedTarget);
+      (mockTargetRepository.update as jest.Mock).mockResolvedValue({
+        affected: 1,
+      });
+      (mockQueue.add as jest.Mock).mockResolvedValue({
+        repeatJobKey: 'new-repeat-key',
+      });
+
+      await service.updateTarget(targetId, {
+        scanWindowStart: '23:05',
+        scanWindowEnd: '23:10',
+        scanWindowTimezone: 'America/Chicago',
+        scanWindowDays: [1, 2, 3, 4, 5, 6, 7],
+      });
+
+      expect(mockQueue.removeJobScheduler).toHaveBeenCalledWith(
+        'old-repeat-key',
+      );
+      expect(mockQueue.add).toHaveBeenCalledWith(
+        targetId,
+        { id: targetId },
+        {
+          repeat: {
+            pattern: '5 23 1 * *',
+            tz: 'America/Chicago',
+            immediately: true,
+          },
+        },
+      );
+      expect(mockTargetRepository.update).toHaveBeenCalledWith(
+        targetId,
+        expect.objectContaining({ jobId: 'new-repeat-key' }),
+      );
+    });
   });
 
   describe('createMultipleTargets', () => {
@@ -253,7 +309,10 @@ describe('TargetsService', () => {
         andWhere: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
         getRawMany: jest.fn().mockResolvedValue(
-          existingTargets.map((value) => ({ value, internalNetworkId: null })),
+          existingTargets.map((value) => ({
+            value,
+            internalNetworkId: null,
+          })),
         ),
         save: jest.fn().mockResolvedValue(undefined),
       };

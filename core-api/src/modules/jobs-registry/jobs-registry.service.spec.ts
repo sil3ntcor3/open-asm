@@ -13,6 +13,7 @@ import { ToolsService } from '../tools/tools.service';
 import { JobErrorLog } from './entities/job-error-log.entity';
 import { JobHistory } from './entities/job-history.entity';
 import { Job } from './entities/job.entity';
+import { JobControlAction } from './dto/jobs-registry.dto';
 import { JobsRegistryService } from './jobs-registry.service';
 
 describe('JobsRegistryService', () => {
@@ -28,6 +29,8 @@ describe('JobsRegistryService', () => {
     save: jest.fn(),
     count: jest.fn(),
     exists: jest.fn(),
+    find: jest.fn(),
+    update: jest.fn(),
   };
 
   const mockJobHistoryRepository = {
@@ -578,7 +581,9 @@ describe('JobsRegistryService', () => {
       const mockQueryBuilder = {
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
-        getMany: jest.fn().mockResolvedValue([{ id: 'asset-1', isPrimary: true }]),
+        getMany: jest
+          .fn()
+          .mockResolvedValue([{ id: 'asset-1', isPrimary: true }]),
       };
       const mockJobRepo = {
         create: jest.fn().mockReturnValue({}),
@@ -590,6 +595,99 @@ describe('JobsRegistryService', () => {
       const result = await service.getNextStepForJob(jobWithNextStep as any);
 
       expect(result).toBe(1);
+    });
+  });
+
+  describe('getWorkerControl', () => {
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-07-04T23:21:00.000Z'));
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('pauses an active in-progress job when its target scan window is closed', async () => {
+      const workerId = 'worker-uuid';
+      const jobId = 'job-uuid';
+      const updateQb = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 0 }),
+      };
+
+      mockDataSource.getRepository.mockReturnValue({
+        findOne: jest.fn().mockResolvedValue({
+          id: workerId,
+          maxConcurrency: 1,
+          isPaused: false,
+        }),
+      });
+      mockJobRepository.find.mockResolvedValue([
+        {
+          id: jobId,
+          status: JobStatus.IN_PROGRESS,
+          asset: {
+            target: {
+              scanWindowStart: '23:15',
+              scanWindowEnd: '23:20',
+              scanWindowTimezone: 'UTC',
+              scanWindowDays: [6],
+            },
+          },
+        },
+      ]);
+      mockJobRepository.createQueryBuilder.mockReturnValue(updateQb);
+
+      const result = await service.getWorkerControl(workerId, [jobId]);
+
+      expect(result.directives).toEqual([
+        { jobId, action: JobControlAction.PAUSE },
+      ]);
+    });
+
+    it('resumes an active in-progress job while its target scan window is open', async () => {
+      jest.setSystemTime(new Date('2026-07-04T23:16:00.000Z'));
+      const workerId = 'worker-uuid';
+      const jobId = 'job-uuid';
+      const updateQb = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 0 }),
+      };
+
+      mockDataSource.getRepository.mockReturnValue({
+        findOne: jest.fn().mockResolvedValue({
+          id: workerId,
+          maxConcurrency: 1,
+          isPaused: false,
+        }),
+      });
+      mockJobRepository.find.mockResolvedValue([
+        {
+          id: jobId,
+          status: JobStatus.IN_PROGRESS,
+          asset: {
+            target: {
+              scanWindowStart: '23:15',
+              scanWindowEnd: '23:20',
+              scanWindowTimezone: 'UTC',
+              scanWindowDays: [6],
+            },
+          },
+        },
+      ]);
+      mockJobRepository.createQueryBuilder.mockReturnValue(updateQb);
+
+      const result = await service.getWorkerControl(workerId, [jobId]);
+
+      expect(result.directives).toEqual([
+        { jobId, action: JobControlAction.RESUME },
+      ]);
     });
   });
 

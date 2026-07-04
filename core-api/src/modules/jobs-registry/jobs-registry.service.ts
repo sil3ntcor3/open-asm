@@ -36,6 +36,7 @@ import { DataSource, DeepPartial, In, Repository } from 'typeorm';
 import { AssetService } from '../assets/entities/asset-services.entity';
 import { Asset } from '../assets/entities/assets.entity';
 import { StorageService } from '../storage/storage.service';
+import { Target } from '../targets/entities/target.entity';
 import { Tool } from '../tools/entities/tools.entity';
 import { builtInTools } from '../tools/tools-provider/built-in-tools';
 import { ToolsService } from '../tools/tools.service';
@@ -77,6 +78,16 @@ const JOB_HISTORY_SORT_COLUMNS = [
   'updatedAt',
   'jobHistoryName',
 ] as const;
+
+const ISO_WEEKDAY_BY_SHORT_NAME: Record<string, number> = {
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+  Sun: 7,
+};
 
 @Injectable()
 export class JobsRegistryService {
@@ -483,7 +494,8 @@ export class JobsRegistryService {
         // scan window (evaluated in the target's timezone) is open. Targets
         // without a window are always dispatchable. Windows crossing
         // midnight (start > end, e.g. 22:00–06:00) are handled by the ELSE
-        // branch. Jobs stay PENDING outside the window — no state changes.
+        // branch. Jobs stay PENDING outside the window; already-running jobs
+        // are paused/resumed from getWorkerControl.
         .andWhere(
           `(
             target."scanWindowStart" IS NULL
@@ -610,7 +622,11 @@ export class JobsRegistryService {
     query: GetManyJobsQueryParams,
   ): Promise<GetManyBaseResponseDto<Job>> {
     const { page, limit, sortOrder, jobStatus, workerName } = query;
-    const sortBy = resolveSortColumn(query.sortBy, JOB_SORT_COLUMNS, 'createdAt');
+    const sortBy = resolveSortColumn(
+      query.sortBy,
+      JOB_SORT_COLUMNS,
+      'createdAt',
+    );
 
     const qb = this.repo
       .createQueryBuilder('job')
@@ -642,7 +658,11 @@ export class JobsRegistryService {
     query: GetManyJobsQueryParams,
   ): Promise<GetManyBaseResponseDto<Job>> {
     const { page, limit, sortOrder, jobStatus, workerName } = query;
-    const sortBy = resolveSortColumn(query.sortBy, JOB_SORT_COLUMNS, 'createdAt');
+    const sortBy = resolveSortColumn(
+      query.sortBy,
+      JOB_SORT_COLUMNS,
+      'createdAt',
+    );
 
     const qb = this.repo
       .createQueryBuilder('job')
@@ -1291,18 +1311,37 @@ export class JobsRegistryService {
     if (ids.length > 0) {
       const jobs = await this.repo.find({
         where: { id: In(ids) },
-        select: { id: true, status: true },
+        relations: { asset: { target: true } },
+        select: {
+          id: true,
+          status: true,
+          asset: {
+            id: true,
+            target: {
+              id: true,
+              scanWindowStart: true,
+              scanWindowEnd: true,
+              scanWindowTimezone: true,
+              scanWindowDays: true,
+            },
+          },
+        },
       });
-      const statusById = new Map(jobs.map((j) => [j.id, j.status]));
+      const jobById = new Map(jobs.map((j) => [j.id, j]));
 
       for (const id of ids) {
-        const status = statusById.get(id);
+        const job = jobById.get(id);
+        const status = job?.status;
         if (!status || status === JobStatus.CANCELLED) {
           // Cancelled or deleted while running: kill it.
           directives.push({ jobId: id, action: JobControlAction.STOP });
         } else if (status === JobStatus.PAUSED) {
           directives.push({ jobId: id, action: JobControlAction.PAUSE });
         } else if (status === JobStatus.IN_PROGRESS) {
+          if (!this.isTargetScanWindowOpen(job.asset?.target)) {
+            directives.push({ jobId: id, action: JobControlAction.PAUSE });
+            continue;
+          }
           // Idempotent: only has an effect on a currently-paused process.
           directives.push({ jobId: id, action: JobControlAction.RESUME });
         }
@@ -1347,6 +1386,70 @@ export class JobsRegistryService {
       maxConcurrency: worker.maxConcurrency ?? 0,
       dispatchPaused: worker.isPaused === true,
     };
+  }
+
+  private isTargetScanWindowOpen(
+    target?: Pick<
+      Target,
+      | 'scanWindowStart'
+      | 'scanWindowEnd'
+      | 'scanWindowTimezone'
+      | 'scanWindowDays'
+    >,
+    now = new Date(),
+  ): boolean {
+    if (!target?.scanWindowStart || !target.scanWindowEnd) {
+      return true;
+    }
+
+    const local = this.getLocalScanWindowTime(
+      now,
+      target.scanWindowTimezone ?? 'UTC',
+    );
+
+    if (
+      target.scanWindowDays?.length &&
+      !target.scanWindowDays.includes(local.isoWeekday)
+    ) {
+      return false;
+    }
+
+    const start = this.parseTimeToMinutes(target.scanWindowStart);
+    const end = this.parseTimeToMinutes(target.scanWindowEnd);
+
+    if (start <= end) {
+      return local.minutes >= start && local.minutes < end;
+    }
+
+    return local.minutes >= start || local.minutes < end;
+  }
+
+  private getLocalScanWindowTime(
+    date: Date,
+    timeZone: string,
+  ): { isoWeekday: number; minutes: number } {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(date);
+    const getPart = (type: string): string =>
+      parts.find((part) => part.type === type)?.value ?? '';
+    const hour = Number(getPart('hour'));
+    const minute = Number(getPart('minute'));
+    const weekday = getPart('weekday');
+
+    return {
+      isoWeekday: ISO_WEEKDAY_BY_SHORT_NAME[weekday] ?? 1,
+      minutes: hour * 60 + minute,
+    };
+  }
+
+  private parseTimeToMinutes(time: string): number {
+    const [hour, minute] = time.split(':');
+    return Number(hour) * 60 + Number(minute);
   }
 
   public async deleteJob(

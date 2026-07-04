@@ -6,7 +6,14 @@ import { Logger } from '@nestjs/common';
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsEnum, IsOptional, IsString } from 'class-validator';
-import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany } from 'typeorm';
+import {
+  Column,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+} from 'typeorm';
 import { WorkspaceTarget } from './workspace-target.entity';
 
 /**
@@ -108,7 +115,8 @@ export class Target extends BaseEntity {
    * must be set for the window to apply; when null, jobs dispatch at any
    * time. Windows crossing midnight (start > end) are supported. Jobs
    * created outside the window stay PENDING until it opens; jobs already
-   * running when the window closes are allowed to finish.
+   * running when the window closes are paused by worker control until the
+   * window opens again.
    */
   @ApiProperty({ required: false, nullable: true, example: '22:00' })
   @Column({ type: 'time', nullable: true })
@@ -127,12 +135,17 @@ export class Target extends BaseEntity {
    * ISO days of week (1 = Monday … 7 = Sunday) the window applies to.
    * Null or empty means every day.
    */
-  @ApiProperty({ required: false, nullable: true, type: [Number], example: [6, 7] })
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    type: [Number],
+    example: [6, 7],
+  })
   @Column({ type: 'int', array: true, nullable: true })
   scanWindowDays?: number[] | null;
 
   @Column({ nullable: true })
-  jobId: string;
+  jobId: string | null;
 
   @Column({ type: 'uuid', nullable: true })
   internalNetworkId: string;
