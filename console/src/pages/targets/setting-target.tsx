@@ -24,7 +24,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
 import clsx from 'clsx';
 import { Clock, RefreshCw, Settings, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 
@@ -42,10 +42,15 @@ const SettingTarget = ({
   const navigate = useNavigate();
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [currentTarget, setCurrentTarget] = useState(target);
   const [frequency, setFrequency] = useState<UpdateTargetDtoScanSchedule>(
     target.scanSchedule || UpdateTargetDtoScanSchedule['0_0_*_*_0'],
   ); // Default to target's scan schedule or weekly if not set
   const [isRediscovering, setIsRediscovering] = useState(false);
+
+  useEffect(() => {
+    setCurrentTarget(target);
+  }, [target]);
 
   // Mutation hook to delete a target from the workspace
   const { mutate: deleteTarget } =
@@ -77,9 +82,11 @@ const SettingTarget = ({
     useTargetsControllerUpdateTarget({
       mutation: {
         onSuccess: (updatedTarget, variables) => {
+          const nextTarget = { ...updatedTarget, ...variables.data };
+          setCurrentTarget(nextTarget);
           queryClient.setQueryData(
             getTargetsControllerGetTargetByIdQueryKey(variables.id),
-            updatedTarget,
+            nextTarget,
           );
           toast.success('Updated');
         },
@@ -100,7 +107,9 @@ const SettingTarget = ({
       </SheetTrigger>
       <SheetContent className="flex flex-col w-full sm:max-w-md p-0 h-full">
         <SheetHeader>
-          <SheetTitle className="font-bold text-lg">{target.value}</SheetTitle>
+          <SheetTitle className="font-bold text-lg">
+            {currentTarget.value}
+          </SheetTitle>
         </SheetHeader>
 
         <div className="flex flex-col h-full">
@@ -124,7 +133,7 @@ const SettingTarget = ({
                         onChange={(value: UpdateTargetDtoScanSchedule) => {
                           setFrequency(value);
                           updateTargetScanSchedule({
-                            id: target.id,
+                            id: currentTarget.id,
                             data: {
                               scanSchedule: value,
                             },
@@ -137,10 +146,10 @@ const SettingTarget = ({
               </div>
 
               <ScanWindowSettings
-                target={target}
+                target={currentTarget}
                 isSaving={isUpdatingTarget}
                 onSave={(data) =>
-                  updateTargetScanSchedule({ id: target.id, data })
+                  updateTargetScanSchedule({ id: currentTarget.id, data })
                 }
               />
 
@@ -153,7 +162,7 @@ const SettingTarget = ({
                       setIsRediscovering(true);
                       rediscoverTarget(
                         {
-                          id: target.id,
+                          id: currentTarget.id,
                         },
                         {
                           onError: (e) => {
@@ -171,7 +180,7 @@ const SettingTarget = ({
                       );
                       navigate({
                         to: '/targets/$id/$tab',
-                        params: { id: target.id, tab: 'inventory' },
+                        params: { id: currentTarget.id, tab: 'inventory' },
                         search: { animation: 'true', page: 1, pageSize: 100 },
                       });
                       setIsSheetOpen(false);
@@ -180,7 +189,7 @@ const SettingTarget = ({
                       <Button
                         variant="ghost"
                         className="w-full justify-start h-12 text-left p-2"
-                        disabled={target.status !== JobStatus.completed}
+                        disabled={currentTarget.status !== JobStatus.completed}
                       >
                         <div className="flex items-center gap-3">
                           <div className="p-2.5 rounded-lg bg-blue-100 dark:bg-blue-900/30">
@@ -191,12 +200,12 @@ const SettingTarget = ({
                           <div className="flex-1">
                             <p className="font-medium">Re-discover Target</p>
                             <p className="text-xs text-muted-foreground">
-                              {target.status === JobStatus.completed
+                              {currentTarget.status === JobStatus.completed
                                 ? 'Scan the target again for changes'
                                 : 'Target is currently being processed'}
                             </p>
                           </div>
-                          {target.status !== JobStatus.completed && (
+                          {currentTarget.status !== JobStatus.completed && (
                             <Clock className="h-4 w-4 text-muted-foreground" />
                           )}
                         </div>
@@ -217,12 +226,12 @@ const SettingTarget = ({
               onConfirm={() => {
                 setIsDeleting(true);
                 deleteTarget({
-                  id: target.id,
+                  id: currentTarget.id,
                   workspaceId: selectedWorkspaceId ?? '',
                 });
                 window.history.back();
               }}
-              typeToConfirm={target.value}
+              typeToConfirm={currentTarget.value}
               trigger={
                 <Button
                   variant="outline"

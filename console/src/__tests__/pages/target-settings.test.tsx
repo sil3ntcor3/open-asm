@@ -50,6 +50,37 @@ function TargetSettingsHarness() {
 }
 
 describe('Target settings', () => {
+  it('uses the saved scan window result when settings reopen before the parent target refreshes', async () => {
+    const user = userEvent.setup();
+
+    server.use(
+      http.patch('/api/targets/:id', () => {
+        return HttpResponse.json(savedTarget);
+      }),
+    );
+
+    renderWithProviders(
+      <SettingTarget target={baseTarget} refetch={() => undefined} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('button')).toHaveLength(1);
+    });
+
+    await user.click(screen.getAllByRole('button')[0]);
+    await user.click(
+      screen.getByRole('switch', { name: /enable scan window/i }),
+    );
+    await user.click(screen.getByRole('button', { name: /save scan window/i }));
+
+    await user.click(screen.getByRole('button', { name: /close/i }));
+    await user.click(screen.getAllByRole('button')[0]);
+
+    expect(
+      screen.getByRole('switch', { name: /enable scan window/i }),
+    ).toBeChecked();
+  });
+
   it('keeps the scan window enabled after saving, closing, and reopening settings', async () => {
     const user = userEvent.setup();
     let patchedBody: unknown;
