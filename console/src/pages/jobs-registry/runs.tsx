@@ -51,6 +51,37 @@ const getJobTitle = (row: Job) => {
   return value;
 };
 
+const formatTimestamp = (value?: string | Date | null) => {
+  if (!value) return '-';
+  const date = dayjs(value);
+  return date.isValid() ? date.format('YYYY-MM-DD HH:mm:ss') : '-';
+};
+
+const getJobStartedAt = (job: Job) => job.pickJobAt || job.createdAt;
+
+const getJobEndedAt = (job: Job) => job.completedAt || job.updatedAt;
+
+const getJobDuration = (job: Job) => {
+  const startedAt = dayjs(getJobStartedAt(job));
+  const endedAt = dayjs(getJobEndedAt(job));
+
+  if (!startedAt.isValid() || !endedAt.isValid()) return null;
+
+  const totalSeconds = endedAt.diff(startedAt, 'second');
+  if (totalSeconds < 0) return null;
+
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  const parts = [];
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0) parts.push(`${minutes}m`);
+  parts.push(`${seconds}s`);
+
+  return parts.join(' ');
+};
+
 type JobActionHandler = (id: string, onSuccess: () => void) => void;
 
 type JobActionsMenuProps = {
@@ -271,6 +302,7 @@ export default function Runs() {
   const columns = useMemo<ColumnDef<Job>[]>(() => [
     {
       accessorKey: 'status',
+      header: 'Target',
       cell: ({ row }) => {
         return (
           <div className="flex items-center gap-2">
@@ -285,6 +317,7 @@ export default function Runs() {
     },
     {
       accessorKey: 'tool',
+      header: 'Tool',
       cell: ({ row }) => (
         <div className="min-h-[60px] flex items-center">
           {row.original.tool ? (
@@ -309,57 +342,52 @@ export default function Runs() {
       ),
     },
     {
-      accessorKey: 'createdAt',
+      accessorKey: 'pickJobAt',
+      header: 'Started At',
       cell: ({ row }) => {
-        const updatedAt = dayjs(row.original.updatedAt);
-        const pickJobAt = dayjs(row.original.pickJobAt);
-        const completedAt = dayjs(row.original.completedAt);
-
-        // Calculate duration only if all dates are valid and job is completed
-        const isValidDates =
-          pickJobAt.isValid() &&
-          completedAt.isValid() &&
-          row.original.status === JobStatus.completed;
-
-        let durationDisplay = null;
-
-        if (isValidDates) {
-          const totalSeconds = completedAt.diff(pickJobAt, 'second');
-
-          // Only display if duration is positive
-          if (totalSeconds >= 0) {
-            const hours = Math.floor(totalSeconds / 3600);
-            const minutes = Math.floor((totalSeconds % 3600) / 60);
-            const seconds = totalSeconds % 60;
-
-            const parts = [];
-            if (hours > 0) parts.push(`${hours}h`);
-            if (minutes > 0) parts.push(`${minutes}m`);
-            parts.push(`${seconds}s`);
-
-            durationDisplay = parts.join(' ');
-          }
-        }
-
         return (
-          <div className="text-sm text-muted-foreground flex flex-col gap-2">
+          <div className="text-sm text-muted-foreground">
             <span className="flex gap-2 items-center">
               <Calendar size={20} />
-              {updatedAt.format('YYYY-MM-DD HH:mm:ss')}
+              {formatTimestamp(getJobStartedAt(row.original))}
             </span>
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: 'completedAt',
+      header: 'Ended At',
+      cell: ({ row }) => {
+        return (
+          <div className="text-sm text-muted-foreground">
+            <span className="flex gap-2 items-center">
+              <Calendar size={20} />
+              {formatTimestamp(getJobEndedAt(row.original))}
+            </span>
+          </div>
+        );
+      },
+    },
+    {
+      id: 'duration',
+      header: 'Duration',
+      cell: ({ row }) => {
+        const durationDisplay = getJobDuration(row.original);
 
-            {durationDisplay && (
-              <span className="flex gap-2 items-center">
-                <Clock size={20} />
-                {durationDisplay}
-              </span>
-            )}
+        return (
+          <div className="text-sm text-muted-foreground">
+            <span className="flex gap-2 items-center">
+              <Clock size={20} />
+              {durationDisplay || '-'}
+            </span>
           </div>
         );
       },
     },
     {
       id: 'actions',
+      header: 'Actions',
       cell: ({ row }) => {
         const invalidateJobs = () => {
           queryClient.invalidateQueries({
@@ -526,7 +554,6 @@ export default function Runs() {
       )}
 
       <DataTable
-        isShowHeader={false}
         columns={columns}
         data={paginatedJobsData?.data || []}
         isLoading={isLoadingJobs}

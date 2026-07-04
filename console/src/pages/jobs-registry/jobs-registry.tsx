@@ -10,10 +10,14 @@ import {
 } from '@/services/apis/gen/queries';
 import type { ColumnDef } from '@tanstack/react-table';
 import dayjs from 'dayjs';
-import duration from 'dayjs/plugin/duration';
 import { Calendar } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
-dayjs.extend(duration);
+
+const formatTimestamp = (value?: string | Date | null) => {
+  if (!value) return '-';
+  const date = dayjs(value);
+  return date.isValid() ? date.format('YYYY-MM-DD HH:mm:ss') : '-';
+};
 
 const JobsRegistryPage = () => {
   const navigate = useNavigate();
@@ -44,7 +48,7 @@ const JobsRegistryPage = () => {
   const columns: ColumnDef<JobHistoryResponseDto>[] = [
     {
       accessorKey: 'status',
-      header: 'Status',
+      header: 'Job',
       cell: ({ row }) => {
         return (
           <div className="flex items-center gap-2">
@@ -74,23 +78,37 @@ const JobsRegistryPage = () => {
     },
     {
       accessorKey: 'createdAt',
-      header: 'Created At',
+      header: 'Started At',
       cell: ({ row }) => {
         const job = row.original;
-        const createdAt = new Date(job.updatedAt);
         return (
           <div className="flex flex-col text-muted-foreground text-xs gap-3">
             <span className="flex items-center gap-1">
               <Calendar size={20} />
-              {createdAt.toLocaleString()}
+              {formatTimestamp(job.createdAt)}
             </span>
           </div>
         );
       },
     },
     {
-      accessorKey: '',
-      header: 'Created At',
+      accessorKey: 'updatedAt',
+      header: 'Ended At',
+      cell: ({ row }) => {
+        const job = row.original;
+        return (
+          <div className="flex flex-col text-muted-foreground text-xs gap-3">
+            <span className="flex items-center gap-1">
+              <Calendar size={20} />
+              {formatTimestamp(job.updatedAt)}
+            </span>
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: 'jobRunType',
+      header: 'Run Type',
       cell: ({ row }) => {
         return (
           <Badge variant="outline">
@@ -117,7 +135,6 @@ const JobsRegistryPage = () => {
   return (
     <Page title="Jobs Registry">
       <DataTable
-        isShowHeader={false}
         columns={columns}
         data={jobsData?.data || []}
         isLoading={isLoading}

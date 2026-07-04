@@ -1,4 +1,5 @@
 import { renderWithProviders, screen } from '@/test/utils';
+import JobsRegistryPage from '@/pages/jobs-registry/jobs-registry';
 import Runs from '@/pages/jobs-registry/runs';
 import { act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -32,9 +33,9 @@ vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
       name: 'nuclei',
       logoUrl: '',
     },
-    createdAt: '2026-01-01T00:00:00Z',
-    updatedAt: '2026-01-01T00:00:00Z',
-    pickJobAt: '2026-01-01T00:00:00Z',
+    createdAt: '2026-01-01T00:00:00',
+    updatedAt: '2026-01-01T00:01:30',
+    pickJobAt: '2026-01-01T00:00:30',
     completedAt: null,
     errorLogs: [],
   };
@@ -48,6 +49,28 @@ vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
         workflowName: 'Example workflow',
         tools: [activeJob.tool],
       },
+    }),
+    useJobsRegistryControllerGetManyJobHistories: () => ({
+      data: {
+        data: [
+          {
+            id: 'history-1',
+            status: actual.JobStatus.completed,
+            totalJobs: 1,
+            workflowName: 'Example workflow',
+            jobHistoryName: 'Example run',
+            jobRunType: 'manual',
+            createdAt: '2026-01-01T00:00:00',
+            updatedAt: '2026-01-01T00:02:00',
+          },
+        ],
+        page: 1,
+        limit: 10,
+        total: 1,
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
     }),
     useJobsRegistryControllerGetManyJobs: () => ({
       data: {
@@ -96,6 +119,27 @@ describe('Job runs', () => {
     expect(screen.getByRole('menuitem', { name: /pause/i })).toBeVisible();
     expect(screen.getByRole('menuitem', { name: /cancel/i })).toBeVisible();
     expect(screen.getByRole('menuitem', { name: /delete/i })).toBeVisible();
+  });
+
+  it('shows column headers with started and ended timestamps', async () => {
+    renderWithProviders(<Runs />);
+
+    expect(
+      await screen.findByRole('columnheader', { name: /target/i }),
+    ).toBeVisible();
+    expect(screen.getByRole('columnheader', { name: /tool/i })).toBeVisible();
+    expect(
+      screen.getByRole('columnheader', { name: /started at/i }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('columnheader', { name: /ended at/i }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('columnheader', { name: /duration/i }),
+    ).toBeVisible();
+
+    expect(screen.getByText('2026-01-01 00:00:30')).toBeVisible();
+    expect(screen.getByText('2026-01-01 00:01:30')).toBeVisible();
   });
 
   it('closes the row action menu after choosing delete', async () => {
@@ -149,5 +193,32 @@ describe('Job runs', () => {
       expect.objectContaining({ onSuccess: expect.any(Function) }),
     );
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+});
+
+describe('Jobs registry', () => {
+  beforeEach(() => {
+    mockNavigate.mockClear();
+  });
+
+  it('shows column headers with started and ended timestamps', async () => {
+    renderWithProviders(<JobsRegistryPage />);
+
+    expect(
+      await screen.findByRole('columnheader', { name: /^job$/i }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('columnheader', { name: /total jobs/i }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('columnheader', { name: /started at/i }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('columnheader', { name: /ended at/i }),
+    ).toBeVisible();
+    expect(screen.getByRole('columnheader', { name: /run type/i })).toBeVisible();
+
+    expect(screen.getByText('2026-01-01 00:00:00')).toBeVisible();
+    expect(screen.getByText('2026-01-01 00:02:00')).toBeVisible();
   });
 });
