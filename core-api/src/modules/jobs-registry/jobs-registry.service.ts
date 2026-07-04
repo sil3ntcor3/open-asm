@@ -1022,8 +1022,9 @@ export class JobsRegistryService {
               WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.FAILED}') > 0 THEN '${JobStatus.FAILED}'
               WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.IN_PROGRESS}') > 0 THEN '${JobStatus.IN_PROGRESS}'
               WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.PAUSED}') > 0 THEN '${JobStatus.PAUSED}'
-              WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.COMPLETED}') = COUNT(*) AND COUNT(*) > 0 THEN '${JobStatus.COMPLETED}'
               WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.CANCELLED}') = COUNT(*) AND COUNT(*) > 0 THEN '${JobStatus.CANCELLED}'
+              WHEN COUNT(*) FILTER (WHERE status IN ('${JobStatus.COMPLETED}', '${JobStatus.CANCELLED}')) = COUNT(*) 
+                AND COUNT(*) FILTER (WHERE status = '${JobStatus.COMPLETED}') > 0 THEN '${JobStatus.COMPLETED}'
               ELSE '${JobStatus.PENDING}'
             END
           FROM jobs 

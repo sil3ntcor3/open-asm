@@ -1,4 +1,5 @@
 import { BullMQName, JobStatus } from '@/common/enums/enum';
+import { SortOrder } from '@/common/dtos/get-many-base.dto';
 import { RedisService } from '@/services/redis/redis.service';
 import { getQueueToken } from '@nestjs/bullmq';
 import { NotFoundException } from '@nestjs/common';
@@ -714,6 +715,81 @@ describe('JobsRegistryService', () => {
       await expect(
         service.getJobHistoryDetail(mockWorkspaceId, mockHistoryId),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('getManyJobHistories', () => {
+    const mockWorkspaceId = 'workspace-uuid';
+
+    type JobHistoryQueryBuilderMock = {
+      selectedFields: string[];
+      innerJoin: jest.Mock<JobHistoryQueryBuilderMock, []>;
+      leftJoin: jest.Mock<JobHistoryQueryBuilderMock, []>;
+      where: jest.Mock<JobHistoryQueryBuilderMock, []>;
+      select: jest.Mock<JobHistoryQueryBuilderMock, [string[]]>;
+      groupBy: jest.Mock<JobHistoryQueryBuilderMock, []>;
+      addGroupBy: jest.Mock<JobHistoryQueryBuilderMock, []>;
+      orderBy: jest.Mock<JobHistoryQueryBuilderMock, []>;
+      offset: jest.Mock<JobHistoryQueryBuilderMock, []>;
+      limit: jest.Mock<JobHistoryQueryBuilderMock, []>;
+      getRawMany: jest.Mock<Promise<unknown[]>, []>;
+    };
+
+    const createJobHistoryQueryBuilder = (): JobHistoryQueryBuilderMock => {
+      const selectedFields: string[] = [];
+      const qb = {} as JobHistoryQueryBuilderMock;
+
+      Object.assign(qb, {
+        selectedFields,
+        innerJoin: jest.fn((): JobHistoryQueryBuilderMock => qb),
+        leftJoin: jest.fn((): JobHistoryQueryBuilderMock => qb),
+        where: jest.fn((): JobHistoryQueryBuilderMock => qb),
+        select: jest.fn((fields: string[]): JobHistoryQueryBuilderMock => {
+          selectedFields.push(...fields);
+          return qb;
+        }),
+        groupBy: jest.fn((): JobHistoryQueryBuilderMock => qb),
+        addGroupBy: jest.fn((): JobHistoryQueryBuilderMock => qb),
+        orderBy: jest.fn((): JobHistoryQueryBuilderMock => qb),
+        offset: jest.fn((): JobHistoryQueryBuilderMock => qb),
+        limit: jest.fn((): JobHistoryQueryBuilderMock => qb),
+        getRawMany: jest.fn().mockResolvedValue([]),
+      });
+
+      return qb;
+    };
+
+    it('treats completed plus cancelled job histories as completed unless every job is cancelled', async () => {
+      const historyQb = createJobHistoryQueryBuilder();
+      const countQb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getCount: jest.fn().mockResolvedValue(0),
+      };
+      mockJobHistoryRepository.createQueryBuilder
+        .mockReturnValueOnce(historyQb)
+        .mockReturnValueOnce(countQb);
+
+      await service.getManyJobHistories(mockWorkspaceId, {
+        page: 1,
+        limit: 10,
+        sortBy: 'createdAt',
+        sortOrder: SortOrder.DESC,
+      });
+
+      const statusSelection = historyQb.selectedFields.find((field) =>
+        field.includes(') as "status"'),
+      );
+
+      expect(statusSelection).toContain(
+        `COUNT(*) FILTER (WHERE status = '${JobStatus.CANCELLED}') = COUNT(*)`,
+      );
+      expect(statusSelection).toContain(
+        `COUNT(*) FILTER (WHERE status IN ('${JobStatus.COMPLETED}', '${JobStatus.CANCELLED}')) = COUNT(*)`,
+      );
+      expect(statusSelection).toContain(
+        `COUNT(*) FILTER (WHERE status = '${JobStatus.COMPLETED}') > 0`,
+      );
     });
   });
 
