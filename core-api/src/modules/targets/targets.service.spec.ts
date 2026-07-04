@@ -482,6 +482,81 @@ describe('TargetsService', () => {
       );
     });
 
+    it('should not emit events when startDiscovery is false', async () => {
+      // Arrange
+      const targetValues = ['noscan1.com', 'noscan2.com'];
+      const dto = {
+        targets: targetValues.map((value) => ({ value })),
+        startDiscovery: false,
+      };
+      const createdTargets = targetValues.map((value) => ({
+        id: randomUUID(),
+        value,
+        type: TargetType.DOMAIN,
+        scanSchedule: 'DISABLED',
+      })) as unknown as Target[];
+
+      const mockManager = createMockEntityManager({
+        existingTargets: [],
+        createdTargets,
+      });
+
+      (mockTargetRepository.manager as EntityManager).transaction = jest
+        .fn()
+        .mockImplementation(
+          (callback: (manager: EntityManager) => Promise<unknown>) =>
+            callback(mockManager),
+        );
+
+      // Act
+      const result = await service.createMultipleTargets(
+        dto,
+        workspaceId,
+        userContext,
+      );
+
+      // Assert
+      expect(result.totalCreated).toBe(2);
+      expect(mockEventEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('should emit events when startDiscovery is explicitly true', async () => {
+      // Arrange
+      const dto = {
+        targets: [{ value: 'scan1.com' }],
+        startDiscovery: true,
+      };
+      const createdTargets = [
+        {
+          id: randomUUID(),
+          value: 'scan1.com',
+          type: TargetType.DOMAIN,
+          scanSchedule: 'DISABLED',
+        },
+      ] as unknown as Target[];
+
+      const mockManager = createMockEntityManager({
+        existingTargets: [],
+        createdTargets,
+      });
+
+      (mockTargetRepository.manager as EntityManager).transaction = jest
+        .fn()
+        .mockImplementation(
+          (callback: (manager: EntityManager) => Promise<unknown>) =>
+            callback(mockManager),
+        );
+
+      // Act
+      await service.createMultipleTargets(dto, workspaceId, userContext);
+
+      // Assert
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith(
+        'target.domain.create',
+        expect.any(Object),
+      );
+    });
+
     it('should throw BadRequestException for IP address as domain', async () => {
       // Arrange
       const dto = {

@@ -4,6 +4,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsEnum,
   IsInt,
   IsMilitaryTime,
@@ -56,6 +57,16 @@ export class CreateMultipleTargetsDto {
   @ValidateNested({ each: true })
   @Type(() => CreateTargetDto)
   targets: CreateTargetDto[];
+
+  @ApiProperty({
+    description:
+      'Whether to start discovery workflows for the created targets. Defaults to true. Set to false to register targets without scanning them.',
+    required: false,
+    default: true,
+  })
+  @IsBoolean()
+  @IsOptional()
+  startDiscovery?: boolean = true;
 }
 
 /**

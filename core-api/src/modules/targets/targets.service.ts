@@ -454,9 +454,11 @@ export class TargetsService implements OnModuleInit {
     );
 
     // Emit events and update scan schedules for all created targets (outside transaction)
-    for (const target of result.created) {
-      const typeToEvent = target.type.toLocaleLowerCase(); // e.g. DOMAIN -> domain, CIDR -> cidr
-      this.eventEmitter.emit(`target.${typeToEvent}.create`, target);
+    if (dto.startDiscovery !== false) {
+      for (const target of result.created) {
+        const typeToEvent = target.type.toLocaleLowerCase(); // e.g. DOMAIN -> domain, CIDR -> cidr
+        this.eventEmitter.emit(`target.${typeToEvent}.create`, target);
+      }
     }
 
     return result;
