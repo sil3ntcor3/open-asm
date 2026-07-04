@@ -35,7 +35,7 @@ import { Route as AuthedAgentsIndexRouteImport } from './routes/_authed/agents/i
 import { Route as AuthedWorkspacesCreateRouteImport } from './routes/_authed/workspaces/create'
 import { Route as AuthedVulnerabilitiesIdRouteImport } from './routes/_authed/vulnerabilities/$id'
 import { Route as AuthedToolsIdRouteImport } from './routes/_authed/tools/$id'
-import { Route as AuthedTargetsStartDiscoveryRouteImport } from './routes/_authed/targets/start-discovery'
+import { Route as AuthedTargetsAddTargetRouteImport } from './routes/_authed/targets/add-target'
 import { Route as AuthedProvidersCreateRouteImport } from './routes/_authed/providers/create'
 import { Route as AuthedIssuesCreateRouteImport } from './routes/_authed/issues/create'
 import { Route as AuthedIssuesIdRouteImport } from './routes/_authed/issues/$id'
@@ -187,12 +187,11 @@ const AuthedToolsIdRoute = AuthedToolsIdRouteImport.update({
   path: '/tools/$id',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedTargetsStartDiscoveryRoute =
-  AuthedTargetsStartDiscoveryRouteImport.update({
-    id: '/targets/start-discovery',
-    path: '/targets/start-discovery',
-    getParentRoute: () => AuthedRoute,
-  } as any)
+const AuthedTargetsAddTargetRoute = AuthedTargetsAddTargetRouteImport.update({
+  id: '/targets/add-target',
+  path: '/targets/add-target',
+  getParentRoute: () => AuthedRoute,
+} as any)
 const AuthedProvidersCreateRoute = AuthedProvidersCreateRouteImport.update({
   id: '/providers/create',
   path: '/providers/create',
@@ -315,7 +314,7 @@ export interface FileRoutesByFullPath {
   '/issues/$id': typeof AuthedIssuesIdRoute
   '/issues/create': typeof AuthedIssuesCreateRoute
   '/providers/create': typeof AuthedProvidersCreateRoute
-  '/targets/start-discovery': typeof AuthedTargetsStartDiscoveryRoute
+  '/targets/add-target': typeof AuthedTargetsAddTargetRoute
   '/tools/$id': typeof AuthedToolsIdRoute
   '/vulnerabilities/$id': typeof AuthedVulnerabilitiesIdRoute
   '/workspaces/create': typeof AuthedWorkspacesCreateRoute
@@ -361,7 +360,7 @@ export interface FileRoutesByTo {
   '/issues/$id': typeof AuthedIssuesIdRoute
   '/issues/create': typeof AuthedIssuesCreateRoute
   '/providers/create': typeof AuthedProvidersCreateRoute
-  '/targets/start-discovery': typeof AuthedTargetsStartDiscoveryRoute
+  '/targets/add-target': typeof AuthedTargetsAddTargetRoute
   '/tools/$id': typeof AuthedToolsIdRoute
   '/vulnerabilities/$id': typeof AuthedVulnerabilitiesIdRoute
   '/workspaces/create': typeof AuthedWorkspacesCreateRoute
@@ -410,7 +409,7 @@ export interface FileRoutesById {
   '/_authed/issues/$id': typeof AuthedIssuesIdRoute
   '/_authed/issues/create': typeof AuthedIssuesCreateRoute
   '/_authed/providers/create': typeof AuthedProvidersCreateRoute
-  '/_authed/targets/start-discovery': typeof AuthedTargetsStartDiscoveryRoute
+  '/_authed/targets/add-target': typeof AuthedTargetsAddTargetRoute
   '/_authed/tools/$id': typeof AuthedToolsIdRoute
   '/_authed/vulnerabilities/$id': typeof AuthedVulnerabilitiesIdRoute
   '/_authed/workspaces/create': typeof AuthedWorkspacesCreateRoute
@@ -459,7 +458,7 @@ export interface FileRouteTypes {
     | '/issues/$id'
     | '/issues/create'
     | '/providers/create'
-    | '/targets/start-discovery'
+    | '/targets/add-target'
     | '/tools/$id'
     | '/vulnerabilities/$id'
     | '/workspaces/create'
@@ -505,7 +504,7 @@ export interface FileRouteTypes {
     | '/issues/$id'
     | '/issues/create'
     | '/providers/create'
-    | '/targets/start-discovery'
+    | '/targets/add-target'
     | '/tools/$id'
     | '/vulnerabilities/$id'
     | '/workspaces/create'
@@ -553,7 +552,7 @@ export interface FileRouteTypes {
     | '/_authed/issues/$id'
     | '/_authed/issues/create'
     | '/_authed/providers/create'
-    | '/_authed/targets/start-discovery'
+    | '/_authed/targets/add-target'
     | '/_authed/tools/$id'
     | '/_authed/vulnerabilities/$id'
     | '/_authed/workspaces/create'
@@ -772,11 +771,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedToolsIdRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/_authed/targets/start-discovery': {
-      id: '/_authed/targets/start-discovery'
-      path: '/targets/start-discovery'
-      fullPath: '/targets/start-discovery'
-      preLoaderRoute: typeof AuthedTargetsStartDiscoveryRouteImport
+    '/_authed/targets/add-target': {
+      id: '/_authed/targets/add-target'
+      path: '/targets/add-target'
+      fullPath: '/targets/add-target'
+      preLoaderRoute: typeof AuthedTargetsAddTargetRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/providers/create': {
@@ -930,7 +929,7 @@ interface AuthedRouteChildren {
   AuthedIssuesIdRoute: typeof AuthedIssuesIdRoute
   AuthedIssuesCreateRoute: typeof AuthedIssuesCreateRoute
   AuthedProvidersCreateRoute: typeof AuthedProvidersCreateRoute
-  AuthedTargetsStartDiscoveryRoute: typeof AuthedTargetsStartDiscoveryRoute
+  AuthedTargetsAddTargetRoute: typeof AuthedTargetsAddTargetRoute
   AuthedToolsIdRoute: typeof AuthedToolsIdRoute
   AuthedVulnerabilitiesIdRoute: typeof AuthedVulnerabilitiesIdRoute
   AuthedWorkspacesCreateRoute: typeof AuthedWorkspacesCreateRoute
@@ -972,7 +971,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedIssuesIdRoute: AuthedIssuesIdRoute,
   AuthedIssuesCreateRoute: AuthedIssuesCreateRoute,
   AuthedProvidersCreateRoute: AuthedProvidersCreateRoute,
-  AuthedTargetsStartDiscoveryRoute: AuthedTargetsStartDiscoveryRoute,
+  AuthedTargetsAddTargetRoute: AuthedTargetsAddTargetRoute,
   AuthedToolsIdRoute: AuthedToolsIdRoute,
   AuthedVulnerabilitiesIdRoute: AuthedVulnerabilitiesIdRoute,
   AuthedWorkspacesCreateRoute: AuthedWorkspacesCreateRoute,
