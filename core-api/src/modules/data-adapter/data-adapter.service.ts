@@ -259,7 +259,26 @@ export class DataAdapterService {
         .values(uniqueValues)
         .orUpdate({
           conflict_target: ['fingerprint'],
-          overwrite: ['updatedAt', 'severity', 'lastSeenDate'],
+          overwrite: [
+            'updatedAt',
+            'severity',
+            'description',
+            'tags',
+            'references',
+            'authors',
+            'affectedUrl',
+            'ipAddress',
+            'host',
+            'ports',
+            'cvssMetric',
+            'cvssScore',
+            'cveId',
+            'cweId',
+            'extractorName',
+            'extractedResults',
+            'evidence',
+            'lastSeenDate',
+          ],
         })
         .returning('*')
         .execute();

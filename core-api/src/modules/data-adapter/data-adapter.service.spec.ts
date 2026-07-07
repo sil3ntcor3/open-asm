@@ -560,7 +560,11 @@ describe('DataAdapterService', () => {
       expect(mockQueryBuilder.insert).toHaveBeenCalled();
       expect(mockQueryBuilder.into).toHaveBeenCalledWith(Vulnerability);
       expect(mockQueryBuilder.values).toHaveBeenCalled();
-      expect(mockQueryBuilder.orUpdate).toHaveBeenCalled();
+      expect(mockQueryBuilder.orUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          overwrite: expect.arrayContaining(['evidence']),
+        }),
+      );
       expect(mockQueryBuilder.returning).toHaveBeenCalledWith('*');
       expect(mockQueryBuilder.execute).toHaveBeenCalled();
     });
@@ -599,9 +603,8 @@ describe('DataAdapterService', () => {
         ],
       }).compile();
 
-      const serviceWithMock = moduleWithMockIssues.get<DataAdapterService>(
-        DataAdapterService,
-      );
+      const serviceWithMock =
+        moduleWithMockIssues.get<DataAdapterService>(DataAdapterService);
 
       mockDataSource.transaction.mockImplementation(
         async (callback: (manager: any) => Promise<any>) => {
@@ -678,9 +681,8 @@ describe('DataAdapterService', () => {
         ],
       }).compile();
 
-      const serviceWithMock = moduleWithMockIssues.get<DataAdapterService>(
-        DataAdapterService,
-      );
+      const serviceWithMock =
+        moduleWithMockIssues.get<DataAdapterService>(DataAdapterService);
 
       mockDataSource.transaction.mockImplementation(
         async (callback: (manager: any) => Promise<any>) => {

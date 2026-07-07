@@ -1296,6 +1296,27 @@ export type VulnerabilityDismissal = {
   vulnerability: Vulnerability;
 };
 
+export type VulnerabilityEvidence = {
+  templateId?: string;
+  templatePath?: string;
+  type?: string;
+  matcherName?: string;
+  matcherStatus?: boolean;
+  extractorName?: string;
+  extractedResults?: string[];
+  matchedAt?: string;
+  host?: string;
+  ip?: string;
+  port?: string;
+  scheme?: string;
+  request?: string;
+  response?: string;
+  curlCommand?: string;
+  timestamp?: string;
+  metadata?: Record<string, unknown>;
+  raw?: Record<string, unknown>;
+};
+
 export type Vulnerability = {
   id: string;
   createdAt: string;
@@ -1325,6 +1346,7 @@ export type Vulnerability = {
   solution: string;
   extractorName: string;
   extractedResults: string[];
+  evidence: VulnerabilityEvidence[];
   publicationDate: string;
   modificationDate: string;
   firstDetectedDate: string;
