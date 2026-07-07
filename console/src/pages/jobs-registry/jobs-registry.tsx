@@ -40,6 +40,8 @@ const formatTimestamp = (value?: string | Date | null) => {
   return date.isValid() ? date.format('YYYY-MM-DD HH:mm:ss') : '-';
 };
 
+const JOB_HISTORIES_REFETCH_INTERVAL_MS = 3000;
+
 type JobHistoryActionHandler = (id: string, onSuccess: () => void) => void;
 
 type JobHistoryActionsMenuProps = {
@@ -186,6 +188,9 @@ const JobsRegistryPage = () => {
     {
       query: {
         enabled: true,
+        refetchInterval: JOB_HISTORIES_REFETCH_INTERVAL_MS,
+        refetchOnMount: 'always',
+        staleTime: 0,
       },
     },
   );

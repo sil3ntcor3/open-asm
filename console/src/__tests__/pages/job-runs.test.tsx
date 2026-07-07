@@ -9,35 +9,47 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockMutate = vi.fn();
 const mockNavigate = vi.fn();
-const { createMockJobHistoriesResponse, mockJobHistoriesResponse } = vi.hoisted(
-  () => {
-    const createMockJobHistoriesResponse = () => ({
-      data: [
-        {
-          id: 'history-1',
-          status: 'in_progress',
-          totalJobs: 1,
-          pauseEligibleJobs: 1,
-          resumeEligibleJobs: 1,
-          cancelEligibleJobs: 1,
-          workflowName: 'Example workflow',
-          jobHistoryName: 'Example run',
-          jobRunType: 'manual',
-          createdAt: '2026-01-01T00:00:00',
-          updatedAt: '2026-01-01T00:02:00',
-        },
-      ],
-      page: 1,
-      limit: 10,
-      total: 1,
-    });
+const {
+  createMockJobHistoriesResponse,
+  mockJobHistoriesResponse,
+  mockGetManyJobHistories,
+} = vi.hoisted(() => {
+  const createMockJobHistoriesResponse = () => ({
+    data: [
+      {
+        id: 'history-1',
+        status: 'in_progress',
+        totalJobs: 1,
+        pauseEligibleJobs: 1,
+        resumeEligibleJobs: 1,
+        cancelEligibleJobs: 1,
+        workflowName: 'Example workflow',
+        jobHistoryName: 'Example run',
+        jobRunType: 'manual',
+        createdAt: '2026-01-01T00:00:00',
+        updatedAt: '2026-01-01T00:02:00',
+      },
+    ],
+    page: 1,
+    limit: 10,
+    total: 1,
+  });
+  const mockJobHistoriesResponse = {
+    current: createMockJobHistoriesResponse(),
+  };
 
-    return {
-      createMockJobHistoriesResponse,
-      mockJobHistoriesResponse: { current: createMockJobHistoriesResponse() },
-    };
-  },
-);
+  return {
+    createMockJobHistoriesResponse,
+    mockJobHistoriesResponse,
+    mockGetManyJobHistories: vi.fn(() => ({
+      data: mockJobHistoriesResponse.current,
+      isLoading: false,
+      isError: false,
+      error: null,
+      queryKey: ['JobsRegistryControllerGetManyJobHistories'],
+    })),
+  };
+});
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual =
@@ -80,13 +92,7 @@ vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
         tools: [activeJob.tool],
       },
     }),
-    useJobsRegistryControllerGetManyJobHistories: () => ({
-      data: mockJobHistoriesResponse.current,
-      isLoading: false,
-      isError: false,
-      error: null,
-      queryKey: ['JobsRegistryControllerGetManyJobHistories'],
-    }),
+    useJobsRegistryControllerGetManyJobHistories: mockGetManyJobHistories,
     useJobsRegistryControllerGetManyJobs: () => ({
       data: {
         data: [activeJob],
@@ -221,6 +227,7 @@ describe('Jobs registry', () => {
     mockMutate.mockClear();
     mockNavigate.mockClear();
     mockJobHistoriesResponse.current = createMockJobHistoriesResponse();
+    mockGetManyJobHistories.mockClear();
   });
 
   it('shows headers and leaves ended values blank while a run is in progress', async () => {
@@ -321,6 +328,31 @@ describe('Jobs registry', () => {
     ).not.toBeInTheDocument();
     expect(within(pagination).getByLabelText(/go to next page/i)).toHaveClass(
       'pointer-events-none',
+    );
+  });
+
+  it('keeps the registry query fresh for newly started discoveries', async () => {
+    renderWithProviders(<JobsRegistryPage />);
+
+    expect(
+      await screen.findByRole('columnheader', { name: /^job$/i }),
+    ).toBeVisible();
+
+    expect(mockGetManyJobHistories).toHaveBeenCalledWith(
+      expect.objectContaining({
+        page: 1,
+        limit: 10,
+        sortBy: 'createdAt',
+        sortOrder: 'DESC',
+      }),
+      {
+        query: expect.objectContaining({
+          enabled: true,
+          refetchInterval: 3000,
+          refetchOnMount: 'always',
+          staleTime: 0,
+        }),
+      },
     );
   });
 });
