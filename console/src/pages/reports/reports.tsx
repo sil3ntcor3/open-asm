@@ -244,7 +244,11 @@ export default function Reports() {
   if (wsLoading) return null;
 
   return (
-    <Page title="Reports" action={null}>
+    <Page
+      title="Reports"
+      description="Generate workspace PDF reports, download saved files, and remove reports you no longer need."
+      action={null}
+    >
       <Dialog
         open={generateOpen}
         onOpenChange={(open) => {
@@ -256,6 +260,10 @@ export default function Reports() {
           <DialogHeader>
             <DialogTitle>Generate Report</DialogTitle>
           </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Reports use data from the selected workspace. Leave the date range
+            empty to include all available data.
+          </p>
           <div className="space-y-4 py-2">
             {/* Report Type */}
             <Field>
@@ -271,21 +279,33 @@ export default function Reports() {
               >
                 <div className="flex items-center space-x-2 mb-2">
                   <RadioGroupItem value="SUMMARY" id="summary" />
-                  <Label
-                    htmlFor="summary"
-                    className="font-medium cursor-pointer"
-                  >
-                    Summary Report
-                  </Label>
+                  <div className="grid gap-1">
+                    <Label
+                      htmlFor="summary"
+                      className="font-medium cursor-pointer"
+                    >
+                      Summary Report
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Attack surface overview with asset, target, vulnerability,
+                      and discovery trends.
+                    </p>
+                  </div>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="VULNERABILITY" id="vulnerability" />
-                  <Label
-                    htmlFor="vulnerability"
-                    className="font-medium cursor-pointer"
-                  >
-                    Vulnerability Report
-                  </Label>
+                  <div className="grid gap-1">
+                    <Label
+                      htmlFor="vulnerability"
+                      className="font-medium cursor-pointer"
+                    >
+                      Vulnerability Report
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Vulnerability assessment with severity distribution,
+                      finding details, and remediation context.
+                    </p>
+                  </div>
                 </div>
               </RadioGroup>
             </Field>
@@ -315,6 +335,10 @@ export default function Reports() {
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Choose the lowest severity to include. Higher severities are
+                  included automatically.
+                </p>
               </Field>
             )}
           </div>
@@ -413,6 +437,10 @@ export default function Reports() {
             />
           </TabsContent>
           <TabsContent value="templates">
+            <p className="mt-4 max-w-3xl text-sm text-muted-foreground">
+              Select a template to generate a new PDF. Generated reports are
+              saved to this workspace and appear in the report list.
+            </p>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4 mt-4">
               {/* Summary Report Template */}
               <div
