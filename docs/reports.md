@@ -15,12 +15,13 @@ Open-ASM currently provides two report templates:
 2. Select the **Templates** tab.
 3. Choose **Summary Report** or **Vulnerability Report**.
 4. In the generation dialog, optionally choose a date range.
-5. For vulnerability reports, optionally choose a minimum severity.
-6. Select **Generate**.
+5. Choose **All targets** or select one specific target.
+6. For vulnerability reports, optionally choose a minimum severity.
+7. Select **Generate**.
 
 Generated reports are saved to the current workspace and appear in the report list after generation succeeds.
 
-Leaving the date range empty includes all available workspace data. For vulnerability reports, the minimum severity filter includes the selected severity and higher severities.
+Leaving the date range empty includes all available workspace data. Keeping **All targets** includes the full workspace; selecting one target scopes the report to that target only. For vulnerability reports, the minimum severity filter includes the selected severity and higher severities.
 
 ## Find and Manage Reports
 

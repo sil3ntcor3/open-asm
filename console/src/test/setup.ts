@@ -22,6 +22,10 @@ beforeAll(() => {
   }
   // Mock window.scrollTo for TanStack Router scroll restoration
   window.scrollTo = vi.fn();
+  HTMLElement.prototype.hasPointerCapture ??= vi.fn(() => false);
+  HTMLElement.prototype.setPointerCapture ??= vi.fn();
+  HTMLElement.prototype.releasePointerCapture ??= vi.fn();
+  HTMLElement.prototype.scrollIntoView ??= vi.fn();
   // Mock window.matchMedia for ThemeProvider with system theme
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
     matches: false,

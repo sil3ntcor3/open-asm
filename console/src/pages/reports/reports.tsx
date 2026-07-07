@@ -2,7 +2,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { Download, FileText, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { type DateRange } from 'react-day-picker';
 import { toast } from 'sonner';
 
@@ -41,6 +41,7 @@ import {
   useReportsControllerGenerateSummaryReport,
   useReportsControllerGenerateVulReport,
   useReportsControllerGetMany,
+  useTargetsControllerGetTargetsInWorkspaceInfinite,
 } from '@/services/apis/gen/queries';
 import CreateWorkspace from '../workspaces/create-workspace';
 
@@ -58,11 +59,14 @@ const SEVERITY_OPTIONS = [
 
 type ReportType = 'SUMMARY' | 'VULNERABILITY';
 
+const ALL_TARGETS_VALUE = 'all-targets';
+
 export default function Reports() {
   const [generateOpen, setGenerateOpen] = useState(false);
   const [reportType, setReportType] = useState<ReportType>('SUMMARY');
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [minSeverity, setMinSeverity] = useState<string>('');
+  const [selectedTargetId, setSelectedTargetId] = useState(ALL_TARGETS_VALUE);
   const [activeTab, setActiveTab] = useState<TabValue>('all');
 
   const { workspaces, isLoading: wsLoading } = useWorkspaceSelector();
@@ -101,6 +105,40 @@ export default function Reports() {
         ],
       },
     },
+  );
+
+  const {
+    data: targetsData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useTargetsControllerGetTargetsInWorkspaceInfinite(
+    {
+      limit: 100,
+      page: 1,
+      sortBy: 'value',
+      sortOrder: 'ASC',
+    },
+    {
+      query: {
+        enabled: Boolean(selectedWorkspaceId),
+        queryKey: ['report-targets', selectedWorkspaceId],
+        initialPageParam: 1,
+        getNextPageParam: (lastPage) =>
+          lastPage.hasNextPage ? lastPage.page + 1 : undefined,
+      },
+    },
+  );
+
+  useEffect(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      void fetchNextPage();
+    }
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+
+  const targets = useMemo(
+    () => targetsData?.pages.flatMap((page) => page.data) ?? [],
+    [targetsData],
   );
 
   const summaryMutation = useReportsControllerGenerateSummaryReport({
@@ -147,14 +185,19 @@ export default function Reports() {
     setReportType('SUMMARY');
     setDateRange(undefined);
     setMinSeverity('');
+    setSelectedTargetId(ALL_TARGETS_VALUE);
   };
 
   const handleGenerate = () => {
+    const targetIds =
+      selectedTargetId === ALL_TARGETS_VALUE ? undefined : [selectedTargetId];
+
     if (reportType === 'SUMMARY') {
       summaryMutation.mutate({
         data: {
           startDate: dateRange?.from?.toISOString(),
           endDate: dateRange?.to?.toISOString(),
+          ...(targetIds ? { targetIds } : {}),
         },
       });
     } else {
@@ -162,6 +205,7 @@ export default function Reports() {
         data: {
           startDate: dateRange?.from?.toISOString(),
           endDate: dateRange?.to?.toISOString(),
+          ...(targetIds ? { targetIds } : {}),
           minSeverity: minSeverity
             ? (minSeverity as 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO')
             : undefined,
@@ -316,6 +360,30 @@ export default function Reports() {
               onChange={setDateRange}
               label="Date range (optional)"
             />
+
+            <Field>
+              <Label className="text-sm font-medium mb-2 block">Target</Label>
+              <Select
+                value={selectedTargetId}
+                onValueChange={setSelectedTargetId}
+              >
+                <SelectTrigger aria-label="Target" className="w-full">
+                  <SelectValue placeholder="All targets" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_TARGETS_VALUE}>All targets</SelectItem>
+                  {targets.map((target) => (
+                    <SelectItem key={target.id} value={target.id}>
+                      {target.value}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Choose one target to scope this report, or keep all targets to
+                include the full workspace.
+              </p>
+            </Field>
 
             {/* Min Severity - vuln only */}
             {reportType === 'VULNERABILITY' && (
