@@ -2650,6 +2650,13 @@ export const VulnerabilitiesControllerGetVulnerabilitiesSeverityItem = {
 export type VulnerabilitiesControllerGetVulnerabilitiesStatisticsParams = {
   workspaceId: string;
   targetIds?: string[];
+  status?: VulnerabilitiesControllerGetVulnerabilitiesStatus;
+  severity?: VulnerabilitiesControllerGetVulnerabilitiesSeverityItem[];
+  createdFrom?: string;
+  createdTo?: string;
+  tags?: string[];
+  targetId?: string;
+  q?: string;
 };
 
 export type AgentsControllerGetConversationsParams = {

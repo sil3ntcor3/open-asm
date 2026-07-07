@@ -14,11 +14,10 @@ const vulnerabilitiesSearchSchema = z.object({
   createdFrom: z.string().optional(),
   createdTo: z.string().optional(),
   targetId: z.string().optional(),
+  targetIdFilter: z.string().optional(),
 });
 
 export const Route = createFileRoute('/_authed/vulnerabilities/')({
   validateSearch: vulnerabilitiesSearchSchema,
-  component: () => (
-      <Vulnerabilities />
-  ),
+  component: () => <Vulnerabilities />,
 });

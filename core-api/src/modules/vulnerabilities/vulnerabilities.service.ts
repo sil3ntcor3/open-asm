@@ -15,7 +15,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
-import { In, Repository } from 'typeorm';
+import { In, Repository, SelectQueryBuilder } from 'typeorm';
 import { AgentsCompletionsService } from '../agents/agents.completions';
 import { User } from '../auth/entities/user.entity';
 import { JobsRegistryService } from '../jobs-registry/jobs-registry.service';
@@ -32,6 +32,18 @@ import {
 } from './dto/get-vulnerability.dto';
 import { VulnerabilityDismissal } from './entities/vulnerability-dismissal.entity';
 import { Vulnerability } from './entities/vulnerability.entity';
+
+type VulnerabilityFilterParams = Pick<
+  GetVulnerabilitiesQueryDto,
+  | 'targetIds'
+  | 'q'
+  | 'status'
+  | 'severity'
+  | 'createdFrom'
+  | 'createdTo'
+  | 'tags'
+  | 'targetId'
+>;
 
 @Injectable()
 export class VulnerabilitiesService {
@@ -134,60 +146,16 @@ export class VulnerabilitiesService {
       queryBuilder.orderBy(`vulnerabilities.${sortBy}`, sortOrder);
     }
 
-    if (targetIds) {
-      queryBuilder.andWhere('targets.id IN (:...targetIds)', { targetIds });
-    }
-
-    if (targetId) {
-      queryBuilder.andWhere('targets.id = :targetId', { targetId });
-    }
-
-    // Add search query if provided
-    if (q) {
-      queryBuilder.andWhere('"vulnerabilities"."name" ILIKE :q   ', {
-        q: `%${q}%`,
-        qArray: `%${q}%`,
-      });
-    }
-
-    // Filter by status
-    if (status === VulnerabilityStatus.OPEN) {
-      queryBuilder.andWhere('dismissal.vulnerabilityId IS NULL');
-    } else if (status === VulnerabilityStatus.DISMISSED) {
-      queryBuilder.andWhere('dismissal.vulnerabilityId IS NOT NULL');
-    }
-
-    // Filter by severity levels
-    if (Array.isArray(severity) && severity.length > 0) {
-      queryBuilder.andWhere('vulnerabilities.severity IN (:...severity)', {
-        severity,
-      });
-    }
-
-    // Filter by creation date range
-    if (createdFrom) {
-      queryBuilder.andWhere('vulnerabilities.createdAt >= :createdFrom', {
-        createdFrom: new Date(createdFrom),
-      });
-    }
-    if (createdTo) {
-      // Set time to end of day (23:59:59.999) to include the entire day
-      const endDate = new Date(createdTo);
-      endDate.setHours(23, 59, 59, 999);
-      queryBuilder.andWhere('vulnerabilities.createdAt <= :createdTo', {
-        createdTo: endDate,
-      });
-    }
-
-    // Filter by tags (using overlap operator with raw SQL)
-    if (Array.isArray(tags) && tags.length > 0) {
-      const conditions = tags.map((_, i) => `:tag${i} = ANY(vulnerabilities.tags)`).join(' OR ');
-      const params: Record<string, string> = {};
-      tags.forEach((tag, i) => {
-        params[`tag${i}`] = tag;
-      });
-      queryBuilder.andWhere(`(${conditions})`, params);
-    }
+    this.applyVulnerabilityFilters(queryBuilder, {
+      targetIds,
+      q,
+      status,
+      severity,
+      createdFrom,
+      createdTo,
+      tags,
+      targetId,
+    });
 
     const [vulnerabilities, total] = await queryBuilder.getManyAndCount();
 
@@ -230,7 +198,17 @@ export class VulnerabilitiesService {
   async getVulnerabilitiesStatistics(
     query: GetVulnerabilitiesStatisticsQueryDto,
   ) {
-    const { workspaceId, targetIds } = query;
+    const {
+      workspaceId,
+      targetIds,
+      q,
+      status,
+      severity,
+      createdFrom,
+      createdTo,
+      tags,
+      targetId,
+    } = query;
 
     const queryBuilder = this.vulnerabilitiesRepository
       .createQueryBuilder('vulnerabilities')
@@ -243,13 +221,18 @@ export class VulnerabilitiesService {
       .leftJoin('vulnerabilities.jobHistory', 'jobHistory')
       .leftJoin('vulnerabilities.vulnerabilityDismissal', 'dismissal')
       .where('workspaces.id = :workspaceId', { workspaceId })
-      // Only show open vulnerabilities (not dismissed)
-      .andWhere('dismissal.vulnerabilityId IS NULL')
       .groupBy('vulnerabilities.severity');
 
-    if (targetIds) {
-      queryBuilder.andWhere('targets.id IN (:...targetIds)', { targetIds });
-    }
+    this.applyVulnerabilityFilters(queryBuilder, {
+      targetIds,
+      q,
+      status,
+      severity,
+      createdFrom,
+      createdTo,
+      tags,
+      targetId,
+    });
 
     const result = await queryBuilder.getRawMany();
 
@@ -276,6 +259,73 @@ export class VulnerabilitiesService {
     );
 
     return { data: statistics };
+  }
+
+  private applyVulnerabilityFilters(
+    queryBuilder: SelectQueryBuilder<Vulnerability>,
+    {
+      targetIds,
+      q,
+      status,
+      severity,
+      createdFrom,
+      createdTo,
+      tags,
+      targetId,
+    }: VulnerabilityFilterParams,
+  ) {
+    if (targetIds) {
+      queryBuilder.andWhere('targets.id IN (:...targetIds)', { targetIds });
+    }
+
+    if (targetId) {
+      queryBuilder.andWhere('targets.id = :targetId', { targetId });
+    }
+
+    if (q) {
+      queryBuilder.andWhere('"vulnerabilities"."name" ILIKE :q   ', {
+        q: `%${q}%`,
+        qArray: `%${q}%`,
+      });
+    }
+
+    const effectiveStatus = status ?? VulnerabilityStatus.OPEN;
+    if (effectiveStatus === VulnerabilityStatus.OPEN) {
+      queryBuilder.andWhere('dismissal.vulnerabilityId IS NULL');
+    } else if (effectiveStatus === VulnerabilityStatus.DISMISSED) {
+      queryBuilder.andWhere('dismissal.vulnerabilityId IS NOT NULL');
+    }
+
+    if (Array.isArray(severity) && severity.length > 0) {
+      queryBuilder.andWhere('vulnerabilities.severity IN (:...severity)', {
+        severity,
+      });
+    }
+
+    if (createdFrom) {
+      queryBuilder.andWhere('vulnerabilities.createdAt >= :createdFrom', {
+        createdFrom: new Date(createdFrom),
+      });
+    }
+
+    if (createdTo) {
+      const endDate = new Date(createdTo);
+      endDate.setHours(23, 59, 59, 999);
+      queryBuilder.andWhere('vulnerabilities.createdAt <= :createdTo', {
+        createdTo: endDate,
+      });
+    }
+
+    if (Array.isArray(tags) && tags.length > 0) {
+      const conditions = tags
+        .map((_, i) => `:tag${i} = ANY(vulnerabilities.tags)`)
+        .join(' OR ');
+      const params: Record<string, string> = {};
+      tags.forEach((tag, i) => {
+        params[`tag${i}`] = tag;
+      });
+      queryBuilder.andWhere(`(${conditions})`, params);
+    }
   }
 
   /**

@@ -2,6 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { renderWithProviders, screen, waitFor } from '@/test/utils';
 import Vulnerabilities from '@/pages/vulnerabilities/vulnerabilities';
 
+const mocks = vi.hoisted(() => ({
+  getVulnerabilities: vi.fn(),
+  getVulnerabilitiesStatistics: vi.fn(),
+}));
+
 const mockWorkspaces = [{ id: 'ws-1', name: 'Test Workspace' }];
 const mockVulns = [
   {
@@ -95,32 +100,38 @@ vi.mock('@/hooks/useWorkspaceSelector', () => ({
 }));
 
 vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import('@/services/apis/gen/queries')
-  >();
+  const actual =
+    await importOriginal<typeof import('@/services/apis/gen/queries')>();
   return {
     ...actual,
-    useVulnerabilitiesControllerGetVulnerabilities: () => ({
-      data: { data: mockVulns, total: mockVulns.length },
-      isLoading: false,
-      refetch: vi.fn(),
-    }),
-    useVulnerabilitiesControllerGetVulnerabilitiesStatistics: () => ({
-      data: {
-        data: [
-          { severity: 'critical', count: 1 },
-          { severity: 'high', count: 1 },
-          { severity: 'medium', count: 0 },
-          { severity: 'low', count: 0 },
-          { severity: 'info', count: 0 },
-        ],
-      },
-      isLoading: false,
-    }),
+    useVulnerabilitiesControllerGetVulnerabilities:
+      mocks.getVulnerabilities.mockImplementation(() => ({
+        data: { data: mockVulns, total: mockVulns.length },
+        isLoading: false,
+        refetch: vi.fn(),
+      })),
+    useVulnerabilitiesControllerGetVulnerabilitiesStatistics:
+      mocks.getVulnerabilitiesStatistics.mockImplementation(() => ({
+        data: {
+          data: [
+            { severity: 'critical', count: 1 },
+            { severity: 'high', count: 1 },
+            { severity: 'medium', count: 0 },
+            { severity: 'low', count: 0 },
+            { severity: 'info', count: 0 },
+          ],
+        },
+        isLoading: false,
+      })),
   };
 });
 
 describe('Vulnerabilities Page', () => {
+  beforeEach(() => {
+    mocks.getVulnerabilities.mockClear();
+    mocks.getVulnerabilitiesStatistics.mockClear();
+  });
+
   it('renders vulnerability table', async () => {
     renderWithProviders(<Vulnerabilities />);
 
@@ -137,6 +148,31 @@ describe('Vulnerabilities Page', () => {
       const severityBadges = screen.getAllByText('Critical');
       expect(severityBadges.length).toBeGreaterThanOrEqual(2);
       expect(screen.getAllByText('High').length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  it('passes the table filters to severity statistics', async () => {
+    renderWithProviders(<Vulnerabilities />);
+
+    await waitFor(() => {
+      expect(mocks.getVulnerabilities).toHaveBeenCalled();
+      expect(mocks.getVulnerabilitiesStatistics).toHaveBeenCalled();
+    });
+
+    const tableParams = mocks.getVulnerabilities.mock.calls[0]?.[0];
+    const statisticsParams =
+      mocks.getVulnerabilitiesStatistics.mock.calls[0]?.[0];
+
+    expect(statisticsParams).toMatchObject({
+      workspaceId: 'ws-1',
+      status: tableParams.status,
+      severity: tableParams.severity,
+      createdFrom: tableParams.createdFrom,
+      createdTo: tableParams.createdTo,
+      tags: tableParams.tags,
+      targetId: tableParams.targetId,
+      targetIds: tableParams.targetIds,
+      q: tableParams.q,
     });
   });
 });

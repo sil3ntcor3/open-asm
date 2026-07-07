@@ -1,27 +1,79 @@
 import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
-import { useVulnerabilitiesControllerGetVulnerabilitiesStatistics } from '@/services/apis/gen/queries';
+import {
+  useVulnerabilitiesControllerGetVulnerabilitiesStatistics,
+  VulnerabilitiesControllerGetVulnerabilitiesSeverityItem,
+  VulnerabilitiesControllerGetVulnerabilitiesStatus,
+} from '@/services/apis/gen/queries';
 import clsx from 'clsx';
 import { useSearch } from '@tanstack/react-router';
 
 interface VulnerabilitiesStatisticProps {
   targetId?: string;
 }
+
+const getFirstSearchValue = (value: string | string[] | undefined) =>
+  Array.isArray(value) ? value[0] : value;
+
 const VulnerabilitiesStatistic = ({
   targetId,
 }: VulnerabilitiesStatisticProps) => {
   const { selectedWorkspace } = useWorkspaceSelector();
-  const search = useSearch({ strict: false });
+  const search = useSearch({ strict: false }) as Record<
+    string,
+    string | string[] | undefined
+  >;
 
   // Use targetId from props if provided, otherwise use from URL
-  if (!targetId) {
-    targetId = (search as Record<string, string>).targetId || undefined;
-  }
+  const effectiveTargetId = targetId || getFirstSearchValue(search.targetId);
+  const targetFilter = getFirstSearchValue(search.targetIdFilter);
+  const filter = getFirstSearchValue(search.filter);
+  const createdFrom = getFirstSearchValue(search.createdFrom);
+  const createdTo = getFirstSearchValue(search.createdTo);
+
+  const urlStatus = getFirstSearchValue(search.status) as
+    | VulnerabilitiesControllerGetVulnerabilitiesStatus
+    | undefined;
+  const status =
+    urlStatus &&
+    Object.values(VulnerabilitiesControllerGetVulnerabilitiesStatus).includes(
+      urlStatus,
+    )
+      ? urlStatus
+      : VulnerabilitiesControllerGetVulnerabilitiesStatus.open;
+
+  const urlSeverity = search.severity;
+  const severity = (
+    urlSeverity
+      ? Array.isArray(urlSeverity)
+        ? urlSeverity
+        : urlSeverity.split(',')
+      : []
+  ).filter(
+    (item): item is VulnerabilitiesControllerGetVulnerabilitiesSeverityItem =>
+      Object.values(
+        VulnerabilitiesControllerGetVulnerabilitiesSeverityItem,
+      ).includes(
+        item as VulnerabilitiesControllerGetVulnerabilitiesSeverityItem,
+      ),
+  );
+
+  const urlTags = search.tags;
+  const tags = (
+    urlTags ? (Array.isArray(urlTags) ? urlTags : urlTags.split(',')) : []
+  ).filter((item) => item.trim() !== '');
 
   const { data, isLoading } =
     useVulnerabilitiesControllerGetVulnerabilitiesStatistics(
       {
         workspaceId: selectedWorkspace ?? '',
-        ...(targetId ? { targetIds: [targetId] } : {}),
+        targetIds: effectiveTargetId ? [effectiveTargetId] : undefined,
+        status,
+        severity: severity.length > 0 ? severity : undefined,
+        createdFrom,
+        createdTo,
+        tags: tags.length > 0 ? tags : undefined,
+        targetId: targetFilter || undefined,
+        q: filter || undefined,
       },
       {
         query: {
