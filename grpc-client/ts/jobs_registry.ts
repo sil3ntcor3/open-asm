@@ -173,6 +173,30 @@ export interface DataPayloadResult {
     } | {
         oneofKind: undefined;
     };
+    /**
+     * @generated from protobuf field: jobs_registry.ExecutionOutcome outcome = 8
+     */
+    outcome: ExecutionOutcome;
+    /**
+     * @generated from protobuf field: int32 exit_code = 9
+     */
+    exitCode: number;
+    /**
+     * @generated from protobuf field: string failure_message = 10
+     */
+    failureMessage: string;
+    /**
+     * @generated from protobuf field: bool stdout_truncated = 11
+     */
+    stdoutTruncated: boolean;
+    /**
+     * @generated from protobuf field: bool stderr_truncated = 12
+     */
+    stderrTruncated: boolean;
+    /**
+     * @generated from protobuf field: string stderr = 13
+     */
+    stderr: string;
 }
 /**
  * @generated from protobuf message jobs_registry.AssetList
@@ -565,17 +589,50 @@ export enum JobControlAction {
      */
     JOB_CONTROL_STOP = 1,
     /**
-     * Suspend the scan process group (SIGSTOP); slot stays occupied.
+     * Stop the running process and leave the job in paused state.
      *
      * @generated from protobuf enum value: JOB_CONTROL_PAUSE = 2;
      */
     JOB_CONTROL_PAUSE = 2,
     /**
-     * Continue a previously paused process (no-op when not paused).
+     * Continue a previously paused process when a worker still has one.
      *
      * @generated from protobuf enum value: JOB_CONTROL_RESUME = 3;
      */
     JOB_CONTROL_RESUME = 3
+}
+/**
+ * @generated from protobuf enum jobs_registry.ExecutionOutcome
+ */
+export enum ExecutionOutcome {
+    /**
+     * @generated from protobuf enum value: EXECUTION_OUTCOME_UNSPECIFIED = 0;
+     */
+    UNSPECIFIED = 0,
+    /**
+     * @generated from protobuf enum value: EXECUTION_OUTCOME_SUCCEEDED = 1;
+     */
+    SUCCEEDED = 1,
+    /**
+     * @generated from protobuf enum value: EXECUTION_OUTCOME_FAILED = 2;
+     */
+    FAILED = 2,
+    /**
+     * @generated from protobuf enum value: EXECUTION_OUTCOME_TIMED_OUT = 3;
+     */
+    TIMED_OUT = 3,
+    /**
+     * @generated from protobuf enum value: EXECUTION_OUTCOME_CANCELED = 4;
+     */
+    CANCELED = 4,
+    /**
+     * @generated from protobuf enum value: EXECUTION_OUTCOME_OUTPUT_LIMITED = 5;
+     */
+    OUTPUT_LIMITED = 5,
+    /**
+     * @generated from protobuf enum value: EXECUTION_OUTCOME_START_FAILED = 6;
+     */
+    START_FAILED = 6
 }
 // --- Enums ---
 
@@ -1050,13 +1107,25 @@ class DataPayloadResult$Type extends MessageType<DataPayloadResult> {
             { no: 4, name: "http_response", kind: "message", oneof: "payload", T: () => HttpResponse },
             { no: 5, name: "numbers", kind: "message", oneof: "payload", T: () => NumberList },
             { no: 6, name: "vulnerabilities", kind: "message", oneof: "payload", T: () => VulnerabilityList },
-            { no: 7, name: "asset_tags", kind: "message", oneof: "payload", T: () => AssetTagList }
+            { no: 7, name: "asset_tags", kind: "message", oneof: "payload", T: () => AssetTagList },
+            { no: 8, name: "outcome", kind: "enum", T: () => ["jobs_registry.ExecutionOutcome", ExecutionOutcome, "EXECUTION_OUTCOME_"] },
+            { no: 9, name: "exit_code", kind: "scalar", T: 5 /*ScalarType.INT32*/ },
+            { no: 10, name: "failure_message", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 11, name: "stdout_truncated", kind: "scalar", T: 8 /*ScalarType.BOOL*/ },
+            { no: 12, name: "stderr_truncated", kind: "scalar", T: 8 /*ScalarType.BOOL*/ },
+            { no: 13, name: "stderr", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
         ]);
     }
     create(value?: PartialMessage<DataPayloadResult>): DataPayloadResult {
         const message = globalThis.Object.create((this.messagePrototype!));
         message.error = false;
         message.payload = { oneofKind: undefined };
+        message.outcome = 0;
+        message.exitCode = 0;
+        message.failureMessage = "";
+        message.stdoutTruncated = false;
+        message.stderrTruncated = false;
+        message.stderr = "";
         if (value !== undefined)
             reflectionMergePartial<DataPayloadResult>(this, message, value);
         return message;
@@ -1102,6 +1171,24 @@ class DataPayloadResult$Type extends MessageType<DataPayloadResult> {
                         assetTags: AssetTagList.internalBinaryRead(reader, reader.uint32(), options, (message.payload as any).assetTags)
                     };
                     break;
+                case /* jobs_registry.ExecutionOutcome outcome */ 8:
+                    message.outcome = reader.int32();
+                    break;
+                case /* int32 exit_code */ 9:
+                    message.exitCode = reader.int32();
+                    break;
+                case /* string failure_message */ 10:
+                    message.failureMessage = reader.string();
+                    break;
+                case /* bool stdout_truncated */ 11:
+                    message.stdoutTruncated = reader.bool();
+                    break;
+                case /* bool stderr_truncated */ 12:
+                    message.stderrTruncated = reader.bool();
+                    break;
+                case /* string stderr */ 13:
+                    message.stderr = reader.string();
+                    break;
                 default:
                     let u = options.readUnknownField;
                     if (u === "throw")
@@ -1135,6 +1222,24 @@ class DataPayloadResult$Type extends MessageType<DataPayloadResult> {
         /* jobs_registry.AssetTagList asset_tags = 7; */
         if (message.payload.oneofKind === "assetTags")
             AssetTagList.internalBinaryWrite(message.payload.assetTags, writer.tag(7, WireType.LengthDelimited).fork(), options).join();
+        /* jobs_registry.ExecutionOutcome outcome = 8; */
+        if (message.outcome !== 0)
+            writer.tag(8, WireType.Varint).int32(message.outcome);
+        /* int32 exit_code = 9; */
+        if (message.exitCode !== 0)
+            writer.tag(9, WireType.Varint).int32(message.exitCode);
+        /* string failure_message = 10; */
+        if (message.failureMessage !== "")
+            writer.tag(10, WireType.LengthDelimited).string(message.failureMessage);
+        /* bool stdout_truncated = 11; */
+        if (message.stdoutTruncated !== false)
+            writer.tag(11, WireType.Varint).bool(message.stdoutTruncated);
+        /* bool stderr_truncated = 12; */
+        if (message.stderrTruncated !== false)
+            writer.tag(12, WireType.Varint).bool(message.stderrTruncated);
+        /* string stderr = 13; */
+        if (message.stderr !== "")
+            writer.tag(13, WireType.LengthDelimited).string(message.stderr);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);

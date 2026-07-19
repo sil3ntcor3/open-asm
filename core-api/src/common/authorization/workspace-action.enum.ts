@@ -1,0 +1,15 @@
+export enum WorkspaceAction {
+  WORKSPACE_READ = 'workspace.read',
+  WORKSPACE_MANAGE = 'workspace.manage',
+  SECRET_MANAGE = 'secret.manage',
+  TARGET_CREATE = 'target.create',
+  TARGET_MANAGE = 'target.manage',
+  SCAN_EXECUTE = 'scan.execute',
+  FINDING_TRIAGE = 'finding.triage',
+  REPORT_MANAGE = 'report.manage',
+  AGENT_USE = 'agent.use',
+  AGENT_MANAGE = 'agent.manage',
+  WORKER_MANAGE = 'worker.manage',
+  TOOL_MANAGE = 'tool.manage',
+  TEMPLATE_MANAGE = 'template.manage',
+}

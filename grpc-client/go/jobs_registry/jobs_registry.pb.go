@@ -29,9 +29,9 @@ const (
 	JobControlAction_JOB_CONTROL_NONE JobControlAction = 0
 	// Kill the running process; core has already marked the job cancelled.
 	JobControlAction_JOB_CONTROL_STOP JobControlAction = 1
-	// Suspend the scan process group (SIGSTOP); slot stays occupied.
+	// Stop the running process and leave the job in paused state.
 	JobControlAction_JOB_CONTROL_PAUSE JobControlAction = 2
-	// Continue a previously paused process (no-op when not paused).
+	// Continue a previously paused process when a worker still has one.
 	JobControlAction_JOB_CONTROL_RESUME JobControlAction = 3
 )
 
@@ -78,6 +78,67 @@ func (JobControlAction) EnumDescriptor() ([]byte, []int) {
 	return file_jobs_registry_proto_rawDescGZIP(), []int{0}
 }
 
+type ExecutionOutcome int32
+
+const (
+	ExecutionOutcome_EXECUTION_OUTCOME_UNSPECIFIED    ExecutionOutcome = 0
+	ExecutionOutcome_EXECUTION_OUTCOME_SUCCEEDED      ExecutionOutcome = 1
+	ExecutionOutcome_EXECUTION_OUTCOME_FAILED         ExecutionOutcome = 2
+	ExecutionOutcome_EXECUTION_OUTCOME_TIMED_OUT      ExecutionOutcome = 3
+	ExecutionOutcome_EXECUTION_OUTCOME_CANCELED       ExecutionOutcome = 4
+	ExecutionOutcome_EXECUTION_OUTCOME_OUTPUT_LIMITED ExecutionOutcome = 5
+	ExecutionOutcome_EXECUTION_OUTCOME_START_FAILED   ExecutionOutcome = 6
+)
+
+// Enum value maps for ExecutionOutcome.
+var (
+	ExecutionOutcome_name = map[int32]string{
+		0: "EXECUTION_OUTCOME_UNSPECIFIED",
+		1: "EXECUTION_OUTCOME_SUCCEEDED",
+		2: "EXECUTION_OUTCOME_FAILED",
+		3: "EXECUTION_OUTCOME_TIMED_OUT",
+		4: "EXECUTION_OUTCOME_CANCELED",
+		5: "EXECUTION_OUTCOME_OUTPUT_LIMITED",
+		6: "EXECUTION_OUTCOME_START_FAILED",
+	}
+	ExecutionOutcome_value = map[string]int32{
+		"EXECUTION_OUTCOME_UNSPECIFIED":    0,
+		"EXECUTION_OUTCOME_SUCCEEDED":      1,
+		"EXECUTION_OUTCOME_FAILED":         2,
+		"EXECUTION_OUTCOME_TIMED_OUT":      3,
+		"EXECUTION_OUTCOME_CANCELED":       4,
+		"EXECUTION_OUTCOME_OUTPUT_LIMITED": 5,
+		"EXECUTION_OUTCOME_START_FAILED":   6,
+	}
+)
+
+func (x ExecutionOutcome) Enum() *ExecutionOutcome {
+	p := new(ExecutionOutcome)
+	*p = x
+	return p
+}
+
+func (x ExecutionOutcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ExecutionOutcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_jobs_registry_proto_enumTypes[1].Descriptor()
+}
+
+func (ExecutionOutcome) Type() protoreflect.EnumType {
+	return &file_jobs_registry_proto_enumTypes[1]
+}
+
+func (x ExecutionOutcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ExecutionOutcome.Descriptor instead.
+func (ExecutionOutcome) EnumDescriptor() ([]byte, []int) {
+	return file_jobs_registry_proto_rawDescGZIP(), []int{1}
+}
+
 type Severity int32
 
 const (
@@ -117,11 +178,11 @@ func (x Severity) String() string {
 }
 
 func (Severity) Descriptor() protoreflect.EnumDescriptor {
-	return file_jobs_registry_proto_enumTypes[1].Descriptor()
+	return file_jobs_registry_proto_enumTypes[2].Descriptor()
 }
 
 func (Severity) Type() protoreflect.EnumType {
-	return &file_jobs_registry_proto_enumTypes[1]
+	return &file_jobs_registry_proto_enumTypes[2]
 }
 
 func (x Severity) Number() protoreflect.EnumNumber {
@@ -130,7 +191,7 @@ func (x Severity) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Severity.Descriptor instead.
 func (Severity) EnumDescriptor() ([]byte, []int) {
-	return file_jobs_registry_proto_rawDescGZIP(), []int{1}
+	return file_jobs_registry_proto_rawDescGZIP(), []int{2}
 }
 
 type Worker struct {
@@ -563,9 +624,15 @@ type DataPayloadResult struct {
 	//	*DataPayloadResult_Numbers
 	//	*DataPayloadResult_Vulnerabilities
 	//	*DataPayloadResult_AssetTags
-	Payload       isDataPayloadResult_Payload `protobuf_oneof:"payload"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Payload         isDataPayloadResult_Payload `protobuf_oneof:"payload"`
+	Outcome         ExecutionOutcome            `protobuf:"varint,8,opt,name=outcome,proto3,enum=jobs_registry.ExecutionOutcome" json:"outcome,omitempty"`
+	ExitCode        int32                       `protobuf:"varint,9,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
+	FailureMessage  string                      `protobuf:"bytes,10,opt,name=failure_message,json=failureMessage,proto3" json:"failure_message,omitempty"`
+	StdoutTruncated bool                        `protobuf:"varint,11,opt,name=stdout_truncated,json=stdoutTruncated,proto3" json:"stdout_truncated,omitempty"`
+	StderrTruncated bool                        `protobuf:"varint,12,opt,name=stderr_truncated,json=stderrTruncated,proto3" json:"stderr_truncated,omitempty"`
+	Stderr          string                      `protobuf:"bytes,13,opt,name=stderr,proto3" json:"stderr,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *DataPayloadResult) Reset() {
@@ -662,6 +729,48 @@ func (x *DataPayloadResult) GetAssetTags() *AssetTagList {
 		}
 	}
 	return nil
+}
+
+func (x *DataPayloadResult) GetOutcome() ExecutionOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return ExecutionOutcome_EXECUTION_OUTCOME_UNSPECIFIED
+}
+
+func (x *DataPayloadResult) GetExitCode() int32 {
+	if x != nil {
+		return x.ExitCode
+	}
+	return 0
+}
+
+func (x *DataPayloadResult) GetFailureMessage() string {
+	if x != nil {
+		return x.FailureMessage
+	}
+	return ""
+}
+
+func (x *DataPayloadResult) GetStdoutTruncated() bool {
+	if x != nil {
+		return x.StdoutTruncated
+	}
+	return false
+}
+
+func (x *DataPayloadResult) GetStderrTruncated() bool {
+	if x != nil {
+		return x.StderrTruncated
+	}
+	return false
+}
+
+func (x *DataPayloadResult) GetStderr() string {
+	if x != nil {
+		return x.Stderr
+	}
+	return ""
 }
 
 type isDataPayloadResult_Payload interface {
@@ -1690,7 +1799,7 @@ const file_jobs_registry_proto_rawDesc = "" +
 	"\x04data\x18\x02 \x01(\v2\x1e.jobs_registry.UpdateResultDtoR\x04data\"^\n" +
 	"\x0fUpdateResultDto\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x124\n" +
-	"\x04data\x18\x02 \x01(\v2 .jobs_registry.DataPayloadResultR\x04data\"\x8e\x03\n" +
+	"\x04data\x18\x02 \x01(\v2 .jobs_registry.DataPayloadResultR\x04data\"\xfd\x04\n" +
 	"\x11DataPayloadResult\x12\x14\n" +
 	"\x05error\x18\x01 \x01(\bR\x05error\x12\x15\n" +
 	"\x03raw\x18\x02 \x01(\tH\x01R\x03raw\x88\x01\x01\x122\n" +
@@ -1699,7 +1808,14 @@ const file_jobs_registry_proto_rawDesc = "" +
 	"\anumbers\x18\x05 \x01(\v2\x19.jobs_registry.NumberListH\x00R\anumbers\x12L\n" +
 	"\x0fvulnerabilities\x18\x06 \x01(\v2 .jobs_registry.VulnerabilityListH\x00R\x0fvulnerabilities\x12<\n" +
 	"\n" +
-	"asset_tags\x18\a \x01(\v2\x1b.jobs_registry.AssetTagListH\x00R\tassetTagsB\t\n" +
+	"asset_tags\x18\a \x01(\v2\x1b.jobs_registry.AssetTagListH\x00R\tassetTags\x129\n" +
+	"\aoutcome\x18\b \x01(\x0e2\x1f.jobs_registry.ExecutionOutcomeR\aoutcome\x12\x1b\n" +
+	"\texit_code\x18\t \x01(\x05R\bexitCode\x12'\n" +
+	"\x0ffailure_message\x18\n" +
+	" \x01(\tR\x0efailureMessage\x12)\n" +
+	"\x10stdout_truncated\x18\v \x01(\bR\x0fstdoutTruncated\x12)\n" +
+	"\x10stderr_truncated\x18\f \x01(\bR\x0fstderrTruncated\x12\x16\n" +
+	"\x06stderr\x18\r \x01(\tR\x06stderrB\t\n" +
 	"\apayloadB\x06\n" +
 	"\x04_raw\"9\n" +
 	"\tAssetList\x12,\n" +
@@ -1818,7 +1934,15 @@ const file_jobs_registry_proto_rawDesc = "" +
 	"\x10JOB_CONTROL_NONE\x10\x00\x12\x14\n" +
 	"\x10JOB_CONTROL_STOP\x10\x01\x12\x15\n" +
 	"\x11JOB_CONTROL_PAUSE\x10\x02\x12\x16\n" +
-	"\x12JOB_CONTROL_RESUME\x10\x03*A\n" +
+	"\x12JOB_CONTROL_RESUME\x10\x03*\xff\x01\n" +
+	"\x10ExecutionOutcome\x12!\n" +
+	"\x1dEXECUTION_OUTCOME_UNSPECIFIED\x10\x00\x12\x1f\n" +
+	"\x1bEXECUTION_OUTCOME_SUCCEEDED\x10\x01\x12\x1c\n" +
+	"\x18EXECUTION_OUTCOME_FAILED\x10\x02\x12\x1f\n" +
+	"\x1bEXECUTION_OUTCOME_TIMED_OUT\x10\x03\x12\x1e\n" +
+	"\x1aEXECUTION_OUTCOME_CANCELED\x10\x04\x12$\n" +
+	" EXECUTION_OUTCOME_OUTPUT_LIMITED\x10\x05\x12\"\n" +
+	"\x1eEXECUTION_OUTCOME_START_FAILED\x10\x06*A\n" +
 	"\bSeverity\x12\b\n" +
 	"\x04INFO\x10\x00\x12\a\n" +
 	"\x03LOW\x10\x01\x12\n" +
@@ -1843,67 +1967,69 @@ func file_jobs_registry_proto_rawDescGZIP() []byte {
 	return file_jobs_registry_proto_rawDescData
 }
 
-var file_jobs_registry_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_jobs_registry_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
 var file_jobs_registry_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_jobs_registry_proto_goTypes = []any{
 	(JobControlAction)(0),         // 0: jobs_registry.JobControlAction
-	(Severity)(0),                 // 1: jobs_registry.Severity
-	(*Worker)(nil),                // 2: jobs_registry.Worker
-	(*ControlRequest)(nil),        // 3: jobs_registry.ControlRequest
-	(*JobDirective)(nil),          // 4: jobs_registry.JobDirective
-	(*ControlResponse)(nil),       // 5: jobs_registry.ControlResponse
-	(*Job)(nil),                   // 6: jobs_registry.Job
-	(*JobResponse)(nil),           // 7: jobs_registry.JobResponse
-	(*JobResultRequest)(nil),      // 8: jobs_registry.JobResultRequest
-	(*UpdateResultDto)(nil),       // 9: jobs_registry.UpdateResultDto
-	(*DataPayloadResult)(nil),     // 10: jobs_registry.DataPayloadResult
-	(*AssetList)(nil),             // 11: jobs_registry.AssetList
-	(*NumberList)(nil),            // 12: jobs_registry.NumberList
-	(*VulnerabilityList)(nil),     // 13: jobs_registry.VulnerabilityList
-	(*AssetTagList)(nil),          // 14: jobs_registry.AssetTagList
-	(*Asset)(nil),                 // 15: jobs_registry.Asset
-	(*HttpResponse)(nil),          // 16: jobs_registry.HttpResponse
-	(*Vulnerability)(nil),         // 17: jobs_registry.Vulnerability
-	(*AssetTag)(nil),              // 18: jobs_registry.AssetTag
-	(*timestamppb.Timestamp)(nil), // 19: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),       // 20: google.protobuf.Struct
+	(ExecutionOutcome)(0),         // 1: jobs_registry.ExecutionOutcome
+	(Severity)(0),                 // 2: jobs_registry.Severity
+	(*Worker)(nil),                // 3: jobs_registry.Worker
+	(*ControlRequest)(nil),        // 4: jobs_registry.ControlRequest
+	(*JobDirective)(nil),          // 5: jobs_registry.JobDirective
+	(*ControlResponse)(nil),       // 6: jobs_registry.ControlResponse
+	(*Job)(nil),                   // 7: jobs_registry.Job
+	(*JobResponse)(nil),           // 8: jobs_registry.JobResponse
+	(*JobResultRequest)(nil),      // 9: jobs_registry.JobResultRequest
+	(*UpdateResultDto)(nil),       // 10: jobs_registry.UpdateResultDto
+	(*DataPayloadResult)(nil),     // 11: jobs_registry.DataPayloadResult
+	(*AssetList)(nil),             // 12: jobs_registry.AssetList
+	(*NumberList)(nil),            // 13: jobs_registry.NumberList
+	(*VulnerabilityList)(nil),     // 14: jobs_registry.VulnerabilityList
+	(*AssetTagList)(nil),          // 15: jobs_registry.AssetTagList
+	(*Asset)(nil),                 // 16: jobs_registry.Asset
+	(*HttpResponse)(nil),          // 17: jobs_registry.HttpResponse
+	(*Vulnerability)(nil),         // 18: jobs_registry.Vulnerability
+	(*AssetTag)(nil),              // 19: jobs_registry.AssetTag
+	(*timestamppb.Timestamp)(nil), // 20: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),       // 21: google.protobuf.Struct
 }
 var file_jobs_registry_proto_depIdxs = []int32{
 	0,  // 0: jobs_registry.JobDirective.action:type_name -> jobs_registry.JobControlAction
-	4,  // 1: jobs_registry.ControlResponse.directives:type_name -> jobs_registry.JobDirective
-	15, // 2: jobs_registry.Job.asset:type_name -> jobs_registry.Asset
-	9,  // 3: jobs_registry.JobResultRequest.data:type_name -> jobs_registry.UpdateResultDto
-	10, // 4: jobs_registry.UpdateResultDto.data:type_name -> jobs_registry.DataPayloadResult
-	11, // 5: jobs_registry.DataPayloadResult.assets:type_name -> jobs_registry.AssetList
-	16, // 6: jobs_registry.DataPayloadResult.http_response:type_name -> jobs_registry.HttpResponse
-	12, // 7: jobs_registry.DataPayloadResult.numbers:type_name -> jobs_registry.NumberList
-	13, // 8: jobs_registry.DataPayloadResult.vulnerabilities:type_name -> jobs_registry.VulnerabilityList
-	14, // 9: jobs_registry.DataPayloadResult.asset_tags:type_name -> jobs_registry.AssetTagList
-	15, // 10: jobs_registry.AssetList.values:type_name -> jobs_registry.Asset
-	17, // 11: jobs_registry.VulnerabilityList.values:type_name -> jobs_registry.Vulnerability
-	18, // 12: jobs_registry.AssetTagList.values:type_name -> jobs_registry.AssetTag
-	19, // 13: jobs_registry.Asset.created_at:type_name -> google.protobuf.Timestamp
-	19, // 14: jobs_registry.Asset.updated_at:type_name -> google.protobuf.Timestamp
-	20, // 15: jobs_registry.Asset.dns_records:type_name -> google.protobuf.Struct
-	19, // 16: jobs_registry.HttpResponse.created_at:type_name -> google.protobuf.Timestamp
-	19, // 17: jobs_registry.HttpResponse.timestamp:type_name -> google.protobuf.Timestamp
-	20, // 18: jobs_registry.HttpResponse.tls:type_name -> google.protobuf.Struct
-	20, // 19: jobs_registry.HttpResponse.header:type_name -> google.protobuf.Struct
-	20, // 20: jobs_registry.HttpResponse.knowledgebase:type_name -> google.protobuf.Struct
-	1,  // 21: jobs_registry.Vulnerability.severity:type_name -> jobs_registry.Severity
-	19, // 22: jobs_registry.Vulnerability.publication_date:type_name -> google.protobuf.Timestamp
-	19, // 23: jobs_registry.Vulnerability.modification_date:type_name -> google.protobuf.Timestamp
-	2,  // 24: jobs_registry.JobsRegistryService.Next:input_type -> jobs_registry.Worker
-	8,  // 25: jobs_registry.JobsRegistryService.Result:input_type -> jobs_registry.JobResultRequest
-	3,  // 26: jobs_registry.JobsRegistryService.Control:input_type -> jobs_registry.ControlRequest
-	6,  // 27: jobs_registry.JobsRegistryService.Next:output_type -> jobs_registry.Job
-	7,  // 28: jobs_registry.JobsRegistryService.Result:output_type -> jobs_registry.JobResponse
-	5,  // 29: jobs_registry.JobsRegistryService.Control:output_type -> jobs_registry.ControlResponse
-	27, // [27:30] is the sub-list for method output_type
-	24, // [24:27] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	5,  // 1: jobs_registry.ControlResponse.directives:type_name -> jobs_registry.JobDirective
+	16, // 2: jobs_registry.Job.asset:type_name -> jobs_registry.Asset
+	10, // 3: jobs_registry.JobResultRequest.data:type_name -> jobs_registry.UpdateResultDto
+	11, // 4: jobs_registry.UpdateResultDto.data:type_name -> jobs_registry.DataPayloadResult
+	12, // 5: jobs_registry.DataPayloadResult.assets:type_name -> jobs_registry.AssetList
+	17, // 6: jobs_registry.DataPayloadResult.http_response:type_name -> jobs_registry.HttpResponse
+	13, // 7: jobs_registry.DataPayloadResult.numbers:type_name -> jobs_registry.NumberList
+	14, // 8: jobs_registry.DataPayloadResult.vulnerabilities:type_name -> jobs_registry.VulnerabilityList
+	15, // 9: jobs_registry.DataPayloadResult.asset_tags:type_name -> jobs_registry.AssetTagList
+	1,  // 10: jobs_registry.DataPayloadResult.outcome:type_name -> jobs_registry.ExecutionOutcome
+	16, // 11: jobs_registry.AssetList.values:type_name -> jobs_registry.Asset
+	18, // 12: jobs_registry.VulnerabilityList.values:type_name -> jobs_registry.Vulnerability
+	19, // 13: jobs_registry.AssetTagList.values:type_name -> jobs_registry.AssetTag
+	20, // 14: jobs_registry.Asset.created_at:type_name -> google.protobuf.Timestamp
+	20, // 15: jobs_registry.Asset.updated_at:type_name -> google.protobuf.Timestamp
+	21, // 16: jobs_registry.Asset.dns_records:type_name -> google.protobuf.Struct
+	20, // 17: jobs_registry.HttpResponse.created_at:type_name -> google.protobuf.Timestamp
+	20, // 18: jobs_registry.HttpResponse.timestamp:type_name -> google.protobuf.Timestamp
+	21, // 19: jobs_registry.HttpResponse.tls:type_name -> google.protobuf.Struct
+	21, // 20: jobs_registry.HttpResponse.header:type_name -> google.protobuf.Struct
+	21, // 21: jobs_registry.HttpResponse.knowledgebase:type_name -> google.protobuf.Struct
+	2,  // 22: jobs_registry.Vulnerability.severity:type_name -> jobs_registry.Severity
+	20, // 23: jobs_registry.Vulnerability.publication_date:type_name -> google.protobuf.Timestamp
+	20, // 24: jobs_registry.Vulnerability.modification_date:type_name -> google.protobuf.Timestamp
+	3,  // 25: jobs_registry.JobsRegistryService.Next:input_type -> jobs_registry.Worker
+	9,  // 26: jobs_registry.JobsRegistryService.Result:input_type -> jobs_registry.JobResultRequest
+	4,  // 27: jobs_registry.JobsRegistryService.Control:input_type -> jobs_registry.ControlRequest
+	7,  // 28: jobs_registry.JobsRegistryService.Next:output_type -> jobs_registry.Job
+	8,  // 29: jobs_registry.JobsRegistryService.Result:output_type -> jobs_registry.JobResponse
+	6,  // 30: jobs_registry.JobsRegistryService.Control:output_type -> jobs_registry.ControlResponse
+	28, // [28:31] is the sub-list for method output_type
+	25, // [25:28] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_jobs_registry_proto_init() }
@@ -1924,7 +2050,7 @@ func file_jobs_registry_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jobs_registry_proto_rawDesc), len(file_jobs_registry_proto_rawDesc)),
-			NumEnums:      2,
+			NumEnums:      3,
 			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,

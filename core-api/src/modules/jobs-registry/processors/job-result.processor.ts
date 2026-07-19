@@ -54,6 +54,10 @@ export class JobResultProcessor extends WorkerHost {
         bucket,
       );
 
+      if (data.error) {
+        throw new Error(data.failureMessage || 'Job reported error');
+      }
+
       const isBuiltInTools = job.tool.type === WorkerType.BUILT_IN;
 
       let dataForSync: JobDataResultType;
@@ -81,10 +85,6 @@ export class JobResultProcessor extends WorkerHost {
           job,
         });
       }
-      if (data?.error) {
-        throw new Error('Job reported error');
-      }
-
       const completedJob = await this.jobRepo.save({
         ...job,
         status: JobStatus.COMPLETED,

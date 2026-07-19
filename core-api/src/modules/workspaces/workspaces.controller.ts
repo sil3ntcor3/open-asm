@@ -1,4 +1,6 @@
 import { UserContext, WorkspaceId } from '@/common/decorators/app.decorator';
+import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
+import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import { IdQueryParamDto } from '@/common/dtos/id-query-param.dto';
@@ -65,6 +67,7 @@ export class WorkspacesController {
     },
   })
   @Get('api-key')
+  @WorkspacePolicy(WorkspaceAction.SECRET_MANAGE)
   getWorkspaceApiKey(
     @WorkspaceId() workspaceId: string,
     @UserContext() userContext: UserContextPayload,
@@ -84,6 +87,7 @@ export class WorkspacesController {
     },
   })
   @Get('configs')
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   getWorkspaceConfigs(
     @WorkspaceId() workspaceId: string,
     @UserContext() userContext: UserContextPayload,
@@ -103,6 +107,7 @@ export class WorkspacesController {
     },
   })
   @Patch('configs')
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_MANAGE)
   updateWorkspaceConfigs(
     @WorkspaceId() workspaceId: string,
     @Body() dto: UpdateWorkspaceConfigsDto,
@@ -147,6 +152,7 @@ export class WorkspacesController {
     },
   })
   @Get(':id')
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ, { workspaceParam: 'id' })
   async getWorkspaceById(
     @Param() { id }: IdQueryParamDto,
     @UserContext() userContext: UserContextPayload,
@@ -172,6 +178,9 @@ export class WorkspacesController {
     },
   })
   @Patch(':id')
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_MANAGE, {
+    workspaceParam: 'id',
+  })
   updateWorkspace(
     @Param() { id }: IdQueryParamDto,
     @Body() dto: UpdateWorkspaceDto,
@@ -189,6 +198,9 @@ export class WorkspacesController {
     },
   })
   @Delete(':id')
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_MANAGE, {
+    workspaceParam: 'id',
+  })
   deleteWorkspace(
     @Param() { id }: IdQueryParamDto,
     @UserContext() userContext: UserContextPayload,
@@ -205,6 +217,7 @@ export class WorkspacesController {
     },
   })
   @Post(':id/api-key/rotate')
+  @WorkspacePolicy(WorkspaceAction.SECRET_MANAGE, { workspaceParam: 'id' })
   rotateApiKey(
     @Param() { id }: IdQueryParamDto,
     @UserContext() userContext: UserContextPayload,
@@ -221,6 +234,9 @@ export class WorkspacesController {
     },
   })
   @Patch(':id/archived')
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_MANAGE, {
+    workspaceParam: 'id',
+  })
   makeArchived(
     @Param() { id }: IdQueryParamDto,
     @Body() dto: ArchiveWorkspaceDto,

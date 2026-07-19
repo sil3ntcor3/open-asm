@@ -448,14 +448,11 @@ export class ToolsService implements OnModuleInit {
    * @param toolId The ID of the tool to retrieve the API key for.
    * @returns The API key for the tool.
    */
-  public async getToolApiKey(toolId: string): Promise<GetApiKeyResponseDto> {
-    const tool = await this.toolsRepository.findOne({
-      where: { id: toolId },
-    });
-
-    if (!tool) {
-      throw new NotFoundException(`Tool with ID "${toolId}" not found.`);
-    }
+  public async getToolApiKey(
+    toolId: string,
+    workspaceId: string,
+  ): Promise<GetApiKeyResponseDto> {
+    await this.getToolById(toolId, workspaceId);
 
     const apiKey = await this.apiKeysService.getCurrentApiKey(
       ApiKeyType.TOOL,
@@ -463,7 +460,7 @@ export class ToolsService implements OnModuleInit {
     );
 
     if (!apiKey) {
-      return this.rotateToolApiKey(toolId);
+      return this.rotateToolApiKey(toolId, workspaceId);
     }
 
     return {
@@ -476,14 +473,11 @@ export class ToolsService implements OnModuleInit {
    * @param toolId The ID of the tool to regenerate the API key for.
    * @returns The new API key for the tool.
    */
-  public async rotateToolApiKey(toolId: string): Promise<GetApiKeyResponseDto> {
-    const tool = await this.toolsRepository.findOne({
-      where: { id: toolId },
-    });
-
-    if (!tool) {
-      throw new NotFoundException(`Tool with ID "${toolId}" not found.`);
-    }
+  public async rotateToolApiKey(
+    toolId: string,
+    workspaceId: string,
+  ): Promise<GetApiKeyResponseDto> {
+    await this.getToolById(toolId, workspaceId);
 
     const apiKey = await this.apiKeysService.create({
       name: `API Key for tool ${toolId}`,

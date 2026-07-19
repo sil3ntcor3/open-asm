@@ -7,6 +7,8 @@ import { WorkspaceMembers } from './entities/workspace-members.entity';
 import { Workspace } from './entities/workspace.entity';
 import { WorkspacesController } from './workspaces.controller';
 import { WorkspacesService } from './workspaces.service';
+import { WorkspacePolicyService } from '@/common/authorization/workspace-policy.service';
+import { WorkspacePolicyGuard } from '@/common/authorization/workspace-policy.guard';
 @Global()
 @Module({
   imports: [
@@ -15,7 +17,7 @@ import { WorkspacesService } from './workspaces.service';
     forwardRef(() => WorkflowsModule),
   ],
   controllers: [WorkspacesController],
-  providers: [WorkspacesService],
-  exports: [WorkspacesService],
+  providers: [WorkspacesService, WorkspacePolicyService, WorkspacePolicyGuard],
+  exports: [WorkspacesService, WorkspacePolicyService, WorkspacePolicyGuard],
 })
 export class WorkspacesModule {}

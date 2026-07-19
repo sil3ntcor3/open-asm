@@ -267,4 +267,94 @@ describe('WorkersService', () => {
       expect(mockWorkerInstanceRepository.delete).not.toHaveBeenCalled();
     });
   });
+
+  describe('join', () => {
+    it.each(['', 'change_me', 'short-secret'])(
+      'rejects weak enrollment token %p',
+      async (apiKey) => {
+        (mockConfigService.get as jest.Mock).mockReturnValue(apiKey);
+
+        await expect(service.join({ apiKey })).rejects.toThrow(
+          'Worker enrollment token must be at least 32 characters',
+        );
+      },
+    );
+
+    it('accepts a strong configured enrollment token without a shared blank signature', async () => {
+      const apiKey = 'a-strong-worker-enrollment-token-1234567890';
+      (mockConfigService.get as jest.Mock).mockImplementation(
+        (key: string) => (key === 'OASM_CLOUD_APIKEY' ? apiKey : undefined),
+      );
+      (mockWorkerInstanceRepository.save as jest.Mock).mockResolvedValue(
+        undefined,
+      );
+      (mockWorkerInstanceRepository.findOne as jest.Mock).mockResolvedValue({
+        id: 'worker-1',
+        token: 'worker-token',
+      });
+
+      await expect(service.join({ apiKey })).resolves.toMatchObject({
+        id: 'worker-1',
+      });
+    });
+
+    it('rejoins with the issued per-worker token without resending enrollment credentials', async () => {
+      (mockWorkerInstanceRepository.findOne as jest.Mock).mockResolvedValue({
+        id: 'worker-1',
+        token: 'issued-worker-token',
+      });
+
+      await expect(
+        service.join({ apiKey: '', token: 'issued-worker-token' }),
+      ).resolves.toMatchObject({ id: 'worker-1' });
+      expect(
+        mockApiKeysService.apiKeysRepository?.findOne,
+      ).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateWorkerSettings', () => {
+    it('does not resolve a worker owned by another workspace', async () => {
+      (mockWorkerInstanceRepository.findOne as jest.Mock).mockResolvedValue(
+        null,
+      );
+
+      await expect(
+        service.updateWorkerSettings(
+          'worker-1',
+          { isPaused: true },
+          'workspace-1',
+        ),
+      ).rejects.toThrow('Worker not found');
+      expect(mockWorkerInstanceRepository.findOne).toHaveBeenCalledWith({
+        where: [
+          { id: 'worker-1', workspace: { id: 'workspace-1' } },
+          { id: 'worker-1', scope: 'cloud' },
+        ],
+      });
+    });
+  });
+
+  describe('connectInternalNetwork', () => {
+    it('does not mutate the worker before the network workspace is validated', async () => {
+      (mockWorkerInstanceRepository.findOne as jest.Mock).mockResolvedValue({
+        id: 'worker-1',
+        workspace: { id: 'workspace-1' },
+      });
+      (mockInternalNetworkRepository.findOne as jest.Mock).mockResolvedValue({
+        id: 'network-1',
+        workspaceId: 'workspace-2',
+      });
+
+      await expect(
+        service.connectInternalNetwork({
+          workerId: 'worker-1',
+          networkId: 'network-1',
+          networkInterfaces: [],
+        }),
+      ).rejects.toThrow('Network and worker belong to different workspaces');
+
+      expect(mockWorkerInstanceRepository.update).not.toHaveBeenCalled();
+    });
+  });
 });

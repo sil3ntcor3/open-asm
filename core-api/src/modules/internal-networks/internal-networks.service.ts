@@ -2,8 +2,7 @@ import { DefaultMessageResponseDto } from '@/common/dtos/default-message-respons
 import { UserContextPayload } from '@/common/interfaces/app.interface';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { WorkspacesService } from '../workspaces/workspaces.service';
+import { In, Repository } from 'typeorm';
 import { TargetsService } from '../targets/targets.service';
 import { CreateInternalNetworkDto } from './dtos/create-internal-network.dto';
 import { CreateTargetsFromInterfacesDto } from './dtos/create-targets-from-interfaces.dto';
@@ -29,7 +28,6 @@ export class InternalNetworksService {
     private readonly internalNetworkRepository: Repository<InternalNetwork>,
     @InjectRepository(NetworkInterface)
     private readonly networkInterfaceRepository: Repository<NetworkInterface>,
-    private readonly workspacesService: WorkspacesService,
     private readonly targetsService: TargetsService,
   ) {}
 
@@ -99,11 +97,6 @@ export class InternalNetworksService {
     workspaceId: string,
     user: UserContextPayload,
   ): Promise<DefaultMessageResponseDto> {
-    // Check if workspace exists and user is owner
-    await this.workspacesService.getWorkspaceByIdAndOwner(workspaceId, user);
-
-    // Create internal network
-
     await this.internalNetworkRepository.save({
       name: dto.name,
       workspaceId,
@@ -116,25 +109,15 @@ export class InternalNetworksService {
   async updateInternalNetworkById(
     id: string,
     dto: UpdateInternalNetworkDto,
-    user: UserContextPayload,
+    workspaceId: string,
   ): Promise<DefaultMessageResponseDto> {
-    // Find internal network with workspace
-
     const internalNetwork = await this.internalNetworkRepository.findOne({
-      where: { id },
-      relations: ['workspace'],
+      where: { id, workspaceId },
     });
     if (!internalNetwork) {
       throw new NotFoundException('Internal network not found');
     }
-    // Check workspace ownership
 
-    await this.workspacesService.getWorkspaceByIdAndOwner(
-      internalNetwork.workspaceId,
-      user,
-    );
-
-    // Update name if provided
     if (dto.name !== undefined) {
       internalNetwork.name = dto.name;
 
@@ -146,25 +129,14 @@ export class InternalNetworksService {
 
   async deleteInternalNetwork(
     id: string,
-    user: UserContextPayload,
+    workspaceId: string,
   ): Promise<DefaultMessageResponseDto> {
-    // Find internal network with workspace
-
     const internalNetwork = await this.internalNetworkRepository.findOne({
-      where: { id },
-      relations: ['workspace'],
+      where: { id, workspaceId },
     });
     if (!internalNetwork) {
       throw new NotFoundException('Internal network not found');
     }
-    // Check workspace ownership
-
-    await this.workspacesService.getWorkspaceByIdAndOwner(
-      internalNetwork.workspaceId,
-      user,
-    );
-
-    // Delete
     await this.internalNetworkRepository.remove(internalNetwork);
 
     return { message: 'Internal network deleted successfully' };
@@ -291,60 +263,45 @@ export class InternalNetworksService {
 
   async createTargetsFromInterfaces(
     dto: CreateTargetsFromInterfacesDto,
+    workspaceId: string,
     user: UserContextPayload,
   ): Promise<DefaultMessageResponseDto> {
-    const interfaces = await this.networkInterfaceRepository.findByIds(
-      dto.networkInterfaceIds,
-    );
+    const requestedInterfaceIds = [...new Set(dto.networkInterfaceIds)];
+    const interfaces = await this.networkInterfaceRepository.find({
+      where: {
+        id: In(requestedInterfaceIds),
+        internalNetwork: { workspaceId },
+      },
+      relations: ['internalNetwork'],
+    });
 
-    if (interfaces.length === 0) {
-      throw new NotFoundException('No network interfaces found');
+    if (interfaces.length !== requestedInterfaceIds.length) {
+      throw new NotFoundException(
+        'One or more network interfaces were not found in this workspace',
+      );
     }
 
-    const networkIds = [...new Set(interfaces.map((i) => i.internalNetworkId))];
-    const networks = await this.internalNetworkRepository.findByIds(networkIds);
-
-    if (networks.length !== networkIds.length) {
-      throw new NotFoundException('One or more internal networks not found');
-    }
-
-    const networkMap = new Map(networks.map((n) => [n.id, n]));
-    const workspaceIds = new Set(networks.map((n) => n.workspaceId));
-
-    for (const workspaceId of workspaceIds) {
-      await this.workspacesService.getWorkspaceByIdAndOwner(workspaceId, user);
-    }
-
-    const grouped = new Map<string, Map<string, string[]>>();
+    const grouped = new Map<string, string[]>();
     for (const iface of interfaces) {
-      const network = networkMap.get(iface.internalNetworkId);
-      const workspaceId = network!.workspaceId;
       const internalNetworkId = iface.internalNetworkId;
-
-      if (!grouped.has(workspaceId)) {
-        grouped.set(workspaceId, new Map());
+      if (!grouped.has(internalNetworkId)) {
+        grouped.set(internalNetworkId, []);
       }
-      const networksInWorkspace = grouped.get(workspaceId)!;
-      if (!networksInWorkspace.has(internalNetworkId)) {
-        networksInWorkspace.set(internalNetworkId, []);
-      }
-      networksInWorkspace.get(internalNetworkId)!.push(iface.cidr);
+      grouped.get(internalNetworkId)!.push(iface.cidr);
     }
 
-    for (const [workspaceId, networksInWorkspace] of grouped) {
-      for (const [internalNetworkId, cidrs] of networksInWorkspace) {
-        await this.targetsService.createMultipleTargets(
-          {
-            targets: cidrs.map((cidr) => ({
-              value: cidr,
-              type: TargetType.CIDR,
-            })),
-          },
-          workspaceId,
-          user,
-          internalNetworkId,
-        );
-      }
+    for (const [internalNetworkId, cidrs] of grouped) {
+      await this.targetsService.createMultipleTargets(
+        {
+          targets: cidrs.map((cidr) => ({
+            value: cidr,
+            type: TargetType.CIDR,
+          })),
+        },
+        workspaceId,
+        user,
+        internalNetworkId,
+      );
     }
 
     return { message: 'Targets created successfully from network interfaces' };

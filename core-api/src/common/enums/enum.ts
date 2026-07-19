@@ -11,8 +11,11 @@ export enum Role {
 }
 
 export enum WorkspaceRole {
+  VIEWER = 'viewer',
+  ANALYST = 'analyst',
+  OPERATOR = 'operator',
+  SECURITY_ADMIN = 'security_admin',
   OWNER = 'owner',
-  MEMBER = 'member',
 }
 
 /**

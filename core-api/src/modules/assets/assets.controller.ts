@@ -1,6 +1,7 @@
 import { WorkspaceId } from '@/common/decorators/workspace-id.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
-import { WorkspaceOwnerGuard } from '@/common/guards/workspace-owner.guard';
+import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
+import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
 import {
   Body,
@@ -11,7 +12,6 @@ import {
   Post,
   Query,
   Res,
-  UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
@@ -41,6 +41,7 @@ export class AssetsController {
       getWorkspaceId: true,
     },
   })
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   @Get()
   getAssetsInWorkspace(
     @Query() query: GetAssetsQueryDto,
@@ -59,6 +60,7 @@ export class AssetsController {
       getWorkspaceId: true,
     },
   })
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   @Get('/ip')
   getIpAssets(
     @Query() query: GetAssetsQueryDto,
@@ -77,6 +79,7 @@ export class AssetsController {
       getWorkspaceId: true,
     },
   })
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   @Get('/host')
   getHostAssets(
     @Query() query: GetAssetsQueryDto,
@@ -95,6 +98,7 @@ export class AssetsController {
       getWorkspaceId: true,
     },
   })
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   @Get('/port')
   getPortAssets(
     @Query() query: GetAssetsQueryDto,
@@ -113,6 +117,7 @@ export class AssetsController {
       getWorkspaceId: true,
     },
   })
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   @Get('/tech')
   getTechnologyAssets(
     @Query() query: GetAssetsQueryDto,
@@ -131,6 +136,7 @@ export class AssetsController {
       getWorkspaceId: true,
     },
   })
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   @Get('/status-code')
   getStatusCodeAssets(
     @Query() query: GetAssetsQueryDto,
@@ -150,6 +156,7 @@ export class AssetsController {
       getWorkspaceId: true,
     },
   })
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   @Get('/tls')
   getTlsAssets(
     @Query() query: GetTlsQueryDto,
@@ -168,6 +175,7 @@ export class AssetsController {
       getWorkspaceId: true,
     },
   })
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   @Get(':id')
   getAssetById(@Param('id') id: string, @WorkspaceId() workspaceId: string) {
     return this.assetsService.getAssetById(id, workspaceId);
@@ -183,6 +191,7 @@ export class AssetsController {
       getWorkspaceId: true,
     },
   })
+  @WorkspacePolicy(WorkspaceAction.TARGET_MANAGE)
   @Patch(':id')
   updateAssetById(
     @Param('id') id: string,
@@ -198,12 +207,20 @@ export class AssetsController {
     response: {
       serialization: GetAssetsResponseDto,
     },
+    request: {
+      getWorkspaceId: true,
+    },
   })
+  @WorkspacePolicy(WorkspaceAction.TARGET_MANAGE)
   @Post('/switch')
-  switchAsset(@Body() switchAssetDto: SwitchAssetDto) {
+  switchAsset(
+    @Body() switchAssetDto: SwitchAssetDto,
+    @WorkspaceId() workspaceId: string,
+  ) {
     return this.assetsService.switchAsset(
       switchAssetDto.assetId,
       switchAssetDto.isEnabled,
+      workspaceId,
     );
   }
 
@@ -218,7 +235,7 @@ export class AssetsController {
       getWorkspaceId: true,
     },
   })
-  @UseGuards(WorkspaceOwnerGuard)
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   @Get('services/export')
   async exportServicesToCSV(
     @WorkspaceId() workspaceId: string,

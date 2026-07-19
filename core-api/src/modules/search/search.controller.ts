@@ -1,4 +1,6 @@
 import { UserContext, WorkspaceId } from '@/common/decorators/app.decorator';
+import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
+import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
 import { Controller, Delete, Get, Param, Query } from '@nestjs/common';
@@ -28,6 +30,7 @@ export class SearchController {
       getWorkspaceId: true,
     },
   })
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   @Get()
   searchAssetsTargets(
     @UserContext() user: User,

@@ -1,4 +1,6 @@
 import { WorkspaceId } from '@/common/decorators/app.decorator';
+import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
+import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
 import {
@@ -39,6 +41,7 @@ export class ToolsController {
     },
   })
   @Post()
+  @WorkspacePolicy(WorkspaceAction.TOOL_MANAGE)
   createTool(@Body() dto: CreateToolDto) {
     return this.toolsService.createTool(dto);
   }
@@ -71,6 +74,9 @@ export class ToolsController {
     },
   })
   @Post('add-to-workspace')
+  @WorkspacePolicy(WorkspaceAction.TOOL_MANAGE, {
+    workspaceBody: 'workspaceId',
+  })
   async addToolToWorkspace(@Body() dto: AddToolToWorkspaceDto) {
     return this.toolsService.addToolToWorkspace(dto);
   }
@@ -84,6 +90,9 @@ export class ToolsController {
     },
   })
   @Post('install')
+  @WorkspacePolicy(WorkspaceAction.TOOL_MANAGE, {
+    workspaceBody: 'workspaceId',
+  })
   async installTool(@Body() dto: InstallToolDto) {
     return this.toolsService.installTool(dto);
   }
@@ -97,6 +106,9 @@ export class ToolsController {
     },
   })
   @Post('uninstall')
+  @WorkspacePolicy(WorkspaceAction.TOOL_MANAGE, {
+    workspaceBody: 'workspaceId',
+  })
   async uninstallTool(@Body() dto: InstallToolDto) {
     return this.toolsService.uninstallTool(dto);
   }
@@ -111,6 +123,7 @@ export class ToolsController {
     deprecated: true,
   })
   @Get('built-in-tools')
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   async getBuiltInTools() {
     return this.toolsService.getBuiltInTools();
   }
@@ -127,6 +140,7 @@ export class ToolsController {
     },
   })
   @Get()
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   async getManyTools(
     @Query() query: ToolsQueryDto,
     @WorkspaceId() workspaceId?: string,
@@ -151,6 +165,7 @@ export class ToolsController {
     },
   })
   @Get('installed')
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   async getInstalledTools(
     @Query() dto: GetInstalledToolsDto,
     @WorkspaceId() workspaceId?: string,
@@ -170,6 +185,7 @@ export class ToolsController {
     },
   })
   @Get(':id')
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   getToolById(
     @Param() { id }: GetToolByIdDto,
     @WorkspaceId() workspaceId: string,
@@ -189,8 +205,12 @@ export class ToolsController {
     },
   })
   @Get(':id/api-key')
-  getToolApiKey(@Param() { id }: IdQueryParamDto) {
-    return this.toolsService.getToolApiKey(id);
+  @WorkspacePolicy(WorkspaceAction.SECRET_MANAGE)
+  getToolApiKey(
+    @Param() { id }: IdQueryParamDto,
+    @WorkspaceId() workspaceId: string,
+  ) {
+    return this.toolsService.getToolApiKey(id, workspaceId);
   }
 
   @Doc({
@@ -202,7 +222,11 @@ export class ToolsController {
     },
   })
   @Post(':id/api-key/rotate')
-  rotateToolApiKey(@Param() { id }: IdQueryParamDto) {
-    return this.toolsService.rotateToolApiKey(id);
+  @WorkspacePolicy(WorkspaceAction.SECRET_MANAGE)
+  rotateToolApiKey(
+    @Param() { id }: IdQueryParamDto,
+    @WorkspaceId() workspaceId: string,
+  ) {
+    return this.toolsService.rotateToolApiKey(id, workspaceId);
   }
 }

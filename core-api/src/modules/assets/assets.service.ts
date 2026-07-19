@@ -939,9 +939,13 @@ export class AssetsService {
   public async switchAsset(
     assetId: string,
     isEnabled: boolean,
+    workspaceId: string,
   ): Promise<Asset> {
     const asset = await this.assetRepo.findOne({
-      where: { id: assetId },
+      where: {
+        id: assetId,
+        target: { workspaceTargets: { workspace: { id: workspaceId } } },
+      },
     });
 
     if (!asset) {

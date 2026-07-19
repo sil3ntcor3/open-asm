@@ -57,10 +57,11 @@ describe('TargetsService', () => {
       select: jest.fn().mockReturnThis(),
       getRawMany: jest.fn(),
       save: jest.fn(),
+      count: jest.fn(),
     } as any;
 
     mockWorkspacesService = {
-      getWorkspaceByIdAndOwner: jest.fn(),
+      getWorkspaceById: jest.fn(),
       getWorkspaceConfigValue: jest.fn(),
     };
 
@@ -176,6 +177,7 @@ describe('TargetsService', () => {
   describe('updateTarget', () => {
     it('returns the updated target after persisting scan window changes', async () => {
       const targetId = randomUUID();
+      const workspaceId = randomUUID();
       const existingTarget = {
         id: targetId,
         value: 'example.com',
@@ -195,13 +197,17 @@ describe('TargetsService', () => {
       (mockTargetRepository.update as jest.Mock).mockResolvedValue({
         affected: 1,
       });
+      (mockWorkspaceTargetRepository.findOneBy as jest.Mock).mockResolvedValue({
+        target: { id: targetId },
+        workspace: { id: workspaceId },
+      });
 
       const result = await service.updateTarget(targetId, {
         scanWindowStart: '22:00',
         scanWindowEnd: '06:00',
         scanWindowTimezone: 'America/Chicago',
         scanWindowDays: [1, 2, 3, 4, 5],
-      });
+      }, workspaceId);
 
       expect(mockTargetRepository.update).toHaveBeenCalledWith(targetId, {
         scanWindowStart: '22:00',
@@ -215,6 +221,7 @@ describe('TargetsService', () => {
 
     it('reschedules an enabled target when scan window timing changes', async () => {
       const targetId = randomUUID();
+      const workspaceId = randomUUID();
       const existingTarget = {
         id: targetId,
         value: 'example.com',
@@ -240,13 +247,17 @@ describe('TargetsService', () => {
       (mockQueue.add as jest.Mock).mockResolvedValue({
         repeatJobKey: 'new-repeat-key',
       });
+      (mockWorkspaceTargetRepository.findOneBy as jest.Mock).mockResolvedValue({
+        target: { id: targetId },
+        workspace: { id: workspaceId },
+      });
 
       await service.updateTarget(targetId, {
         scanWindowStart: '23:05',
         scanWindowEnd: '23:10',
         scanWindowTimezone: 'America/Chicago',
         scanWindowDays: [1, 2, 3, 4, 5, 6, 7],
-      });
+      }, workspaceId);
 
       expect(mockQueue.removeJobScheduler).toHaveBeenCalledWith(
         'old-repeat-key',
@@ -266,6 +277,103 @@ describe('TargetsService', () => {
         targetId,
         expect.objectContaining({ jobId: 'new-repeat-key' }),
       );
+    });
+
+    it('does not update a target outside the selected workspace', async () => {
+      const targetId = randomUUID();
+      const workspaceId = randomUUID();
+      (mockWorkspaceTargetRepository.findOneBy as jest.Mock).mockResolvedValue(
+        null,
+      );
+
+      await expect(
+        service.updateTarget(
+          targetId,
+          { scanSchedule: CronSchedule.DAILY },
+          workspaceId,
+        ),
+      ).rejects.toThrow('Target not found in workspace');
+
+      expect(mockTargetRepository.findOneBy).not.toHaveBeenCalled();
+      expect(mockTargetRepository.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('reScanTarget', () => {
+    it('does not rescan a target outside the selected workspace', async () => {
+      const targetId = randomUUID();
+      const workspaceId = randomUUID();
+      (mockWorkspaceTargetRepository.findOneBy as jest.Mock).mockResolvedValue(
+        null,
+      );
+      mockAssetsService.reScan = jest.fn();
+
+      await expect(
+        service.reScanTarget(targetId, workspaceId),
+      ).rejects.toThrow('Target not found in workspace');
+      expect(mockAssetsService.reScan).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleteTargetFromWorkspace', () => {
+    const createTransaction = (workspaceTarget: WorkspaceTarget | null, remaining: number) => {
+      const transactionWorkspaceTargetRepository = {
+        findOne: jest.fn().mockResolvedValue(workspaceTarget),
+        delete: jest.fn().mockResolvedValue({ affected: 1 }),
+        count: jest.fn().mockResolvedValue(remaining),
+      };
+      const transactionTargetRepository = {
+        delete: jest.fn().mockResolvedValue({ affected: 1 }),
+      };
+      const manager = {
+        getRepository: jest.fn((entity) =>
+          entity === WorkspaceTarget
+            ? transactionWorkspaceTargetRepository
+            : transactionTargetRepository,
+        ),
+      };
+      (mockTargetRepository.manager?.transaction as jest.Mock).mockImplementation(
+        async (callback: (value: typeof manager) => Promise<unknown>) =>
+          callback(manager),
+      );
+      return {
+        transactionWorkspaceTargetRepository,
+        transactionTargetRepository,
+      };
+    };
+
+    it('checks workspace membership before deleting anything', async () => {
+      const targetId = randomUUID();
+      const workspaceId = randomUUID();
+      const repositories = createTransaction(null, 0);
+
+      await expect(
+        service.deleteTargetFromWorkspace(targetId, workspaceId),
+      ).rejects.toThrow('Target not found in workspace');
+
+      expect(
+        repositories.transactionWorkspaceTargetRepository.delete,
+      ).not.toHaveBeenCalled();
+      expect(repositories.transactionTargetRepository.delete).not.toHaveBeenCalled();
+    });
+
+    it('removes only the association when another workspace still owns the target', async () => {
+      const targetId = randomUUID();
+      const workspaceId = randomUUID();
+      const repositories = createTransaction(
+        {
+          target: { id: targetId },
+          workspace: { id: workspaceId },
+        } as WorkspaceTarget,
+        1,
+      );
+
+      await service.deleteTargetFromWorkspace(targetId, workspaceId);
+
+      expect(
+        repositories.transactionWorkspaceTargetRepository.delete,
+      ).toHaveBeenCalled();
+      expect(repositories.transactionTargetRepository.delete).not.toHaveBeenCalled();
     });
   });
 
@@ -371,7 +479,7 @@ describe('TargetsService', () => {
     };
 
     beforeEach(() => {
-      mockWorkspacesService.getWorkspaceByIdAndOwner = jest
+      mockWorkspacesService.getWorkspaceById = jest
         .fn()
         .mockResolvedValue({ id: workspaceId });
       mockEventEmitter.emit = jest.fn();
@@ -422,7 +530,7 @@ describe('TargetsService', () => {
       expect(result.skipped).toEqual([]);
       expect(result.totalRequested).toBe(3);
       expect(
-        mockWorkspacesService.getWorkspaceByIdAndOwner,
+        mockWorkspacesService.getWorkspaceById,
       ).toHaveBeenCalledWith(workspaceId, userContext);
       expect(mockEventEmitter.emit).toHaveBeenCalledTimes(3);
     });
@@ -1071,7 +1179,7 @@ describe('TargetsService', () => {
     };
 
     beforeEach(() => {
-      mockWorkspacesService.getWorkspaceByIdAndOwner = jest.fn();
+      mockWorkspacesService.getWorkspaceById = jest.fn();
       mockWorkspacesService.getWorkspaceConfigValue = jest
         .fn()
         .mockResolvedValue({ isAssetsDiscovery: true });

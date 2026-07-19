@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import { DataSource } from 'typeorm';
+import { NotFoundException } from '@nestjs/common';
 import { GeoIpService } from '@/services/geo-ip/geo-ip.service';
 import { Target } from '../targets/entities/target.entity';
 import { TechnologyForwarderService } from '../technology/technology-forwarder.service';
@@ -135,5 +136,36 @@ describe('AssetsService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('switchAsset', () => {
+    it('scopes the asset lookup to the selected workspace', async () => {
+      const asset = { id: 'asset-id', isEnabled: true } as Asset;
+      jest
+        .spyOn(mockAssetRepository, 'findOne')
+        .mockResolvedValue(asset);
+      jest.spyOn(mockAssetRepository, 'save').mockResolvedValue(asset);
+
+      await service.switchAsset('asset-id', false, 'workspace-id');
+
+      expect(mockAssetRepository.findOne).toHaveBeenCalledWith({
+        where: {
+          id: 'asset-id',
+          target: {
+            workspaceTargets: { workspace: { id: 'workspace-id' } },
+          },
+        },
+      });
+      expect(asset.isEnabled).toBe(false);
+    });
+
+    it('does not resolve an asset outside the selected workspace', async () => {
+      jest.spyOn(mockAssetRepository, 'findOne').mockResolvedValue(null);
+
+      await expect(
+        service.switchAsset('asset-id', false, 'workspace-id'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockAssetRepository.save).not.toHaveBeenCalled();
+    });
   });
 });

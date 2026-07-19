@@ -1,5 +1,5 @@
 import { SortOrder } from '@/common/dtos/get-many-base.dto';
-import { Role } from '@/common/enums/enum';
+import { Role, WorkspaceRole } from '@/common/enums/enum';
 import type { TestingModule } from '@nestjs/testing';
 import type { Request, Response } from 'express';
 import { Test } from '@nestjs/testing';
@@ -74,7 +74,7 @@ describe('WorkspacesService', () => {
       workspace_ownerId: randomUUID(),
       targetcount: '5',
       membercount: '3',
-      member_role: 'member',
+      member_role: WorkspaceRole.ANALYST,
     },
   ];
 
@@ -105,7 +105,7 @@ describe('WorkspacesService', () => {
       workspace_ownerId: randomUUID(),
       targetcount: '10',
       membercount: '5',
-      member_role: 'member',
+      member_role: WorkspaceRole.ANALYST,
     },
   ];
 
@@ -216,6 +216,26 @@ describe('WorkspacesService', () => {
     expect(service).toBeDefined();
   });
 
+  it('creates the initial membership explicitly as owner', async () => {
+    const workspace = {
+      id: testWorkspaceId,
+      name: 'Security',
+    } as Workspace;
+    jest.spyOn(mockWorkspaceRepository, 'count').mockResolvedValue(0);
+    jest.spyOn(mockWorkspaceRepository, 'save').mockResolvedValue(workspace);
+    jest
+      .spyOn(mockWorkspaceMembersRepository, 'save')
+      .mockResolvedValue({} as WorkspaceMembers);
+
+    await service.createWorkspace({ name: 'Security' }, testUserContext);
+
+    expect(mockWorkspaceMembersRepository.save).toHaveBeenCalledWith({
+      workspace,
+      user: { id: testUserId },
+      role: WorkspaceRole.OWNER,
+    });
+  });
+
   describe('getWorkspaces', () => {
     // Test case 1: User là owner của workspace → trả về role = 'owner'
     it('should return workspace with role owner when user is owner', async () => {
@@ -244,8 +264,8 @@ describe('WorkspacesService', () => {
       expect(result.total).toBe(0);
     });
 
-    // Test case 2: User là member của workspace → trả về role = 'member'
-    it('should return workspace with role member when user is member', async () => {
+    // Test case 2: An analyst membership returns the persisted five-role value.
+    it('should return workspace with role analyst when user is an analyst', async () => {
       // Arrange
       const query = {
         limit: 10,
@@ -265,12 +285,11 @@ describe('WorkspacesService', () => {
       // Assert
       expect(result).toBeDefined();
       expect(result.data).toHaveLength(1);
-      expect(result.data[0].role).toBe('member');
+      expect(result.data[0].role).toBe(WorkspaceRole.ANALYST);
       expect(result.data[0].id).toBe(testWorkspaceId);
     });
 
-    // Test case 3: User là admin của workspace → trả về role = 'admin'
-    // Note: WorkspaceRole enum only has OWNER and MEMBER, but we test with database value
+    // Test case 3: Security administrators retain their persisted role.
     it('should return workspace with role from database', async () => {
       // Arrange
       const query = {
@@ -293,7 +312,7 @@ describe('WorkspacesService', () => {
           workspace_ownerId: randomUUID(),
           targetcount: '5',
           membercount: '3',
-          member_role: 'admin', // This might come from database even if not in enum
+          member_role: WorkspaceRole.SECURITY_ADMIN,
         },
       ];
 
@@ -308,7 +327,7 @@ describe('WorkspacesService', () => {
       // Assert
       expect(result).toBeDefined();
       expect(result.data).toHaveLength(1);
-      expect(result.data[0].role).toBe('admin');
+      expect(result.data[0].role).toBe(WorkspaceRole.SECURITY_ADMIN);
     });
 
     // Test case 4: Kiểm tra pagination hoạt động đúng với workspace_members join

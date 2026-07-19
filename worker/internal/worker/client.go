@@ -15,6 +15,7 @@ import (
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/oasm-platform/oasm-sdk-go/oasm"
 	"github.com/oasm-platform/open-asm/grpc-client/go/workers"
+	"google.golang.org/grpc"
 )
 
 func connectInternalNetwork(client *oasm.Client, network string) error {
@@ -54,15 +55,37 @@ func Start(ctx context.Context, cfg *config.Config) {
 	netLog := oasm.NewLogger("Network")
 	shutLog := oasm.NewLogger("Shutdown")
 
+	grpcHost := fmt.Sprintf("%s:%d", cfg.GrpcHost, cfg.GrpcPort)
+	transportCredentials, err := newGRPCTransportCredentials(cfg)
+	if err != nil {
+		sysLog.ErrorE("Invalid gRPC transport configuration", err)
+		return
+	}
+	connection, err := grpc.NewClient(
+		grpcHost,
+		grpc.WithTransportCredentials(transportCredentials),
+	)
+	if err != nil {
+		sysLog.ErrorE("Failed to create gRPC connection", err)
+		return
+	}
+
 	client, err := oasm.NewClient(
 		oasm.WithApiKey(cfg.ApiKey),
-		oasm.WithGRPCHost(fmt.Sprintf("%s:%d", cfg.GrpcHost, cfg.GrpcPort)),
+		oasm.WithGRPCHost(grpcHost),
+		oasm.WithConn(connection),
 		oasm.WithToolPath(cfg.ToolPath),
 	)
 	if err != nil {
+		_ = connection.Close()
 		sysLog.ErrorE("Failed to create OASM client", err)
 		return
 	}
+	defer func() {
+		if err := client.Close(); err != nil {
+			sysLog.Warning("gRPC connection close warning: %v", err)
+		}
+	}()
 
 	jobLog.Info("Initializing headless browser...")
 	l := launcher.New().Leakless(false).Headless(true)
@@ -81,17 +104,6 @@ func Start(ctx context.Context, cfg *config.Config) {
 	}
 
 	browser := rod.New().ControlURL(l.MustLaunch()).MustConnect()
-
-	workspaceRoot, err := filepath.Abs(cfg.WorkspaceRoot)
-	if err != nil {
-		sysLog.ErrorE("Failed to resolve workspace root", err)
-		return
-	}
-
-	if err := os.MkdirAll(workspaceRoot, 0o755); err != nil {
-		sysLog.ErrorE("Failed to create workspace root", err)
-		return
-	}
 
 	toolPath, err := filepath.Abs(cfg.ToolPath)
 	if err != nil {
@@ -139,7 +151,11 @@ func Start(ctx context.Context, cfg *config.Config) {
 		}
 		wg.Go(func() {
 			defer semaphore.Release()
-			processJob(currentCtx, client, browser, toolPath)
+			processJob(currentCtx, client, browser, toolPath, executionLimits{
+				timeout:          cfg.JobTimeout,
+				stdoutLimitBytes: cfg.JobStdoutLimitBytes,
+				stderrLimitBytes: cfg.JobStderrLimitBytes,
+			})
 		})
 	})
 	if err != nil {
@@ -184,13 +200,11 @@ func Start(ctx context.Context, cfg *config.Config) {
 						netLog.Success("Connected to internal network: %s", cfg.Network)
 					}
 
-					if err := client.WorkerDownloadTools(sessionCtx); err != nil {
+					if err := client.WorkerDownloadTools(client.WithAuth(sessionCtx)); err != nil {
 						sysLog.ErrorE("Download tools failed", err)
 						stateMu.Unlock()
 						continue
 					}
-
-					go startRemoteExecuteHandler(sessionCtx, client, workspaceRoot, toolPath)
 
 					if !schedulerStarted {
 						scheduler.StartAsync()
@@ -207,7 +221,7 @@ func Start(ctx context.Context, cfg *config.Config) {
 		}
 	}()
 
-	go client.WorkerConnect(workerCtx, ready)
+	go connectWorker(workerCtx, client, ready)
 
 	ticker := time.NewTicker(time.Second)
 	go func() {
