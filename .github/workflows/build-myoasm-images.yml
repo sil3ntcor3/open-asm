@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "main"
+      - "dev"
     paths:
       - "console/**"
       - "core-api/**"
@@ -66,9 +67,9 @@ jobs:
           fi
 
           CHANGED=()
-          $add_console && CHANGED+=( '{"image":"sil3ntcor3/myoasm-console:latest","context":"console","dockerfile":"console/Dockerfile"}' )
-          $add_api && CHANGED+=( '{"image":"sil3ntcor3/myoasm-api:latest","context":"core-api","dockerfile":"core-api/Dockerfile"}' )
-          $add_worker && CHANGED+=( '{"image":"sil3ntcor3/myoasm-worker:latest","context":".","dockerfile":"worker/Dockerfile"}' )
+          $add_console && CHANGED+=( '{"image":"sil3ntcor3/myoasm-console","context":"console","dockerfile":"console/Dockerfile"}' )
+          $add_api && CHANGED+=( '{"image":"sil3ntcor3/myoasm-api","context":"core-api","dockerfile":"core-api/Dockerfile"}' )
+          $add_worker && CHANGED+=( '{"image":"sil3ntcor3/myoasm-worker","context":".","dockerfile":"worker/Dockerfile"}' )
 
           if [ ${#CHANGED[@]} -eq 0 ]; then
             MATRIX='{"include":[]}'
@@ -110,7 +111,7 @@ jobs:
           # is unstable here and causes the qemu Illegal instruction failure seen in CI.
           docker buildx build \
             --platform linux/amd64 \
-            -t "${{ matrix.image }}" \
+            -t "${{ matrix.image }}:${{ github.ref_name == 'dev' && 'dev' || 'latest' }}" \
             --push \
             --file "${{ matrix.dockerfile }}" \
             "${{ matrix.context }}"
