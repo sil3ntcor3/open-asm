@@ -6,8 +6,10 @@ on:
       - "main"
       - "dev"
     paths:
+      - ".github/workflows/build-myoasm-images.yml"
       - "console/**"
       - "core-api/**"
+      - "grpc-client/go/**"
       - "worker/**"
   workflow_dispatch:
     inputs:
@@ -42,10 +44,14 @@ jobs:
           filters: |
             console:
               - 'console/**'
+              - '.github/workflows/build-myoasm-images.yml'
             api:
               - 'core-api/**'
+              - '.github/workflows/build-myoasm-images.yml'
             worker:
               - 'worker/**'
+              - 'grpc-client/go/**'
+              - '.github/workflows/build-myoasm-images.yml'
       - id: set-matrix
         env:
           DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
@@ -67,9 +73,9 @@ jobs:
           fi
 
           CHANGED=()
-          $add_console && CHANGED+=( '{"image":"sil3ntcor3/myoasm-console:latest","context":"console","dockerfile":"console/Dockerfile"}' )
-          $add_api && CHANGED+=( '{"image":"sil3ntcor3/myoasm-api:latest","context":"core-api","dockerfile":"core-api/Dockerfile"}' )
-          $add_worker && CHANGED+=( '{"image":"sil3ntcor3/myoasm-worker:latest","context":"worker","dockerfile":"worker/Dockerfile"}' )
+          $add_console && CHANGED+=( '{"service":"console","image":"sil3ntcor3/myoasm-console","context":"console","dockerfile":"console/Dockerfile"}' )
+          $add_api && CHANGED+=( '{"service":"core-api","image":"sil3ntcor3/myoasm-api","context":"core-api","dockerfile":"core-api/Dockerfile"}' )
+          $add_worker && CHANGED+=( '{"service":"worker","image":"sil3ntcor3/myoasm-worker","context":".","dockerfile":"worker/Dockerfile"}' )
 
           if [ ${#CHANGED[@]} -eq 0 ]; then
             MATRIX='{"include":[]}'
@@ -80,7 +86,7 @@ jobs:
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
 
   build:
-    name: Build & Push (${{ matrix.context }})
+    name: Build & Push (${{ matrix.service }})
     needs: detect-changes
     runs-on: ubuntu-latest
     if: ${{ needs.detect-changes.outputs.matrix != '{"include":[]}' }}
@@ -107,11 +113,21 @@ jobs:
 
       - name: Build and push
         run: |
+          case "$GITHUB_REF_NAME" in
+            main) image_channel="latest" ;;
+            dev) image_channel="dev" ;;
+            *)
+              echo "Unsupported image branch: $GITHUB_REF_NAME"
+              exit 1
+              ;;
+          esac
+
           # The console image uses Bun during build; ARM64 emulation on GitHub Actions
           # is unstable here and causes the qemu Illegal instruction failure seen in CI.
           docker buildx build \
             --platform linux/amd64 \
-            -t "${{ matrix.image }}:${{ github.ref_name == 'dev' && 'dev' || 'latest' }}" \
+            -t "${{ matrix.image }}:${image_channel}" \
+            -t "${{ matrix.image }}:sha-${GITHUB_SHA::12}" \
             --push \
             --file "${{ matrix.dockerfile }}" \
             "${{ matrix.context }}"

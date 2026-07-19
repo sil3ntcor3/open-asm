@@ -2,10 +2,10 @@ name: Frontend Tests
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, dev]
     paths: ['console/**']
   pull_request:
-    branches: [main, develop]
+    branches: [main, dev]
     paths: ['console/**']
 
 permissions:
