@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "main"
+      - "dev"
     paths:
       - "console/**"
       - "core-api/**"
@@ -110,7 +111,7 @@ jobs:
           # is unstable here and causes the qemu Illegal instruction failure seen in CI.
           docker buildx build \
             --platform linux/amd64 \
-            -t "${{ matrix.image }}" \
+            -t "${{ matrix.image }}:${{ github.ref_name == 'dev' && 'dev' || 'latest' }}" \
             --push \
             --file "${{ matrix.dockerfile }}" \
             "${{ matrix.context }}"
