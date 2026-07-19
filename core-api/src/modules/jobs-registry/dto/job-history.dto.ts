@@ -71,6 +71,15 @@ export class JobHistoryResponseDto {
   @ApiProperty({ type: Number })
   totalJobs: number;
 
+  @ApiProperty({ type: Number })
+  pauseEligibleJobs: number;
+
+  @ApiProperty({ type: Number })
+  resumeEligibleJobs: number;
+
+  @ApiProperty({ type: Number })
+  cancelEligibleJobs: number;
+
   @ApiProperty({ enum: JobStatus })
   status: JobStatus;
 

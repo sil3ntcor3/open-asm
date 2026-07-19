@@ -133,8 +133,7 @@ export class AssetsService {
       .leftJoinAndSelect('asset.ipAssets', 'ipAssets')
       .leftJoin('asset_service.statusCodeAssets', 'statusCodeAssets')
       .leftJoin('asset_service.tlsAssets', 'tlsAssets')
-      .where('asset_service."isErrorPage" = false')
-      .andWhere('"workspaceTargets"."workspaceId" = :workspaceId', {
+      .where('"workspaceTargets"."workspaceId" = :workspaceId', {
         workspaceId,
       })
       .andWhere(
@@ -329,7 +328,10 @@ export class AssetsService {
       lastDiscoveredAt: new Date(),
     });
 
-    this.eventEmitter.emit('target.domain.re-scan', target);
+    this.eventEmitter.emit(
+      `target.${target.type.toLocaleLowerCase()}.re-scan`,
+      target,
+    );
 
     return {
       message: 'Scan started',

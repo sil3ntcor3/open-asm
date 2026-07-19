@@ -2,3 +2,22 @@ node_modules
 bun.lockb
 npm-debug.log
 *.log
+
+# The worker image builds from the repo root (its go.mod has a local
+# `replace` for ../grpc-client/go). Docker only honours the .dockerignore at
+# the context root, so the worker-specific excludes must live here too —
+# otherwise `COPY worker/ .` would bundle secrets and git history.
+.git
+.gitignore
+.gitattributes
+**/.env
+!**/.example.env
+**/*.env
+!**/*.example.env
+.DS_Store
+Thumbs.db
+**/*.exe
+coverage.out
+coverage.html
+tmp/
+temp/

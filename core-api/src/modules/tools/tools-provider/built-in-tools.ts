@@ -4,8 +4,72 @@ import type { Severity } from '@/common/enums/enum';
 import { JobPriority, ToolCategory } from '@/common/enums/enum';
 import { randomUUID } from 'crypto';
 import { Asset } from '../../assets/entities/assets.entity';
-import type { Vulnerability } from '../../vulnerabilities/entities/vulnerability.entity';
+import type {
+  Vulnerability,
+  VulnerabilityEvidence,
+} from '../../vulnerabilities/entities/vulnerability.entity';
 import { Tool } from '../entities/tools.entity';
+
+type NucleiFinding = Record<string, unknown>;
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+
+function asString(value: unknown): string | undefined {
+  if (value === null || value === undefined) return undefined;
+  const stringValue = String(value);
+  return stringValue.length > 0 ? stringValue : undefined;
+}
+
+function asStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => asString(item))
+      .filter((item): item is string => Boolean(item));
+  }
+
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function createNucleiEvidence(finding: NucleiFinding): VulnerabilityEvidence {
+  const info = asRecord(finding.info);
+  const metadata = asRecord(info?.metadata);
+
+  return {
+    templateId: asString(finding['template-id']),
+    templatePath: asString(finding['template-path']),
+    type: asString(finding.type),
+    matcherName: asString(finding['matcher-name']),
+    matcherStatus:
+      typeof finding['matcher-status'] === 'boolean'
+        ? finding['matcher-status']
+        : undefined,
+    extractorName: asString(finding['extractor-name']),
+    extractedResults: asStringArray(finding['extracted-results']),
+    matchedAt: asString(finding['matched-at']),
+    host: asString(finding.host),
+    ip: asString(finding.ip),
+    port: asString(finding.port),
+    scheme: asString(finding.scheme),
+    request: asString(finding.request),
+    response: asString(finding.response),
+    curlCommand: asString(finding['curl-command']),
+    timestamp: asString(finding.timestamp),
+    metadata,
+    raw: finding,
+  };
+}
 
 export const builtInTools: Tool[] = [
   {
@@ -66,7 +130,7 @@ export const builtInTools: Tool[] = [
     description:
       'A fast port scanner written in go with a focus on reliability and simplicity. Designed to be used in combination with other tools for attack surface discovery in bug bounties and pentests.',
     logoUrl: '/static/images/naabu.png',
-    command: 'naabu -host {{value}} -silent -top-ports full',
+    command: 'naabu -host {{value}} -silent -top-ports 2000',
     parser: (result: string) => {
       const parsed = result
         .trim()
@@ -91,31 +155,37 @@ export const builtInTools: Tool[] = [
         .split('\n')
         .filter((line) => line.trim())
         .map((line) => {
-          const finding = JSON.parse(line.trim());
+          const finding = JSON.parse(line.trim()) as NucleiFinding;
+          const info = asRecord(finding.info) ?? {};
+          const classification = asRecord(info.classification);
+          const port = asString(finding.port);
+          const evidence = createNucleiEvidence(finding);
           const vulId = randomUUID();
           const filePath = `${vulId}.json`;
           return {
             id: vulId,
-            name: finding['info']['name'] as string,
-            description: finding['info']['description'] as string,
-            severity: finding['info']['severity'].toLowerCase() as Severity,
-            tags: finding['info']['tags'] || [],
-            references: finding['info']['reference'] || [],
-            authors: finding['info']['author'] || [],
+            name:
+              asString(info.name) ??
+              asString(finding['template-id']) ??
+              'Unknown Nuclei Finding',
+            description: asString(info.description),
+            severity: (
+              asString(info.severity) ?? 'info'
+            ).toLowerCase() as Severity,
+            tags: asStringArray(info.tags),
+            references: asStringArray(info.reference),
+            authors: asStringArray(info.author),
             affectedUrl: finding['matched-at'] as string,
             ipAddress: finding['ip'] as string,
             host: finding['host'] as string,
-            ports: [finding['port']?.toString()] as string[],
-            cvssMetric: finding['info']['classification']?.[
-              'cvss-metrics'
-            ] as string,
-            cvssScore: finding['info']['classification']?.[
-              'cvss-score'
-            ] as number,
-            cveId: finding['info']['classification']?.['cve-id'] as string[],
-            cweId: finding['info']['classification']?.['cwe-id'] as string[],
-            extractorName: finding['extractor-name'] as string,
-            extractedResults: finding['extracted-results'] || [],
+            ports: port ? [port] : [],
+            cvssMetric: classification?.['cvss-metrics'] as string,
+            cvssScore: classification?.['cvss-score'] as number,
+            cveId: asStringArray(classification?.['cve-id']),
+            cweId: asStringArray(classification?.['cwe-id']),
+            extractorName: asString(finding['extractor-name']),
+            extractedResults: evidence.extractedResults ?? [],
+            evidence: [evidence],
             filePath,
           };
         })
@@ -143,6 +213,13 @@ export const builtInTools: Tool[] = [
               ...existingVuln.extractedResults,
               ...vuln.extractedResults,
             ]),
+          ];
+          existingVuln.ports = [
+            ...new Set([...existingVuln.ports, ...vuln.ports]),
+          ];
+          existingVuln.evidence = [
+            ...(existingVuln.evidence ?? []),
+            ...(vuln.evidence ?? []),
           ];
         } else {
           groupedVulnerabilities.set(vuln.name, { ...vuln });

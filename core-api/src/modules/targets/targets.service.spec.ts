@@ -1,10 +1,12 @@
 import type { UserContextPayload } from '@/common/interfaces/app.interface';
+import { CronSchedule } from '@/common/enums/enum';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { TestingModule } from '@nestjs/testing';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import type { Queue } from 'bullmq';
 import { randomUUID } from 'crypto';
+import { In } from 'typeorm';
 import type { EntityManager, Repository } from 'typeorm';
 import { AssetsService } from '../assets/assets.service';
 import type { Asset } from '../assets/entities/assets.entity';
@@ -26,6 +28,7 @@ describe('TargetsService', () => {
     mockTargetRepository = {
       findOneBy: jest.fn(),
       upsert: jest.fn(),
+      query: jest.fn(),
       createQueryBuilder: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       leftJoin: jest.fn().mockReturnThis(),
@@ -111,6 +114,161 @@ describe('TargetsService', () => {
     expect(service).toBeDefined();
   });
 
+  describe('getTargetById', () => {
+    const targetId = randomUUID();
+    const workspaceId = randomUUID();
+
+    it('fetches the target with one parameterized query and returns the first row', async () => {
+      const row = {
+        id: targetId,
+        value: 'example.com',
+        type: TargetType.DOMAIN,
+        totalAssetServices: 5,
+        status: 'completed',
+      };
+      (mockTargetRepository.query as jest.Mock).mockResolvedValue([row]);
+
+      const result = await service.getTargetById(targetId, workspaceId);
+
+      expect(result).toBe(row);
+      const [sql, params] = (mockTargetRepository.query as jest.Mock).mock
+        .calls[0] as [string, unknown[]];
+      expect(params).toEqual([targetId, workspaceId]);
+      // Regression guard: asset_services and jobs must each be aggregated in
+      // their own LATERAL subquery. Joining them as siblings off assets forms
+      // a services x jobs cartesian product per asset, which exceeds
+      // statement_timeout on large targets (see getTargetsInWorkspace).
+      expect(sql).toContain('LATERAL');
+    });
+
+    it('includes persisted scan window fields in the target detail projection', async () => {
+      (mockTargetRepository.query as jest.Mock).mockResolvedValue([
+        {
+          id: targetId,
+          scanWindowStart: '22:00:00',
+          scanWindowEnd: '06:00:00',
+          scanWindowTimezone: 'America/Chicago',
+          scanWindowDays: [1, 2, 3],
+        },
+      ]);
+
+      await service.getTargetById(targetId, workspaceId);
+
+      const [sql] = (mockTargetRepository.query as jest.Mock).mock.calls[0] as [
+        string,
+        unknown[],
+      ];
+      expect(sql).toContain('t."scanWindowStart" AS "scanWindowStart"');
+      expect(sql).toContain('t."scanWindowEnd" AS "scanWindowEnd"');
+      expect(sql).toContain('t."scanWindowTimezone" AS "scanWindowTimezone"');
+      expect(sql).toContain('t."scanWindowDays" AS "scanWindowDays"');
+    });
+
+    it('returns undefined when the target is not in the workspace', async () => {
+      (mockTargetRepository.query as jest.Mock).mockResolvedValue([]);
+
+      await expect(
+        service.getTargetById(targetId, workspaceId),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('updateTarget', () => {
+    it('returns the updated target after persisting scan window changes', async () => {
+      const targetId = randomUUID();
+      const existingTarget = {
+        id: targetId,
+        value: 'example.com',
+        type: TargetType.DOMAIN,
+      } as Target;
+      const updatedTarget = {
+        ...existingTarget,
+        scanWindowStart: '22:00',
+        scanWindowEnd: '06:00',
+        scanWindowTimezone: 'America/Chicago',
+        scanWindowDays: [1, 2, 3, 4, 5],
+      } as Target;
+
+      (mockTargetRepository.findOneBy as jest.Mock)
+        .mockResolvedValueOnce(existingTarget)
+        .mockResolvedValueOnce(updatedTarget);
+      (mockTargetRepository.update as jest.Mock).mockResolvedValue({
+        affected: 1,
+      });
+
+      const result = await service.updateTarget(targetId, {
+        scanWindowStart: '22:00',
+        scanWindowEnd: '06:00',
+        scanWindowTimezone: 'America/Chicago',
+        scanWindowDays: [1, 2, 3, 4, 5],
+      });
+
+      expect(mockTargetRepository.update).toHaveBeenCalledWith(targetId, {
+        scanWindowStart: '22:00',
+        scanWindowEnd: '06:00',
+        scanWindowTimezone: 'America/Chicago',
+        scanWindowDays: [1, 2, 3, 4, 5],
+        jobId: undefined,
+      });
+      expect(result).toEqual(updatedTarget);
+    });
+
+    it('reschedules an enabled target when scan window timing changes', async () => {
+      const targetId = randomUUID();
+      const existingTarget = {
+        id: targetId,
+        value: 'example.com',
+        type: TargetType.DOMAIN,
+        scanSchedule: CronSchedule.MONTHLY,
+        jobId: 'old-repeat-key',
+        reScanCount: 0,
+      } as Target;
+      const updatedTarget = {
+        ...existingTarget,
+        scanWindowStart: '23:05',
+        scanWindowEnd: '23:10',
+        scanWindowTimezone: 'America/Chicago',
+        scanWindowDays: [1, 2, 3, 4, 5, 6, 7],
+      } as Target;
+
+      (mockTargetRepository.findOneBy as jest.Mock)
+        .mockResolvedValueOnce(existingTarget)
+        .mockResolvedValueOnce(updatedTarget);
+      (mockTargetRepository.update as jest.Mock).mockResolvedValue({
+        affected: 1,
+      });
+      (mockQueue.add as jest.Mock).mockResolvedValue({
+        repeatJobKey: 'new-repeat-key',
+      });
+
+      await service.updateTarget(targetId, {
+        scanWindowStart: '23:05',
+        scanWindowEnd: '23:10',
+        scanWindowTimezone: 'America/Chicago',
+        scanWindowDays: [1, 2, 3, 4, 5, 6, 7],
+      });
+
+      expect(mockQueue.removeJobScheduler).toHaveBeenCalledWith(
+        'old-repeat-key',
+      );
+      expect(mockQueue.add).toHaveBeenCalledWith(
+        targetId,
+        { id: targetId },
+        {
+          repeat: {
+            pattern: '5 23 1 * *',
+            tz: 'America/Chicago',
+            immediately: true,
+          },
+        },
+      );
+      expect(mockTargetRepository.update).toHaveBeenCalledWith(
+        targetId,
+        expect.objectContaining({ jobId: 'new-repeat-key' }),
+      );
+    });
+  });
+
   describe('createMultipleTargets', () => {
     const workspaceId = randomUUID();
     const userContext = {
@@ -151,7 +309,10 @@ describe('TargetsService', () => {
         andWhere: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
         getRawMany: jest.fn().mockResolvedValue(
-          existingTargets.map((value) => ({ value, internalNetworkId: null })),
+          existingTargets.map((value) => ({
+            value,
+            internalNetworkId: null,
+          })),
         ),
         save: jest.fn().mockResolvedValue(undefined),
       };
@@ -375,6 +536,81 @@ describe('TargetsService', () => {
 
       // Assert
       expect(mockEventEmitter.emit).toHaveBeenCalledTimes(2);
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith(
+        'target.domain.create',
+        expect.any(Object),
+      );
+    });
+
+    it('should not emit events when startDiscovery is false', async () => {
+      // Arrange
+      const targetValues = ['noscan1.com', 'noscan2.com'];
+      const dto = {
+        targets: targetValues.map((value) => ({ value })),
+        startDiscovery: false,
+      };
+      const createdTargets = targetValues.map((value) => ({
+        id: randomUUID(),
+        value,
+        type: TargetType.DOMAIN,
+        scanSchedule: 'DISABLED',
+      })) as unknown as Target[];
+
+      const mockManager = createMockEntityManager({
+        existingTargets: [],
+        createdTargets,
+      });
+
+      (mockTargetRepository.manager as EntityManager).transaction = jest
+        .fn()
+        .mockImplementation(
+          (callback: (manager: EntityManager) => Promise<unknown>) =>
+            callback(mockManager),
+        );
+
+      // Act
+      const result = await service.createMultipleTargets(
+        dto,
+        workspaceId,
+        userContext,
+      );
+
+      // Assert
+      expect(result.totalCreated).toBe(2);
+      expect(mockEventEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('should emit events when startDiscovery is explicitly true', async () => {
+      // Arrange
+      const dto = {
+        targets: [{ value: 'scan1.com' }],
+        startDiscovery: true,
+      };
+      const createdTargets = [
+        {
+          id: randomUUID(),
+          value: 'scan1.com',
+          type: TargetType.DOMAIN,
+          scanSchedule: 'DISABLED',
+        },
+      ] as unknown as Target[];
+
+      const mockManager = createMockEntityManager({
+        existingTargets: [],
+        createdTargets,
+      });
+
+      (mockTargetRepository.manager as EntityManager).transaction = jest
+        .fn()
+        .mockImplementation(
+          (callback: (manager: EntityManager) => Promise<unknown>) =>
+            callback(mockManager),
+        );
+
+      // Act
+      await service.createMultipleTargets(dto, workspaceId, userContext);
+
+      // Assert
       expect(mockEventEmitter.emit).toHaveBeenCalledWith(
         'target.domain.create',
         expect.any(Object),
@@ -793,6 +1029,170 @@ describe('TargetsService', () => {
       ).rejects.toThrow(
         'Invalid IP: "127.0.0.1" is a private/reserved IP address. Only public IP addresses are allowed.',
       );
+    });
+  });
+
+  describe('discoverTargets', () => {
+    const workspaceId = randomUUID();
+    const userContext = {
+      userId: randomUUID(),
+      email: 'test@example.com',
+      expiresAt: new Date(),
+      token: 'token',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      name: 'Test User',
+      image: null,
+      role: 'USER',
+      lastLoginAt: new Date(),
+      isActive: true,
+      version: 1,
+      ipAddress: '127.0.0.1',
+      userAgent: 'jest',
+      id: randomUUID(),
+      emailVerified: new Date(),
+    } as unknown as UserContextPayload;
+
+    const makeTarget = (type: TargetType, value: string) =>
+      ({
+        id: randomUUID(),
+        value,
+        type,
+        reScanCount: 0,
+      }) as unknown as Target;
+
+    // Chainable query-builder mock for the single batched
+    // UPDATE ... SET "reScanCount" = "reScanCount" + 1 statement.
+    let mockUpdateQueryBuilder: {
+      update: jest.Mock;
+      set: jest.Mock;
+      where: jest.Mock;
+      execute: jest.Mock;
+    };
+
+    beforeEach(() => {
+      mockWorkspacesService.getWorkspaceByIdAndOwner = jest.fn();
+      mockWorkspacesService.getWorkspaceConfigValue = jest
+        .fn()
+        .mockResolvedValue({ isAssetsDiscovery: true });
+      mockEventEmitter.emit = jest.fn();
+      mockUpdateQueryBuilder = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 0 }),
+      };
+      (mockTargetRepository.createQueryBuilder as jest.Mock) = jest
+        .fn()
+        .mockReturnValue(mockUpdateQueryBuilder);
+      (mockTargetRepository.query as jest.Mock) = jest
+        .fn()
+        .mockResolvedValue([]);
+    });
+
+    const arrangeWorkspaceTargets = (targets: Target[]) => {
+      (mockWorkspaceTargetRepository as any).find = jest
+        .fn()
+        .mockResolvedValue(targets.map((target) => ({ target })));
+    };
+
+    it('should emit type-correct re-scan events for idle targets', async () => {
+      const domainTarget = makeTarget(TargetType.DOMAIN, 'example.com');
+      const ipTarget = makeTarget(TargetType.IP, '8.8.8.8');
+      const cidrTarget = makeTarget(TargetType.CIDR, '203.0.113.0/24');
+      arrangeWorkspaceTargets([domainTarget, ipTarget, cidrTarget]);
+
+      const result = await service.discoverTargets(
+        { targetIds: [domainTarget.id, ipTarget.id, cidrTarget.id] },
+        workspaceId,
+        userContext,
+      );
+
+      expect(result.totalStarted).toBe(3);
+      expect(result.totalSkipped).toBe(0);
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith(
+        'target.domain.re-scan',
+        domainTarget,
+      );
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith(
+        'target.ip.re-scan',
+        ipTarget,
+      );
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith(
+        'target.cidr.re-scan',
+        cidrTarget,
+      );
+      // One batched atomic UPDATE for all started targets, not N per-row
+      // read-modify-write updates.
+      expect(mockUpdateQueryBuilder.execute).toHaveBeenCalledTimes(1);
+      expect(mockUpdateQueryBuilder.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reScanCount: expect.any(Function),
+          lastDiscoveredAt: expect.any(Date),
+        }),
+      );
+      expect(mockUpdateQueryBuilder.where).toHaveBeenCalledWith({
+        id: In([domainTarget.id, ipTarget.id, cidrTarget.id]),
+      });
+    });
+
+    it('should skip targets with pending or in-progress jobs', async () => {
+      const busyTarget = makeTarget(TargetType.DOMAIN, 'busy.com');
+      const idleTarget = makeTarget(TargetType.DOMAIN, 'idle.com');
+      arrangeWorkspaceTargets([busyTarget, idleTarget]);
+      (mockTargetRepository.query as jest.Mock) = jest
+        .fn()
+        .mockResolvedValue([{ targetId: busyTarget.id }]);
+
+      const result = await service.discoverTargets(
+        { targetIds: [busyTarget.id, idleTarget.id] },
+        workspaceId,
+        userContext,
+      );
+
+      expect(result.totalStarted).toBe(1);
+      expect(result.totalSkipped).toBe(1);
+      expect(result.skipped[0]).toEqual({
+        id: busyTarget.id,
+        value: 'busy.com',
+        reason: 'already scanning',
+      });
+      expect(mockEventEmitter.emit).toHaveBeenCalledTimes(1);
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith(
+        'target.domain.re-scan',
+        idleTarget,
+      );
+      expect(mockUpdateQueryBuilder.execute).toHaveBeenCalledTimes(1);
+      expect(mockUpdateQueryBuilder.where).toHaveBeenCalledWith({
+        id: In([idleTarget.id]),
+      });
+    });
+
+    it('should throw NotFoundException for targets outside the workspace', async () => {
+      arrangeWorkspaceTargets([]);
+
+      await expect(
+        service.discoverTargets(
+          { targetIds: [randomUUID()] },
+          workspaceId,
+          userContext,
+        ),
+      ).rejects.toThrow('Targets not found in workspace');
+      expect(mockEventEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException when asset discovery is disabled', async () => {
+      mockWorkspacesService.getWorkspaceConfigValue = jest
+        .fn()
+        .mockResolvedValue({ isAssetsDiscovery: false });
+
+      await expect(
+        service.discoverTargets(
+          { targetIds: [randomUUID()] },
+          workspaceId,
+          userContext,
+        ),
+      ).rejects.toThrow('Asset discovery is disabled for this workspace');
     });
   });
 });

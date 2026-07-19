@@ -9,8 +9,8 @@ require (
 	github.com/go-rod/rod v0.116.2
 	github.com/go-rod/stealth v0.4.9
 	github.com/joho/godotenv v1.5.1
-	github.com/oasm-platform/oasm-sdk-go v0.1.11-0.20260520124221-87bbb6e57249
-	github.com/oasm-platform/open-asm/grpc-client/go v0.0.0-20260520113334-bc33f1b951a7
+	github.com/oasm-platform/oasm-sdk-go v0.1.11
+	github.com/oasm-platform/open-asm/grpc-client/go v0.0.0-20260618004722-4483b4b84523
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 )
@@ -41,6 +41,8 @@ require (
 	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
-	google.golang.org/grpc v1.80.0 // indirect
+	google.golang.org/grpc v1.82.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
+
+replace github.com/oasm-platform/open-asm/grpc-client/go => ../grpc-client/go

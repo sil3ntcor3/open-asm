@@ -22,6 +22,8 @@ import { Response } from 'express';
 import {
   BulkTargetResultDto,
   CreateMultipleTargetsDto,
+  DiscoverTargetsDto,
+  DiscoverTargetsResultDto,
   GetManyTargetResponseDto,
   GetManyWorkspaceQueryParamsDto,
   UpdateTargetDto,
@@ -55,6 +57,26 @@ export class TargetsController {
       workspaceId,
       userContext,
     );
+  }
+
+  @Doc({
+    summary: 'Start discovery on existing targets',
+    description:
+      'Starts discovery workflows for the specified targets. Targets that already have pending or in-progress jobs are skipped and reported in the response.',
+    response: {
+      serialization: DiscoverTargetsResultDto,
+    },
+    request: {
+      getWorkspaceId: true,
+    },
+  })
+  @Post('discover')
+  discoverTargets(
+    @Body() dto: DiscoverTargetsDto,
+    @UserContext() userContext: UserContextPayload,
+    @WorkspaceId() workspaceId: string,
+  ) {
+    return this.targetsService.discoverTargets(dto, workspaceId, userContext);
   }
 
   @Doc({

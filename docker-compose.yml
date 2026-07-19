@@ -67,8 +67,10 @@ services:
   oasm-worker:
     image: oasm/oasm-worker:latest
     build:
-      context: ./worker
-      dockerfile: Dockerfile
+      # Repo root context: the worker's go.mod has a local `replace` for
+      # ../grpc-client/go, so the build needs both directories.
+      context: .
+      dockerfile: worker/Dockerfile
     env_file:
       - ./worker/.env
     environment:
@@ -197,6 +199,7 @@ services:
       - POSTGRES_USERNAME=${POSTGRES_USERNAME:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-open_asm}
+      - REDIS_URL=redis://:password@redis:6379/0
     logging:
       driver: json-file
       options:
@@ -205,6 +208,8 @@ services:
     restart: 'no'
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     command: >
       sh -c "node node_modules/typeorm/cli.js migration:run -d dist/database/database-config.js"

@@ -191,3 +191,32 @@ export class CreateJobs extends PickType(Job, [
   jobName?: string;
   jobRunType?: JobRunType;
 }
+
+/**
+ * Per-job control actions delivered to a worker via the gRPC Control poll.
+ * Numeric values must stay in sync with `JobControlAction` in
+ * `src/proto/jobs_registry.proto`.
+ */
+export enum JobControlAction {
+  NONE = 0,
+  /** Kill the running process; core has already marked the job cancelled. */
+  STOP = 1,
+  /** Stop the running process and leave the job in paused state. */
+  PAUSE = 2,
+  /** Continue a previously paused process when a worker still has one. */
+  RESUME = 3,
+}
+
+export interface JobControlDirective {
+  jobId: string;
+  action: JobControlAction;
+}
+
+/** Response payload of the worker control poll (gRPC `Control`). */
+export interface WorkerControlResponseDto {
+  directives: JobControlDirective[];
+  /** Desired concurrent-job limit; 0 = keep the worker's local default. */
+  maxConcurrency: number;
+  /** Worker-level pause: stop pulling new jobs (running jobs unaffected). */
+  dispatchPaused: boolean;
+}

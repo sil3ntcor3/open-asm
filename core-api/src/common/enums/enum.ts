@@ -42,6 +42,8 @@ export enum JobStatus {
   FAILED = 'failed',
   /** Cancelled */
   CANCELLED = 'cancelled',
+  /** Paused by an operator; excluded from dispatch until resumed */
+  PAUSED = 'paused',
 }
 
 /**

@@ -11,9 +11,10 @@ import {
   JobStatus,
   TargetScopeType,
   TargetType,
+  useTargetsControllerDiscoverTargets,
   useTargetsControllerGetTargetsInWorkspace,
 } from '@/services/apis/gen/queries';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,12 +22,13 @@ import JobStatusBadge from '@/components/ui/job-status';
 import { useServerDataTable } from '@/hooks/useServerDataTable';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import type { GetManyTargetResponseDto } from '@/services/apis/gen/queries';
-import { Target } from 'lucide-react';
-import { useNavigate } from '@tanstack/react-router';
-import { Route } from '@/routes/_authed/targets/index';
+import { Loader2Icon, Plus, Target } from 'lucide-react';
+import { getRouteApi, useNavigate } from '@tanstack/react-router';
 import { ScanStatusFilter } from './components/scan-status-filter';
 import { TargetTypeFilter } from './components/target-type-filter';
 import { ScopeFilter } from './components/scope-filter';
+import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 
 const targetTypeColor: Record<string, string> = {
   DOMAIN: 'border-blue-400 text-blue-400',
@@ -119,12 +121,16 @@ const targetColumns: ColumnDef<GetManyTargetResponseDto>[] = [
   },
 ];
 
+const routeApi = getRouteApi('/_authed/targets/');
+
 export function ListTargets() {
   const {
     state: { selectedWorkspaceId },
   } = useWorkspaceState();
   const navigate = useNavigate({ from: '/targets/' });
-  const search = Route.useSearch();
+  const search = routeApi.useSearch();
+  const queryClient = useQueryClient();
+  const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
 
   // Initialize type filter from URL params
   const urlType = search.type as TargetType | undefined;
@@ -206,9 +212,19 @@ export function ListTargets() {
         },
       },
     );
+  const { mutate: discoverTargets, isPending: isStartingDiscovery } =
+    useTargetsControllerDiscoverTargets();
 
-  const targets = data?.data ?? [];
+  const targets = useMemo(() => data?.data ?? [], [data?.data]);
   const total = data?.total ?? 0;
+  const selectedTargets = useMemo(
+    () => targets.filter((_, index) => rowSelection[String(index)]),
+    [rowSelection, targets],
+  );
+
+  useEffect(() => {
+    setRowSelection({});
+  }, [page, pageSize, filter, typeFilter, statusFilter, scopeFilter]);
 
   if (!data && !isLoading)
     return (
@@ -220,6 +236,43 @@ export function ListTargets() {
       to: '/targets/$id/$tab',
       params: { id: target.id, tab: 'asset-services' },
     });
+  };
+
+  const handleStartDiscovery = () => {
+    if (selectedTargets.length === 0) return;
+
+    discoverTargets(
+      {
+        data: {
+          targetIds: selectedTargets.map((target) => target.id),
+        },
+      },
+      {
+        onError: (error: unknown) => {
+          const err = error as {
+            response?: { data?: { message?: string } };
+          };
+          toast.error(
+            err?.response?.data?.message || 'Failed to start discovery',
+          );
+        },
+        onSuccess: (res) => {
+          if (res.totalStarted > 0) {
+            toast.success(
+              `Discovery started on ${res.totalStarted} target${res.totalStarted > 1 ? 's' : ''}.`,
+            );
+          }
+          if (res.totalSkipped > 0) {
+            toast.info(
+              `${res.totalSkipped} target${res.totalSkipped > 1 ? 's' : ''} skipped (already scanning).`,
+            );
+          }
+          setRowSelection({});
+          queryClient.refetchQueries({ queryKey: ['targets'] });
+          refetch();
+        },
+      },
+    );
   };
 
   return (
@@ -239,6 +292,9 @@ export function ListTargets() {
       filterColumnKey="value"
       filterValue={filter}
       onFilterChange={setFilter}
+      showCheckBox
+      rowSelection={rowSelection}
+      onRowSelectionChange={setRowSelection}
       toolbarComponents={[
         <TargetTypeFilter
           key="type-filter"
@@ -257,12 +313,27 @@ export function ListTargets() {
         />,
         // <ExportDataButton api="api/targets/export" prefix="targets" />,
         <Button
+          key="add-target"
           variant="outline"
           className="gap-2"
-          onClick={() => navigate({ to: '/targets/start-discovery' })}
+          onClick={() => navigate({ to: '/targets/add-target' })}
         >
-          <Target className="shrink-0" />
-          <span>Start discovery</span>
+          <Plus className="shrink-0" />
+          <span>Add Target</span>
+        </Button>,
+        <Button
+          key="start-discovery"
+          variant="outline"
+          className="gap-2"
+          disabled={selectedTargets.length === 0 || isStartingDiscovery}
+          onClick={handleStartDiscovery}
+        >
+          {isStartingDiscovery ? (
+            <Loader2Icon className="shrink-0 animate-spin" />
+          ) : (
+            <Target className="shrink-0" />
+          )}
+          <span>Start Discovery</span>
         </Button>,
       ]}
       totalItems={total}

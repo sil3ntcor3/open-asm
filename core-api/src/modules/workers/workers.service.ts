@@ -14,6 +14,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -34,6 +35,7 @@ import { Workspace } from '../workspaces/entities/workspace.entity';
 import { AliveStreamManager } from './alive-stream-manager.service';
 import {
   GetManyWorkersDto,
+  UpdateWorkerSettingsDto,
   WorkerAliveDto,
   WorkerJoinDto,
 } from './dto/workers.dto';
@@ -151,10 +153,56 @@ export class WorkersService {
     await this.jobsRegistryService.repo
       .createQueryBuilder('jobs')
       .update()
-      .set({ status: JobStatus.PENDING, workerId: undefined })
+      .set({ status: JobStatus.PENDING, workerId: () => 'NULL' })
       .where('jobs."workerId" = :id', { id: workerId })
       .andWhere('jobs.status = :status', { status: JobStatus.IN_PROGRESS })
       .execute();
+
+    // Jobs paused mid-run stay paused (operator decision) but the dead
+    // worker's claim is released so a later resume requeues them instead of
+    // waiting for a worker that no longer exists.
+    await this.jobsRegistryService.repo
+      .createQueryBuilder('jobs')
+      .update()
+      .set({ workerId: () => 'NULL' })
+      .where('jobs."workerId" = :id', { id: workerId })
+      .andWhere('jobs.status = :status', { status: JobStatus.PAUSED })
+      .execute();
+  }
+
+  /**
+   * Updates runtime settings of a worker (desired concurrency, pause flag).
+   * The worker itself applies the change on its next control poll; the DB
+   * row is the durable source of truth so settings survive both core and
+   * worker restarts.
+   */
+  public async updateWorkerSettings(
+    id: string,
+    dto: UpdateWorkerSettingsDto,
+  ): Promise<WorkerInstance> {
+    const worker = await this.repo.findOne({ where: { id } });
+    if (!worker) {
+      throw new NotFoundException('Worker not found');
+    }
+
+    const update: Partial<WorkerInstance> = {};
+    if (dto.maxConcurrency !== undefined) {
+      update.maxConcurrency = dto.maxConcurrency;
+    }
+    if (dto.isPaused !== undefined) {
+      update.isPaused = dto.isPaused;
+    }
+
+    if (Object.keys(update).length > 0) {
+      await this.repo.update(id, update);
+      // getNextJob caches the worker row for 30s; drop it so a pause takes
+      // effect on the next dispatch attempt instead of after cache expiry.
+      await this.repo.manager.connection.queryResultCache?.remove([
+        `workers:${id}`,
+      ]);
+    }
+
+    return this.repo.findOneOrFail({ where: { id } });
   }
 
   /**
@@ -168,7 +216,8 @@ export class WorkersService {
   public async getWorkers(
     query: GetManyWorkersDto,
   ): Promise<GetManyBaseResponseDto<WorkerInstance>> {
-    const { page, limit, sortOrder, workspaceId, enabledAgentMode } = query;
+    const { page, limit, sortOrder, workspaceId, enabledAgentMode, scope } =
+      query;
     let { sortBy } = query;
     if (!sortBy) {
       sortBy = '"createdAt"';
@@ -191,8 +240,31 @@ export class WorkersService {
       });
     }
 
-    // Add workspace filter if workspaceId is provided, or if worker has cloud scope
-    if (workspaceId) {
+    // Add explicit scope filter if provided
+    if (scope) {
+      queryBuilder.andWhere('w."scope" = :scopeFilter', {
+        scopeFilter: scope,
+      });
+
+      // If filtering by workspace scope, also filter by workspaceId
+      if (scope === 'workspace' && workspaceId) {
+        queryBuilder.andWhere('w."workspaceId" = :workspaceId', {
+          workspaceId,
+        });
+
+        // For PROVIDER type workers, ensure they have a corresponding workspace_tool record
+        queryBuilder.andWhere(
+          `(w.type != '${WorkerType.PROVIDER}' OR EXISTS (
+            SELECT 1 FROM workspace_tools wt
+            WHERE wt."workspaceId" = :workspaceId
+            AND wt."toolId" = w."toolId"
+            AND wt."isEnabled" = true
+          ))`,
+          { workspaceId },
+        );
+      }
+    } else if (workspaceId) {
+      // Legacy behavior: no explicit scope filter, but workspaceId provided
       queryBuilder.andWhere(
         '(w."workspaceId" = :workspaceId OR w."scope" = :cloudScope)',
         {
@@ -477,19 +549,25 @@ export class WorkersService {
    * This ensures jobs can be picked up by available workers.
    */
   private async resetStuckAndFailedJobs() {
+    // Compare workerId as text against the worker ids to avoid a `::uuid` cast
+    // that Postgres may evaluate on rows the WHERE clause would otherwise
+    // exclude — an empty or malformed workerId would abort the whole cleanup.
+    // The WHERE branches are parenthesised so `AND` does not silently bind
+    // tighter than the intended `OR`.
     await this.repo.manager.query(`
       UPDATE jobs j
-      SET status = CASE 
-          WHEN j.status = '${JobStatus.IN_PROGRESS}' AND j."workerId"::uuid NOT IN (
-            SELECT id FROM workers
-          ) THEN '${JobStatus.PENDING}'
+      SET status = CASE
+          WHEN j.status = '${JobStatus.IN_PROGRESS}' THEN '${JobStatus.PENDING}'
           WHEN j.status = '${JobStatus.FAILED}' AND j."retryCount" < 4 THEN '${JobStatus.PENDING}'
           ELSE j.status
         END,
         "workerId" = NULL
-      WHERE j.status = '${JobStatus.IN_PROGRESS}'
-        AND j."workerId"::uuid NOT IN (
-          SELECT id FROM workers
+      WHERE (
+          j.status = '${JobStatus.IN_PROGRESS}'
+          AND (
+            j."workerId" IS NULL
+            OR j."workerId" NOT IN (SELECT id::text FROM workers)
+          )
         )
         OR j.status = '${JobStatus.FAILED}'
     `);

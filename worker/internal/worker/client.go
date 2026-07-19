@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-co-op/gocron"
@@ -14,11 +15,6 @@ import (
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/oasm-platform/oasm-sdk-go/oasm"
 	"github.com/oasm-platform/open-asm/grpc-client/go/workers"
-)
-
-var (
-	activeJobsMu sync.RWMutex
-	activeJobs   = make(map[string]struct{})
 )
 
 func connectInternalNetwork(client *oasm.Client, network string) error {
@@ -114,32 +110,46 @@ func Start(ctx context.Context, cfg *config.Config) {
 		schedulerStarted bool
 	)
 
-	semaphore := make(chan struct{}, cfg.MaxConcurrency)
+	// Concurrency limit and worker-level pause are runtime-controllable from
+	// Core (control poll); local config is the default / fallback.
+	semaphore := NewResizableSemaphore(cfg.MaxConcurrency)
+	var dispatchPaused atomic.Bool
 	scheduler := gocron.NewScheduler(time.UTC)
 	var wg sync.WaitGroup
 
-	_, err = scheduler.Every(1).Second().Do(func() {
+	currentSession := func() context.Context {
 		stateMu.Lock()
-		currentCtx := sessionCtx
-		stateMu.Unlock()
+		defer stateMu.Unlock()
+		return sessionCtx
+	}
+
+	_, err = scheduler.Every(1).Second().Do(func() {
+		currentCtx := currentSession()
 
 		if currentCtx == nil || currentCtx.Err() != nil {
 			return
 		}
 
-		select {
-		case semaphore <- struct{}{}:
-			wg.Go(func() {
-				defer func() { <-semaphore }()
-				processJob(currentCtx, client, browser, toolPath)
-			})
-		default:
+		if dispatchPaused.Load() {
+			return
 		}
+
+		if !semaphore.TryAcquire() {
+			return
+		}
+		wg.Go(func() {
+			defer semaphore.Release()
+			processJob(currentCtx, client, browser, toolPath)
+		})
 	})
 	if err != nil {
 		sysLog.ErrorE("Failed to schedule job", err)
 		return
 	}
+
+	// Bound to the signal ctx (not workerCtx): once shutdown starts, no more
+	// directives may be applied while the worker drains active jobs.
+	go runControlLoop(ctx, client, semaphore, &dispatchPaused, cfg.MaxConcurrency, currentSession)
 
 	go func() {
 		for {
@@ -206,12 +216,11 @@ func Start(ctx context.Context, cfg *config.Config) {
 		for {
 			select {
 			case <-ticker.C:
-				activeJobsMu.RLock()
-				running := len(activeJobs)
-				activeJobsMu.RUnlock()
+				running := activeJobs.count()
+				_, limit := semaphore.Snapshot()
 
 				if running != lastLogged {
-					jobLog.Verbose("Jobs running: %d/%d", running, cfg.MaxConcurrency)
+					jobLog.Verbose("Jobs running: %d/%d", running, limit)
 					lastLogged = running
 				}
 			case <-ctx.Done():
@@ -225,6 +234,12 @@ func Start(ctx context.Context, cfg *config.Config) {
 
 	scheduler.Stop()
 	shutLog.Info("Scheduler stopped. Waiting for running jobs to finish...")
+
+	// Paused jobs should already be interrupting, but repeat the stop request
+	// during shutdown so the drain cannot wait on a stale handle.
+	if stopped := activeJobs.stopPaused(); stopped > 0 {
+		shutLog.Warning("Stopped %d paused job(s); they will be requeued by Core", stopped)
+	}
 
 	wg.Wait()
 	shutLog.Info("All jobs completed. Cancelling session contexts...")

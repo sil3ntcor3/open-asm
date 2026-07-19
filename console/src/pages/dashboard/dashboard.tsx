@@ -2,10 +2,13 @@ import Page from '@/components/common/page';
 import { useIpLocationData } from '@/hooks/useIpLocationData';
 import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import { useStatisticControllerGetAssetLocations } from '@/services/apis/gen/queries';
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import CreateWorkspace from '../workspaces/create-workspace';
 import { AssetTrends } from './components/asset-trends';
-import IpLocationsCard from './components/ip-locations-card';
+// Lazy-loaded: this card pulls in echarts (the heaviest chart dependency),
+// which is only used for the map. Splitting it keeps it out of the dashboard's
+// initial chunk so the rest of the page can paint first.
+const IpLocationsCard = lazy(() => import('./components/ip-locations-card'));
 import IssuesTimeline from './components/issues-timeline';
 import Statistic from './components/statistic';
 import TlsStatistics from './components/tls-statistics';
@@ -43,12 +46,18 @@ export default function Dashboard() {
               <Statistic />
             </div>
             <div className="flex-1">
-              <IpLocationsCard
-                data={ipLocationData}
-                totalIps={totalIps}
-                selectedCountry={selectedCountry}
-                onCountrySelect={setSelectedCountry}
-              />
+              <Suspense
+                fallback={
+                  <div className="h-full min-h-80 animate-pulse rounded-lg bg-muted/40" />
+                }
+              >
+                <IpLocationsCard
+                  data={ipLocationData}
+                  totalIps={totalIps}
+                  selectedCountry={selectedCountry}
+                  onCountrySelect={setSelectedCountry}
+                />
+              </Suspense>
             </div>
           </div>
           <div className="col-span-1 order-1 2xl:order-0 flex flex-col gap-4">

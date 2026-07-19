@@ -23,6 +23,7 @@ import { formatTodosToPrompt } from './agents.todo';
 import { AgentTool } from './agents.tools';
 import { SendMessageDto } from './dto/message.dto';
 import { AgentConversation } from './entities/agent-conversation.entity';
+import { AgentConversationTodo } from './entities/agent-conversation-todo.entity';
 import { AgentLLMConfig } from './entities/agent-llm-config.entity';
 import { AgentMessage } from './entities/agent-message.entity';
 import { AgentMessageToolCall } from './entities/tool-call.entity';
@@ -31,6 +32,7 @@ import {
   getLLMProviderConfig,
   getReasoningProviderOptions,
 } from './llm-provider-supported';
+import { ContextBudgetManager } from './shared/context-budget-manager';
 import { TokenCounter } from './shared/token-counter';
 
 export interface StreamMessageResult {
@@ -44,6 +46,8 @@ interface StreamCreationParams {
   conversationId: string;
   todosEmitter: EventEmitter;
   abortSignal?: AbortSignal;
+  /** Resolves when critical onFinish DB writes (tool calls, parts, message content) complete */
+  finishPromise: Promise<void>;
 }
 
 /** Parameters for building streamText call options */
@@ -75,8 +79,6 @@ export class AgentsCompletionsService {
   private readonly toolCapableModelsCache = new Map<string, Set<string>>();
   private toolCapableCacheExpiry = 0;
   private static readonly TOOL_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-  // Cache for custom/Ollama model tool support: key = `${baseURL}:${model}`, value = boolean
-  private readonly customToolSupportCache = new Map<string, boolean>();
   // Default context window (128k) - used for compaction threshold calculation
   private static readonly DEFAULT_CONTEXT_WINDOW = 128000;
   private static readonly COMPACTION_THRESHOLD_RATIO = 0.6;
@@ -90,6 +92,8 @@ export class AgentsCompletionsService {
     private readonly messageRepository: Repository<AgentMessage>,
     @InjectRepository(AgentMessageToolCall)
     private readonly toolCallRepository: Repository<AgentMessageToolCall>,
+    @InjectRepository(AgentConversationTodo)
+    private readonly todoRepository: Repository<AgentConversationTodo>,
     private readonly agentTool: AgentTool,
     private readonly agentsMemories: AgentsMemoriesService,
     private readonly agentsMcpService: AgentsMcpService,
@@ -322,7 +326,10 @@ export class AgentsCompletionsService {
             msg.metadata?.['status'] === 'completed',
         );
         if (hasCompletedAssistant) {
-          await this.generateTitle(conversationId, llmConfig);
+          // Fire-and-forget: title generation should not block stream closure
+          this.generateTitle(conversationId, llmConfig).catch((err) =>
+            this.logger.error('Error generating title', err),
+          );
         }
       }
     } catch (error) {
@@ -337,38 +344,66 @@ export class AgentsCompletionsService {
    */
   private async autoCompleteStuckTodos(conversationId: string): Promise<void> {
     try {
-      const conversation = await this.conversationRepository.findOne({
-        where: { id: conversationId },
-      });
-      if (!conversation) return;
-
-      const todos = conversation.todos ?? [];
-      let changed = false;
-
-      const updatedTodos = todos.map((t) => {
-        if (t.status === 'in_progress') {
-          changed = true;
-          return {
-            ...t,
-            status: 'completed' as const,
-            updatedAt: new Date().toISOString(),
-          };
-        }
-        return t;
+      const stuckTodos = await this.todoRepository.find({
+        where: { conversationId, status: 'in_progress' as const },
       });
 
-      if (changed) {
-        await this.conversationRepository.update(
-          { id: conversationId },
-          { todos: updatedTodos },
-        );
-        this.logger.log(
-          `[AutoTodo] Auto-completed stuck in_progress todos for ${conversationId}`,
-        );
-        // Note: frontend will see updated todos on next poll/fetch
+      if (stuckTodos.length === 0) return;
+
+      for (const todo of stuckTodos) {
+        todo.status = 'completed';
       }
+      await this.todoRepository.save(stuckTodos);
+
+      this.logger.log(
+        `[AutoTodo] Auto-completed ${stuckTodos.length} stuck in_progress todos for ${conversationId}`,
+      );
     } catch (error) {
       this.logger.error('Failed to auto-complete stuck todos', error);
+    }
+  }
+
+  /**
+   * Resets any in_progress todos back to pending on stream error.
+   * This allows the user to retry and have the LLM re-attempt those steps
+   * instead of leaving them stuck in in_progress forever.
+   * Returns the refreshed todo list for emitting to the frontend.
+   */
+  private async resetTodosOnError(
+    conversationId: string,
+  ): Promise<AgentConversationTodo[]> {
+    try {
+      const inProgressTodos = await this.todoRepository.find({
+        where: { conversationId, status: 'in_progress' as const },
+      });
+
+      if (inProgressTodos.length === 0) {
+        return this.todoRepository.find({
+          where: { conversationId },
+          order: { sortOrder: 'ASC' },
+        });
+      }
+
+      for (const todo of inProgressTodos) {
+        todo.status = 'pending';
+      }
+      await this.todoRepository.save(inProgressTodos);
+
+      this.logger.log(
+        `[AutoTodo] Reset ${inProgressTodos.length} in_progress todos back to pending for ${conversationId}`,
+      );
+
+      // Return full updated list for emission
+      return this.todoRepository.find({
+        where: { conversationId },
+        order: { sortOrder: 'ASC' },
+      });
+    } catch (error) {
+      this.logger.error('Failed to reset todos on error', error);
+      return this.todoRepository.find({
+        where: { conversationId },
+        order: { sortOrder: 'ASC' },
+      });
     }
   }
 
@@ -563,6 +598,180 @@ export class AgentsCompletionsService {
   }
 
   /**
+   * Smart context pruning based on token budget.
+   * Instead of fixed message counts, dynamically selects how many messages to keep
+   * based on the model's context window and current token usage.
+   *
+   * @param messages - Full conversation history from DB
+   * @param contextParts - System context strings (prompts, memory, etc.)
+   * @param hasSummary - Whether a conversation summary exists
+   * @param contextWindow - Model's context window size
+   * @returns Pruned messages array fitting within budget
+   */
+  private pruneContextByBudget(
+    messages: AgentMessage[],
+    contextParts: string[],
+    hasSummary: boolean,
+    contextWindow: number,
+  ): AgentMessage[] {
+    if (messages.length === 0) return messages;
+
+    const modelMessages = this.mapHistoryToModelMessages(messages);
+    const strategy = ContextBudgetManager.getPruningStrategy(
+      contextParts,
+      modelMessages,
+      contextWindow,
+    );
+
+    this.logger.debug(
+      `[ContextPruning] maxMessages=${strategy.maxMessages}, ` +
+        `pruneToolDetails=${strategy.pruneToolDetails}, ` +
+        `totalMessages=${messages.length}`,
+    );
+
+    if (strategy.maxMessages >= messages.length && !strategy.pruneToolDetails) {
+      return messages;
+    }
+
+    let pruned = messages.slice(-strategy.maxMessages);
+
+    if (strategy.pruneToolDetails && pruned.length > 2) {
+      pruned = pruned.map((msg, index) => {
+        if (index >= pruned.length - 2) return msg;
+        if (msg.content.length > 2000) {
+          return {
+            ...msg,
+            content:
+              msg.content.slice(0, 2000) +
+              '\n[...truncated for context management]',
+          };
+        }
+        return msg;
+      });
+    }
+
+    return pruned;
+  }
+
+  /**
+   * Checks if context budget is exceeded before a continuation iteration.
+   * If exceeded, triggers compaction (summarization) to free up context space.
+   * This runs BEFORE each continuation iteration to prevent context overflow.
+   *
+   * @param conversationId - Current conversation ID
+   * @param llmConfig - LLM configuration for summarization
+   * @param contextParts - Current system context parts
+   * @param modelMessages - Current conversation history
+   * @returns true if compaction was triggered, false otherwise
+   */
+  private async checkAndCompactMidLoop(
+    conversationId: string,
+    llmConfig: AgentLLMConfig,
+    contextParts: string[],
+    modelMessages: Array<{ role: string; content: string }>,
+  ): Promise<boolean> {
+    try {
+      const contextWindow = this.getModelContextWindow(llmConfig);
+      const budgetCheck = ContextBudgetManager.checkBudget(
+        contextParts,
+        modelMessages,
+        contextWindow,
+      );
+
+      this.logger.debug(
+        `[MidLoopCompaction] conversation=${conversationId}, ` +
+          `tokens=${budgetCheck.totalTokens}/${budgetCheck.budget.availableForInput}, ` +
+          `needsCompaction=${budgetCheck.needsCompaction}`,
+      );
+
+      if (budgetCheck.needsCompaction) {
+        this.logger.log(
+          `[MidLoopCompaction] Triggering mid-loop compaction for ${conversationId} ` +
+            `(${budgetCheck.totalTokens} tokens >= ${budgetCheck.budget.compactionThreshold} threshold)`,
+        );
+        await this.compactConversation(conversationId, llmConfig);
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      this.logger.warn(
+        `[MidLoopCompaction] Error checking budget, skipping compaction: ${error}`,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Generates a comprehensive summary of the entire conversation after all
+   * continuation iterations complete. This provides a final overview of
+   * what was accomplished, key findings, and recommendations.
+   *
+   * @param conversationId - Current conversation ID
+   * @param llmConfig - LLM configuration for generation
+   */
+  private async generateEndOfConversationReport(
+    conversationId: string,
+    llmConfig: AgentLLMConfig,
+  ): Promise<void> {
+    try {
+      const messages = await this.messageRepository.find({
+        where: { conversationId },
+        order: { createdAt: 'ASC' },
+      });
+
+      if (messages.length < 2) {
+        return;
+      }
+
+      const conversationContent = messages
+        .map((msg) => `${msg.role}: ${msg.content}`)
+        .join('\n\n');
+
+      const prompt = this.getPrompt('SUMMARY_GENERATE.md', {
+        CONVERSATION_CONTENT: conversationContent,
+      });
+
+      const model = this.createLanguageModel(llmConfig);
+
+      const result = await generateText({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+      });
+
+      let summaryText = '';
+      if (typeof result.content === 'string') {
+        summaryText = result.content;
+      } else if (Array.isArray(result.content)) {
+        const textPart = result.content.find(
+          (part: { type: string }) => part.type === 'text',
+        );
+        summaryText =
+          textPart && 'text' in textPart
+            ? (textPart as { text: string }).text
+            : '';
+      }
+
+      const cleanedSummary = summaryText.trim();
+
+      if (cleanedSummary) {
+        await this.conversationRepository.update(
+          { id: conversationId },
+          { summary: cleanedSummary },
+        );
+        this.logger.log(
+          `[EndOfConversation] Report generated for ${conversationId}`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `[EndOfConversation] Failed to generate report for ${conversationId}`,
+        error,
+      );
+    }
+  }
+
+  /**
    * Creates and saves a placeholder message for the assistant (streaming).
    * Marked with status='streaming' so the frontend knows chunks are incoming.
    */
@@ -597,6 +806,7 @@ export class AgentsCompletionsService {
     conversation: AgentConversation,
     workspaceId: string,
     agentMode: AgentMode,
+    userId?: string,
   ): Promise<string[]> {
     // Fetch prompt for the current mode (e.g. ASK.md, AGENT.md)
     const modePrompt = this.getPrompt(`${agentMode.toUpperCase()}.md`);
@@ -610,11 +820,22 @@ export class AgentsCompletionsService {
     // Fetch STM and LTM concurrently
     const [stmContext, ltmContext] = await Promise.all([
       this.agentsMemories.stmFormatForPrompt(conversation.id),
-      this.agentsMemories.ltmFormatForPrompt(workspaceId),
+      userId
+        ? this.agentsMemories.ltmFormatForPrompt(workspaceId, userId)
+        : Promise.resolve(''),
     ]);
 
-    // Format the todo list as a prompt string
-    const todos = conversation.todos ?? [];
+    const todoEntities = await this.todoRepository.find({
+      where: { conversationId: conversation.id },
+      order: { sortOrder: 'ASC' },
+    });
+    const todos = todoEntities.map((t) => ({
+      id: t.id,
+      content: t.content,
+      status: t.status,
+      sortOrder: t.sortOrder,
+      updatedAt: t.updatedAt.toISOString(),
+    }));
     const todosContext = formatTodosToPrompt(todos);
 
     // Inject conversation summary if available (from auto-compaction)
@@ -641,134 +862,6 @@ export class AgentsCompletionsService {
    * - Throws a user-friendly error message
    * For other errors, re-throws the original error.
    */
-  private handleToolError(error: unknown, llmConfig: AgentLLMConfig): never {
-    const message = error instanceof Error ? error.message : String(error);
-
-    // Check if the error message matches known tool-calling error patterns
-    const toolErrorPatterns = [
-      'tool use',
-      'tool_choice',
-      'No endpoints found that support tool',
-      'does not support tools',
-      'tool_calls',
-      'tools is not supported',
-    ];
-
-    const isToolError = toolErrorPatterns.some((pattern) =>
-      message.includes(pattern),
-    );
-
-    if (isToolError) {
-      // Cache negative result for CUSTOM provider to prevent re-requesting
-      if (llmConfig.provider === LLMProvider.CUSTOM && llmConfig.apiUrl) {
-        this.customToolSupportCache.set(
-          `${llmConfig.apiUrl}:${llmConfig.model}`,
-          false,
-        );
-      }
-      throw new Error(
-        `The selected model "${llmConfig.model}" does not support tool calling. ` +
-          'Please switch to a model that supports tools (e.g. gpt-4o, claude-3-5-sonnet, gemini-2.0-flash).',
-      );
-    }
-
-    throw error;
-  }
-
-  /**
-   * Creates a merged ReadableStream that combines:
-   * 1. A `conversation-created` metadata chunk at the start of the stream
-   * 2. Chunks from the AI stream (text-delta, tool-call, ...)
-   * 3. Asynchronous `todos-updated` chunks (emitted by the EventEmitter)
-   */
-  private createMergedStream(
-    params: StreamCreationParams,
-  ): ReadableStream<UIMessageChunk> {
-    const { aiStream, conversationId, todosEmitter, abortSignal } = params;
-
-    let controllerClosed = false;
-
-    return new ReadableStream<UIMessageChunk>({
-      async start(controller) {
-        // Emit initial chunk to notify the frontend that the conversation was created
-        controller.enqueue({
-          type: 'data-conversation-created',
-          data: { conversationId },
-        });
-
-        // Get a reader for the AI stream to forward text/tool-call chunks
-        const reader = aiStream.getReader();
-
-        // Subscribe to todos-updated events from the emitter
-        const onTodosUpdated = (updatedTodos: AgentTodoItem[]) => {
-          controller.enqueue({
-            type: 'data-todos-updated',
-            data: { todos: updatedTodos },
-          } as unknown as UIMessageChunk);
-        };
-
-        todosEmitter.on('todos-updated', onTodosUpdated);
-
-        // Subscribe to remote-execute-output events from the emitter
-        const onRemoteExecuteOutput = (data: {
-          toolCallId: string;
-          type: number;
-          data: string;
-          exitCode: number;
-        }) => {
-          controller.enqueue({
-            type: 'data-remote-execute-output',
-            data,
-          } as unknown as UIMessageChunk);
-        };
-
-        todosEmitter.on('remote-execute-output', onRemoteExecuteOutput);
-
-        // When abort signal fires, immediately cancel the reader and close the controller
-        const onAbort = () => {
-          if (controllerClosed) return;
-          controllerClosed = true;
-          reader.cancel().catch(() => {});
-          try {
-            controller.close();
-          } catch {
-            // Controller might already be in an error state
-          }
-        };
-
-        if (abortSignal) {
-          abortSignal.addEventListener('abort', onAbort, { once: true });
-        }
-
-        try {
-          // Read chunks from the AI stream one by one
-          while (true) {
-            if (abortSignal?.aborted || controllerClosed) break;
-
-            const { done, value } = await reader.read();
-            if (done || controllerClosed) break;
-            controller.enqueue(value);
-          }
-        } finally {
-          if (abortSignal) {
-            abortSignal.removeEventListener('abort', onAbort);
-          }
-          todosEmitter.off('todos-updated', onTodosUpdated);
-          todosEmitter.off('remote-execute-output', onRemoteExecuteOutput);
-          reader.releaseLock();
-        }
-
-        if (!controllerClosed) {
-          try {
-            controller.close();
-          } catch {
-            // Stream might already be in an errored state
-          }
-        }
-      },
-    });
-  }
-
   /**
    * Retrieves the effective context window for a given LLM config.
    * Priority: contextWindow column (user override) > default (128k).
@@ -941,6 +1034,14 @@ export class AgentsCompletionsService {
     // Use the shared EventEmitter from caller to communicate todo events between tool calls and the stream
     const { todosEmitter } = options;
 
+    // Promise that resolves when critical onFinish DB writes complete.
+    // The continuation loop awaits this before reading DB for todo status,
+    // preventing stale-data reads when onFinish DB writes are still in-flight.
+    let resolveFinish: (() => void) | undefined;
+    const finishPromise = new Promise<void>((resolve) => {
+      resolveFinish = resolve;
+    });
+
     // Check if request was already aborted before starting the AI call
     if (abortSignal?.aborted) {
       this.logger.log(
@@ -952,7 +1053,13 @@ export class AgentsCompletionsService {
           controller.close();
         },
       });
-      return { aiStream: emptyStream, conversationId, todosEmitter };
+      resolveFinish?.();
+      return {
+        aiStream: emptyStream,
+        conversationId,
+        todosEmitter,
+        finishPromise,
+      };
     }
 
     // Determine max output tokens based on agent mode and LLM config
@@ -967,6 +1074,10 @@ export class AgentsCompletionsService {
       // System context passed via dedicated option (avoids prompt injection risk)
       system: contextParts.join('\n\n'),
       messages: modelMessages,
+      // Retry transient provider errors (429 rate-limit, 500/502/503 server errors)
+      maxRetries: 3,
+      // Detect stuck streams: abort if no chunk arrives within 30 seconds
+      timeout: { chunkMs: 30_000 },
       // Only include tools if available (models without tool support will error here)
       ...(tools
         ? {
@@ -989,21 +1100,45 @@ export class AgentsCompletionsService {
           accumulatedReasoning += chunk.text;
         }
       },
-      // Handle errors (especially tool-calling errors)
+      // Handle errors from the AI provider (rate-limit, invalid key, etc.)
+      // Never throw here — throwing in onError can crash the stream.
+      // Instead, emit the error so it propagates to the frontend as a stream event.
       onError: ({ error }) => {
-        // Log the error but don't throw — throwing in onError can crash the stream.
-        // Tool errors will be detected via toolResults in onFinish.
         this.logger.error('[Agent] Stream error during execution', error);
+        // Extract the most informative message from the error
+        let errorMessage: string;
+        if (error instanceof Error) {
+          // Unwrap nested AI SDK errors (e.g., AI_RateLimitError wraps provider detail)
+          errorMessage = error.message;
+          const cause = (error as Error & { cause?: unknown }).cause;
+          if (cause instanceof Error && cause.message) {
+            errorMessage = `${error.message}: ${cause.message}`;
+          }
+        } else if (typeof error === 'string') {
+          errorMessage = error;
+        } else {
+          errorMessage = 'An unknown stream error occurred';
+        }
+        todosEmitter.emit('stream-error', { message: errorMessage });
+
+        // Reset in_progress todos back to pending so they can be retried.
+        // Fire-and-forget: don't block the error propagation.
+        this.resetTodosOnError(conversationId)
+          .then((updatedTodos) => {
+            todosEmitter.emit('todos-updated', updatedTodos);
+          })
+          .catch((err) =>
+            this.logger.error('Failed to reset todos on stream error', err),
+          );
       },
       // Pass abort signal so AI SDK can cancel the provider call
       abortSignal,
       // When streaming completes, persist accumulated text to DB
       // persist tool call data (for history rendering on page reload),
       // auto-complete stuck todos, and trigger compaction check
-      onFinish: async (event) => {
+      onFinish: (event) => {
         const isAborted = () => abortSignal?.aborted ?? false;
 
-        // Log finish stats for debugging
         this.logger.log(
           `[Agent] Stream ${conversationId} finished: ` +
             `finishReason=${event.finishReason}, ` +
@@ -1012,70 +1147,64 @@ export class AgentsCompletionsService {
             `agentMode=${options.agentMode ?? 'unknown'}`,
         );
 
-        // Helper to mark the message as aborted when cancellation happens mid-flight
-        const markAborted = async () => {
-          try {
-            await this.messageRepository.update(
+        const markAborted = () => {
+          this.messageRepository
+            .update(
               { id: assistantMessageId },
               {
                 content: '',
-                metadata: {
-                  ...assistantMessageMetadata,
-                  status: 'aborted',
-                },
+                metadata: { ...assistantMessageMetadata, status: 'aborted' },
               },
+            )
+            .catch((err) =>
+              this.logger.error('Error saving aborted message', err),
             );
-          } catch (err) {
-            this.logger.error('Error saving aborted message', err);
-          }
         };
 
-        // Skip persistence if request was already aborted before onFinish
         if (isAborted()) {
-          await markAborted();
+          markAborted();
+          resolveFinish?.();
           return;
         }
 
-        // Capture tool calls from all steps and persist to tool_calls table
-        try {
-          const toolCallEntities: AgentMessageToolCall[] = [];
-          for (const step of event.steps) {
-            for (const toolCall of step.toolCalls) {
-              const toolResult = step.toolResults.find(
-                (r) => r.toolCallId === toolCall.toolCallId,
-              );
-              toolCallEntities.push(
-                this.toolCallRepository.create({
-                  messageId: assistantMessageId,
-                  conversationId,
-                  toolCallId: toolCall.toolCallId,
-                  toolName: toolCall.toolName,
-                  args: toolCall.input as Record<string, unknown>,
-                  result:
-                    (toolResult?.output as Record<string, unknown>) ?? null,
-                  isError: !toolResult,
-                }),
-              );
+        // Critical DB writes are awaited internally and resolve finishPromise
+        // when complete. Non-critical operations remain fire-and-forget.
+        (async () => {
+          // Persist tool calls for history rendering on page reload
+          try {
+            const toolCallEntities: AgentMessageToolCall[] = [];
+            for (const step of event.steps) {
+              for (const toolCall of step.toolCalls) {
+                const toolResult = step.toolResults.find(
+                  (r) => r.toolCallId === toolCall.toolCallId,
+                );
+                toolCallEntities.push(
+                  this.toolCallRepository.create({
+                    messageId: assistantMessageId,
+                    conversationId,
+                    toolCallId: toolCall.toolCallId,
+                    toolName: toolCall.toolName,
+                    args: toolCall.input as Record<string, unknown>,
+                    result:
+                      (toolResult?.output as Record<string, unknown>) ?? null,
+                    isError: !toolResult,
+                  }),
+                );
+              }
             }
+            if (toolCallEntities.length > 0) {
+              await this.toolCallRepository.save(toolCallEntities);
+            }
+          } catch (err) {
+            this.logger.error('Error saving tool calls', err);
           }
-          if (toolCallEntities.length > 0) {
-            await this.toolCallRepository.save(toolCallEntities);
+
+          if (isAborted()) {
+            markAborted();
+            return;
           }
-        } catch (err) {
-          this.logger.error('Error saving tool calls', err);
-        }
 
-        if (isAborted()) {
-          await markAborted();
-          return;
-        }
-
-          // Build the chronological parts array from event.steps.
-          // Each step may contain reasoning, tool calls, and text — they are
-          // assembled in the order they actually occurred so the frontend can
-          // render thought → tool call → text → thought → … correctly.
-          // Also fallback to accumulatedReasoning for providers that stream
-          // reasoning-delta chunks but don't populate step.reasoning.
+          // Build parts array for frontend rendering
           try {
             const parts: Record<string, unknown>[] = [];
             let hasReasoningPart = false;
@@ -1094,20 +1223,16 @@ export class AgentsCompletionsService {
                   type: 'dynamic-tool',
                   toolCallId: tc.toolCallId,
                   toolName: tc.toolName,
-                  state: toolResult
-                    ? 'output-available'
-                    : 'input-available',
+                  state: toolResult ? 'output-available' : 'input-available',
                   input: tc.input,
                   output: toolResult?.output ?? null,
                 });
               }
-              const stepText =
-                typeof step.text === 'string' ? step.text : '';
+              const stepText = typeof step.text === 'string' ? step.text : '';
               if (stepText.trim()) {
                 parts.push({ type: 'text', text: stepText.trim() });
               }
             }
-            // Fallback: if no reasoning from steps but we accumulated it during streaming
             if (!hasReasoningPart && accumulatedReasoning.trim()) {
               parts.unshift({
                 type: 'reasoning',
@@ -1115,67 +1240,58 @@ export class AgentsCompletionsService {
               });
             }
             if (parts.length > 0) {
-            await this.messageRepository.update(
-              { id: assistantMessageId },
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
-              { parts: parts as any },
-            );
+              await this.messageRepository.update(
+                { id: assistantMessageId },
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
+                { parts: parts as any },
+              );
+            }
+          } catch (err) {
+            this.logger.error('Error saving parts array', err);
           }
-        } catch (err) {
-          this.logger.error('Error saving parts array', err);
-        }
 
-        await this.handleStreamFinish(
-          assistantMessageId,
-          conversationId,
-          accumulatedText,
-          accumulatedReasoning,
-          llmConfig,
-          assistantMessageMetadata,
-        ).catch((err) => this.logger.error('Error in handleStreamFinish', err));
-
-        if (isAborted()) {
-          await markAborted();
-          return;
-        }
-
-        // Auto-complete any todos the LLM left "in_progress" (safety net).
-        // Skip in AGENT mode — the continuation loop in createContinuationStream
-        // will call this AFTER all iterations complete, preventing a race condition
-        // where autoCompleteStuckTodos marks in_progress todos as completed before
-        // the continuation loop can detect them as still pending.
-        if (isAborted()) {
-          await markAborted();
-          return;
-        }
-        if (options.agentMode !== AgentMode.AGENT) {
-          await this.autoCompleteStuckTodos(conversationId).catch((err) =>
-            this.logger.error('Error in autoCompleteStuckTodos', err),
+          // handleStreamFinish updates message content + status to 'completed'
+          await this.handleStreamFinish(
+            assistantMessageId,
+            conversationId,
+            accumulatedText,
+            accumulatedReasoning,
+            llmConfig,
+            assistantMessageMetadata,
+          ).catch((err) =>
+            this.logger.error('Error in handleStreamFinish', err),
           );
-        }
+        })()
+          .catch((err) =>
+            this.logger.error('Error in critical onFinish writes', err),
+          )
+          .finally(() => {
+            // Signal to the continuation loop that critical writes are done
+            resolveFinish?.();
 
-        if (isAborted()) {
-          await markAborted();
-          return;
-        }
+            // Non-critical operations (fire-and-forget, do NOT block continuation)
+            if (options.agentMode !== AgentMode.AGENT) {
+              this.autoCompleteStuckTodos(conversationId).catch((err) =>
+                this.logger.error('Error in autoCompleteStuckTodos', err),
+              );
+            }
 
-        // Asynchronously check and trigger compaction if needed
-        // Await compaction to ensure summary is saved before continuation loop checks it
-        await this.handlePostStreamCompaction(
-          conversationId,
-          llmConfig,
-          contextParts,
-          modelMessages,
-        ).catch((err) =>
-          this.logger.error('Error in post-stream compaction', err),
-        );
+            this.handlePostStreamCompaction(
+              conversationId,
+              llmConfig,
+              contextParts,
+              modelMessages,
+            ).catch((err) =>
+              this.logger.error('Error in post-stream compaction', err),
+            );
+          });
       },
     });
 
     // Convert the result stream to a UIMessageStream consumable by the frontend
     const aiStream = result.toUIMessageStream();
 
-    return { aiStream, conversationId, todosEmitter };
+    return { aiStream, conversationId, todosEmitter, finishPromise };
   }
 
   // ================================================================
@@ -1186,12 +1302,19 @@ export class AgentsCompletionsService {
    * Executes streamText in a loop, continuing automatically when there are
    * remaining pending steps. This prevents the model from stopping mid-plan.
    *
+   * The loop uses budget-based termination:
+   * - Continues while there are pending/in_progress todos AND context budget allows
+   * - Triggers mid-loop compaction when token budget is exceeded
+   * - Generates a comprehensive end-of-conversation report when done
+   * - Safety net of 50 iterations prevents infinite loops
+   *
    * Each iteration creates its own assistant message in DB.
-   * The stream stays open until all iterations complete or max iterations reached.
+   * The stream stays open until all iterations complete or budget exhausted.
    */
   private createContinuationStream(
     options: StreamTextOptions & {
       workspaceId: string;
+      userId?: string;
       skillsContext?: string;
     },
   ): ReadableStream<UIMessageChunk> {
@@ -1203,10 +1326,11 @@ export class AgentsCompletionsService {
       abortSignal,
       agentMode,
       workspaceId,
+      userId,
       skillsContext,
     } = options;
 
-    const MAX_ITERATIONS = 5;
+    const MAX_SAFETY_ITERATIONS = 50; // Safety net — budget-based termination is primary
     const isAgentMode = agentMode === AgentMode.AGENT;
 
     let currentModelMessages = [...options.modelMessages];
@@ -1257,6 +1381,16 @@ export class AgentsCompletionsService {
         };
         todosEmitter.on('remote-execute-output', onRemoteExecuteOutput);
 
+        // Subscribe to stream-error events (provider errors propagated to frontend)
+        const onStreamError = (data: { message: string }) => {
+          if (controllerClosed) return;
+          controller.enqueue({
+            type: 'error',
+            error: data,
+          } as unknown as UIMessageChunk);
+        };
+        todosEmitter.on('stream-error', onStreamError);
+
         // Emit initial conversation-created event
         controller.enqueue({
           type: 'data-conversation-created',
@@ -1264,12 +1398,82 @@ export class AgentsCompletionsService {
         });
 
         try {
-          for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+          for (
+            let iteration = 0;
+            iteration < MAX_SAFETY_ITERATIONS;
+            iteration++
+          ) {
             if (abortSignal?.aborted || controllerClosed) break;
+
+            // Mid-loop compaction: check budget before each iteration
+            if (isAgentMode && iteration > 0) {
+              const compacted = await this.checkAndCompactMidLoop(
+                conversationId,
+                llmConfig,
+                currentContextParts,
+                currentModelMessages,
+              );
+              if (compacted) {
+                // Re-fetch context after compaction
+                const postCompactConversation =
+                  await this.conversationRepository.findOne({
+                    where: { id: conversationId },
+                  });
+                if (postCompactConversation?.summary) {
+                  // Refresh context with updated summary
+                  const agentModeVal = agentMode || AgentMode.ASK;
+                  const modePrompt = this.getPrompt(
+                    `${agentModeVal.toUpperCase()}.md`,
+                  );
+                  const systemPrompt = this.getPrompt('SYSTEM.md');
+                  const now = new Date();
+                  const currentTimeContext = `Current time: ${now.toISOString()} (${now.toLocaleString('en-US', { timeZoneName: 'short' })})`;
+                  const [stmCtx, ltmCtx] = await Promise.all([
+                    this.agentsMemories.stmFormatForPrompt(conversationId),
+                    userId
+                      ? this.agentsMemories.ltmFormatForPrompt(
+                          workspaceId,
+                          userId,
+                        )
+                      : Promise.resolve(''),
+                  ]);
+                  const postCompactTodos = await this.todoRepository.find({
+                    where: { conversationId },
+                    order: { sortOrder: 'ASC' },
+                  });
+                  const todosCtx = formatTodosToPrompt(
+                    postCompactTodos.map((t) => ({
+                      id: t.id,
+                      content: t.content,
+                      status: t.status,
+                      sortOrder: t.sortOrder,
+                      updatedAt: t.updatedAt.toISOString(),
+                    })),
+                  );
+                  const summaryCtx = postCompactConversation.summary
+                    ? `[PREVIOUS CONVERSATION SUMMARY]:\n${postCompactConversation.summary}`
+                    : '';
+
+                  currentContextParts = [
+                    modePrompt,
+                    systemPrompt,
+                    summaryCtx,
+                    currentTimeContext,
+                    ltmCtx,
+                    stmCtx,
+                    todosCtx,
+                  ].filter(Boolean);
+
+                  if (skillsContext) {
+                    currentContextParts.push(skillsContext);
+                  }
+                }
+              }
+            }
 
             try {
               // Execute a single streamText iteration
-              const { aiStream } = this.executeStreamText({
+              const { aiStream, finishPromise } = this.executeStreamText({
                 llmConfig,
                 model,
                 modelMessages: currentModelMessages,
@@ -1295,8 +1499,11 @@ export class AgentsCompletionsService {
                 controller.enqueue(value);
               }
 
-              // Wait briefly for async onFinish operations (todo updates, DB writes) to settle
-              await new Promise((resolve) => setTimeout(resolve, 500));
+              // Wait for critical onFinish DB writes (tool calls, parts, message content)
+              // to complete before reading DB for todo status. Without this,
+              // the continuation loop reads stale data because onFinish DB writes
+              // are async and may not have committed yet when the reader drains.
+              await finishPromise;
             } catch (iterationError) {
               this.logger.error(
                 `[Continuation] Error in iteration ${iteration} for ${conversationId}`,
@@ -1305,7 +1512,11 @@ export class AgentsCompletionsService {
               // Don't break on non-fatal errors — try next iteration
               // Only break if abort signal fired or controller is closed
               if (abortSignal?.aborted || controllerClosed) break;
-              // For other errors, continue to next iteration
+              // Reset in_progress todos back to pending so the next iteration
+              // can re-attempt them. Await to ensure DB is updated before
+              // the loop reads stale data.
+              const updatedTodos = await this.resetTodosOnError(conversationId);
+              todosEmitter.emit('todos-updated', updatedTodos);
               continue;
             }
 
@@ -1317,27 +1528,57 @@ export class AgentsCompletionsService {
             const conversation = await this.conversationRepository.findOne({
               where: { id: conversationId },
             });
-            const todos = conversation?.todos ?? [];
+
+            const todoEntities = await this.todoRepository.find({
+              where: { conversationId },
+              order: { sortOrder: 'ASC' },
+            });
+            const todos = todoEntities.map((t) => ({
+              id: t.id,
+              content: t.content,
+              status: t.status,
+              updatedAt: t.updatedAt.toISOString(),
+            }));
             const hasPending = todos.some(
               (t) => t.status === 'pending' || t.status === 'in_progress',
             );
 
             if (!hasPending) break;
 
-            // Prepare next iteration context
-            const updatedMessages =
-              await this.getConversationHistory(
-                conversationId,
-                !!conversation?.summary,
-              );
+            // Prepare next iteration context with smart pruning
+            const contextWindow = this.getModelContextWindow(llmConfig);
+            // Always fetch up to 20 messages in continuation loop regardless
+            // of summary. hasSummary=true limits to 5 messages which loses
+            // tool call context from previous iteration.
+            const updatedMessages = await this.getConversationHistory(
+              conversationId,
+              false,
+            );
+            const prunedMessages = this.pruneContextByBudget(
+              updatedMessages,
+              currentContextParts,
+              !!conversation?.summary,
+              contextWindow,
+            );
             currentModelMessages =
-              this.mapHistoryToModelMessages(updatedMessages);
+              this.mapHistoryToModelMessages(prunedMessages);
 
             // Synthesized "continue" message (NOT saved to DB — memory only)
+            // Include specific pending step IDs to help LLM resume correctly
+            const pendingSteps = todos.filter(
+              (t) => t.status === 'pending' || t.status === 'in_progress',
+            );
+            const pendingList = pendingSteps
+              .map(
+                (t, i) =>
+                  `${i + 1}. [${t.status.toUpperCase()}] ${t.content} (id: ${t.id})`,
+              )
+              .join('\n');
             currentModelMessages.push({
               role: 'user' as const,
               content:
-                'Continue executing the pending plan steps. Proceed immediately without asking for confirmation.',
+                `Continue executing the pending plan steps. Here are the remaining steps:\n${pendingList}\n\n` +
+                'Start with the FIRST pending step. Do NOT create new steps. Do NOT skip steps. Execute them in order until all are done.',
             });
 
             // Create a new assistant message in DB for the next iteration
@@ -1364,11 +1605,22 @@ export class AgentsCompletionsService {
               const currentTimeContext = `Current time: ${now.toISOString()} (${now.toLocaleString('en-US', { timeZoneName: 'short' })})`;
               const [stmContext, ltmContext] = await Promise.all([
                 this.agentsMemories.stmFormatForPrompt(conversationId),
-                this.agentsMemories.ltmFormatForPrompt(workspaceId),
+                userId
+                  ? this.agentsMemories.ltmFormatForPrompt(workspaceId, userId)
+                  : Promise.resolve(''),
               ]);
-              const todosContext = formatTodosToPrompt(
-                updatedConversation.todos ?? [],
-              );
+              const updatedTodoEntities = await this.todoRepository.find({
+                where: { conversationId },
+                order: { sortOrder: 'ASC' },
+              });
+              const updatedTodos = updatedTodoEntities.map((t) => ({
+                id: t.id,
+                content: t.content,
+                status: t.status,
+                sortOrder: t.sortOrder,
+                updatedAt: t.updatedAt.toISOString(),
+              }));
+              const todosContext = formatTodosToPrompt(updatedTodos);
               const summaryContext = updatedConversation.summary
                 ? `[PREVIOUS CONVERSATION SUMMARY]:\n${updatedConversation.summary}`
                 : '';
@@ -1399,6 +1651,7 @@ export class AgentsCompletionsService {
           }
           todosEmitter.off('todos-updated', onTodosUpdated);
           todosEmitter.off('remote-execute-output', onRemoteExecuteOutput);
+          todosEmitter.off('stream-error', onStreamError);
 
           // Auto-complete stuck in_progress todos AFTER all continuation
           // iterations are done. This prevents the race condition where
@@ -1408,6 +1661,17 @@ export class AgentsCompletionsService {
           if (isAgentMode && !abortSignal?.aborted) {
             this.autoCompleteStuckTodos(conversationId).catch((err) =>
               this.logger.error('Error in autoCompleteStuckTodos', err),
+            );
+
+            // Fire-and-forget: report generation should not block stream closure
+            this.generateEndOfConversationReport(
+              conversationId,
+              llmConfig,
+            ).catch((err) =>
+              this.logger.error(
+                'Error in generateEndOfConversationReport',
+                err,
+              ),
             );
           }
         }
@@ -1508,6 +1772,7 @@ export class AgentsCompletionsService {
       conversation,
       workspaceId,
       agentMode,
+      userId,
     );
 
     // Step 10.5: Add skills context and loadSkill tool
@@ -1542,6 +1807,7 @@ export class AgentsCompletionsService {
       // Add memory tools
       ...(this.agentTool.getMemoryTools(
         workspaceId,
+        userId,
         conversation.id,
       ) as ToolSet),
     };
@@ -1563,6 +1829,7 @@ export class AgentsCompletionsService {
       abortSignal,
       agentMode,
       workspaceId,
+      userId,
       skillsContext,
     });
 

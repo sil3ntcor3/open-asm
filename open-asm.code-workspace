@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../oasm-docker"
+		}
+	],
+	"settings": {}
+}

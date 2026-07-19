@@ -4,6 +4,8 @@
 import type { RpcTransport } from "@protobuf-ts/runtime-rpc";
 import type { ServiceInfo } from "@protobuf-ts/runtime-rpc";
 import { JobsRegistryService } from "./jobs_registry";
+import type { ControlResponse } from "./jobs_registry";
+import type { ControlRequest } from "./jobs_registry";
 import type { JobResponse } from "./jobs_registry";
 import type { JobResultRequest } from "./jobs_registry";
 import { stackIntercept } from "@protobuf-ts/runtime-rpc";
@@ -25,6 +27,13 @@ export interface IJobsRegistryServiceClient {
      * @generated from protobuf rpc: Result
      */
     result(input: JobResultRequest, options?: RpcOptions): UnaryCall<JobResultRequest, JobResponse>;
+    /**
+     * Control-plane poll: the worker reports its active job IDs and receives
+     * per-job directives (stop/pause/resume) plus desired runtime settings.
+     *
+     * @generated from protobuf rpc: Control
+     */
+    control(input: ControlRequest, options?: RpcOptions): UnaryCall<ControlRequest, ControlResponse>;
 }
 /**
  * Service Definition
@@ -50,5 +59,15 @@ export class JobsRegistryServiceClient implements IJobsRegistryServiceClient, Se
     result(input: JobResultRequest, options?: RpcOptions): UnaryCall<JobResultRequest, JobResponse> {
         const method = this.methods[1], opt = this._transport.mergeOptions(options);
         return stackIntercept<JobResultRequest, JobResponse>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * Control-plane poll: the worker reports its active job IDs and receives
+     * per-job directives (stop/pause/resume) plus desired runtime settings.
+     *
+     * @generated from protobuf rpc: Control
+     */
+    control(input: ControlRequest, options?: RpcOptions): UnaryCall<ControlRequest, ControlResponse> {
+        const method = this.methods[2], opt = this._transport.mergeOptions(options);
+        return stackIntercept<ControlRequest, ControlResponse>("unary", this._transport, method, opt, input);
     }
 }

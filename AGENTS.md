@@ -21,13 +21,13 @@ Monorepo with 3 services:
 
 Root `package.json` is an npm workspace for `core-api` + `console` only. Worker is Go (separate toolchain).
 
-Shared infra: PostgreSQL (pgvector/pg17), Redis, geo-ip proxy. See `docker-compose.yml`.
+Shared infra: PostgreSQL (pgvector/pg17), Redis, geo-ip proxy, and an S3-compatible object store (rustfs). See `docker-compose.yml`.
 
 ## Key Commands (Use taskfile)
 
 ```bash
 # Full project
-task init          # Install all deps + worker tools
+task init          # Install all deps (Node workspaces + worker Go modules)
 task dev           # API + Console dev servers (hot reload)
 task test          # Run API tests only (console tests commented out in root taskfile)
 task lint          # Lint core-api + console
@@ -86,7 +86,8 @@ task docker-compose  # Full stack (API, Console, 3 workers, DB, Redis, geo-ip)
 - `task worker:format` — Run `go fmt ./...`.
 - `task worker:lint` — Run `go vet ./...`.
 - `task worker:check` — Verify compilation without building binary.
-- `task worker:tools` installs security tools (subfinder, nuclei, naabu, httpx, dnsx) into `worker/oasm-tools/`.
+- `task worker:install` — Run `go mod tidy`.
+- Scan tools (subfinder, nuclei, naabu, httpx, dnsx) are downloaded at runtime into the dir set by `WORKER_TOOL_PATH` (default `oasm-tools/`); the Docker image also bundles chromium and libpcap.
 
 ## Environment Variables
 
@@ -139,7 +140,7 @@ Husky v9 configured:
 
 ## Docker
 
-`task docker-compose` starts full stack: API (`:6276`), Console (`:3000`), 3 workers, PostgreSQL (pg17+pgvector), Redis, geo-ip proxy. Migration service runs before API starts.
+`task docker-compose` starts full stack: API (`:6276`), Console (`:3000`), 3 workers, PostgreSQL (pg17+pgvector), Redis, geo-ip proxy, and rustfs object storage. Migration service runs before API starts.
 
 ## MCP Server
 

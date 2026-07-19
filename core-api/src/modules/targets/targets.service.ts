@@ -1,5 +1,13 @@
-import { GetManyBaseResponseDto } from '@/common/dtos/get-many-base.dto';
-import { BullMQName, CronSchedule, JobStatus, TargetScopeType } from '@/common/enums/enum';
+import {
+  GetManyBaseResponseDto,
+  SortOrder,
+} from '@/common/dtos/get-many-base.dto';
+import {
+  BullMQName,
+  CronSchedule,
+  JobStatus,
+  TargetScopeType,
+} from '@/common/enums/enum';
 import { UserContextPayload } from '@/common/interfaces/app.interface';
 import { getManyResponse } from '@/utils/getManyResponse';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -11,15 +19,17 @@ import {
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Job, Queue } from 'bullmq';
+import type { Job, Queue, RepeatOptions } from 'bullmq';
 import { randomUUID } from 'crypto';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { AssetsService } from '../assets/assets.service';
 import { Asset } from '../assets/entities/assets.entity';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import {
   BulkTargetResultDto,
   CreateMultipleTargetsDto,
+  DiscoverTargetsDto,
+  DiscoverTargetsResultDto,
   GetManyWorkspaceQueryParamsDto,
   UpdateTargetDto,
 } from './dto/targets.dto';
@@ -222,42 +232,57 @@ export class TargetsService implements OnModuleInit {
    * @returns A promise that resolves to the target entity if found, otherwise null.
    */
   public async getTargetById(id: string, workspaceId: string): Promise<Target> {
-    const result = (await this.repo
-      .createQueryBuilder('targets')
-      .leftJoin('targets.workspaceTargets', 'workspaceTarget')
-      .leftJoin('workspaceTarget.workspace', 'workspace')
-      .leftJoin('workspace.workspaceMembers', 'workspaceMember')
-      .leftJoin('targets.assets', 'asset')
-      .leftJoin('asset.assetServices', 'assetService')
-      .leftJoin('asset.jobs', 'job')
-      .where('targets.id = :id', { id })
-      .andWhere('workspace.id = :workspaceId', { workspaceId })
-      .select([
-        'targets.id as id',
-        'targets.value as value',
-        'targets.type as type',
-        'targets.lastDiscoveredAt as "lastDiscoveredAt"',
-        `COALESCE(COUNT(DISTINCT CASE WHEN "assetService"."isErrorPage" = false THEN "assetService"."id" END), 0) AS "totalAssetServices"`,
-        'targets.scanSchedule as "scanSchedule"',
-        `CASE
-        WHEN COUNT(CASE WHEN job.status = '${JobStatus.IN_PROGRESS}' THEN 1 END) > 0 THEN '${JobStatus.IN_PROGRESS}'
-        WHEN COUNT(CASE WHEN job.status = '${JobStatus.PENDING}' THEN 1 END) > 0 THEN '${JobStatus.PENDING}'
-        WHEN COUNT(CASE WHEN job.status = '${JobStatus.COMPLETED}' THEN 1 END) > 0 THEN '${JobStatus.COMPLETED}'
-        ELSE '${JobStatus.COMPLETED}'
-      END AS status`,
-      ])
-      .groupBy(
-        'targets.id, targets.value, targets.type, targets.lastDiscoveredAt, targets.scanSchedule',
-      )
-      .getRawOne()) as Target;
+    // `asset_services` and `jobs` are both one-to-many off `asset`. Joining
+    // them as siblings forms a cartesian product (services x jobs) per asset —
+    // hundreds of millions of intermediate rows for a well-scanned target —
+    // which exceeds statement_timeout. Aggregate each child in its own LATERAL
+    // subquery instead, same shape as getTargetsInWorkspace.
+    // Job-status enum values are hard-coded constants, so inlining them is safe.
+    const rows = await this.repo.query<Target[]>(
+      `SELECT
+         t.id AS id,
+         t.value AS value,
+         t.type AS type,
+         t."lastDiscoveredAt" AS "lastDiscoveredAt",
+         svc.cnt AS "totalAssetServices",
+         t."scanSchedule" AS "scanSchedule",
+         t."scanWindowStart" AS "scanWindowStart",
+         t."scanWindowEnd" AS "scanWindowEnd",
+         t."scanWindowTimezone" AS "scanWindowTimezone",
+         t."scanWindowDays" AS "scanWindowDays",
+         js.status AS status
+       FROM targets t
+       INNER JOIN workspace_targets wt ON wt."targetId" = t.id
+       INNER JOIN workspaces w ON w.id = wt."workspaceId" AND w."deletedAt" IS NULL
+       LEFT JOIN LATERAL (
+         SELECT COUNT(DISTINCT s.id)::int AS cnt
+         FROM assets a
+         JOIN asset_services s ON s."assetId" = a.id
+         WHERE a."targetId" = t.id AND s."isErrorPage" = false
+       ) svc ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT CASE
+             WHEN COUNT(*) FILTER (WHERE j.status = '${JobStatus.IN_PROGRESS}') > 0 THEN '${JobStatus.IN_PROGRESS}'
+             WHEN COUNT(*) FILTER (WHERE j.status = '${JobStatus.PENDING}') > 0 THEN '${JobStatus.PENDING}'
+             ELSE '${JobStatus.COMPLETED}'
+           END AS status
+         FROM assets a
+         JOIN jobs j ON j."assetId" = a.id
+         WHERE a."targetId" = t.id
+       ) js ON TRUE
+       WHERE t.id = $1 AND w.id = $2`,
+      [id, workspaceId],
+    );
 
-    return result;
+    return rows[0];
   }
 
   /**
    * Creates multiple targets in a single transaction, skipping duplicates.
    *
    * @param dto - The data transfer object containing array of target details.
+   *   Set `startDiscovery: false` to suppress the discovery events emitted
+   *   for the created targets (targets are still registered, just not scanned).
    * @param workspaceId - The ID of the workspace to associate targets with.
    * @param userContext - The user's context data, which includes the user's ID.
    * @returns A promise that resolves to bulk creation result with created targets and skipped values.
@@ -437,13 +462,120 @@ export class TargetsService implements OnModuleInit {
       },
     );
 
-    // Emit events and update scan schedules for all created targets (outside transaction)
-    for (const target of result.created) {
-      const typeToEvent = target.type.toLocaleLowerCase(); // e.g. DOMAIN -> domain, CIDR -> cidr
-      this.eventEmitter.emit(`target.${typeToEvent}.create`, target);
+    // Emit creation events for discovery workflows (outside transaction)
+    // unless discovery was opted out via dto.startDiscovery: false.
+    if (dto.startDiscovery !== false) {
+      for (const target of result.created) {
+        const typeToEvent = target.type.toLocaleLowerCase(); // e.g. DOMAIN -> domain, CIDR -> cidr
+        this.eventEmitter.emit(`target.${typeToEvent}.create`, target);
+      }
     }
 
     return result;
+  }
+
+  /**
+   * Starts discovery on existing targets. Targets that already have pending
+   * or in-progress jobs are skipped rather than double-queued. Emits
+   * `target.<type>.re-scan` with the target's actual type so the matching
+   * discovery workflow fires (domain vs ip vs cidr).
+   *
+   * @param dto - Contains the target IDs to start discovery on.
+   * @param workspaceId - The workspace the targets must belong to.
+   * @param userContext - The user's context data (ownership check).
+   * @returns Counts of started and skipped targets.
+   */
+  public async discoverTargets(
+    dto: DiscoverTargetsDto,
+    workspaceId: string,
+    userContext: UserContextPayload,
+  ): Promise<DiscoverTargetsResultDto> {
+    const { targetIds } = dto;
+
+    await this.workspacesService.getWorkspaceByIdAndOwner(
+      workspaceId,
+      userContext,
+    );
+
+    const workspaceConfigs =
+      await this.workspacesService.getWorkspaceConfigValue(workspaceId);
+    if (!workspaceConfigs.isAssetsDiscovery) {
+      throw new BadRequestException(
+        'Asset discovery is disabled for this workspace',
+      );
+    }
+
+    const workspaceTargets = await this.workspaceTargetRepository.find({
+      where: {
+        workspace: { id: workspaceId },
+        target: { id: In(targetIds) },
+      },
+      relations: ['target'],
+    });
+    const targets = workspaceTargets.map((wt) => wt.target);
+
+    const foundIds = new Set(targets.map((t) => t.id));
+    const missing = targetIds.filter((id) => !foundIds.has(id));
+    if (missing.length > 0) {
+      throw new NotFoundException(
+        `Targets not found in workspace: ${missing.join(', ')}`,
+      );
+    }
+
+    // A target is busy if any of its assets has a queued or running job —
+    // same definition the list view's status column uses.
+    const busyRows: { targetId: string }[] = await this.repo.query(
+      `SELECT DISTINCT a."targetId" AS "targetId"
+       FROM jobs j
+       JOIN assets a ON a.id = j."assetId"
+       WHERE a."targetId" = ANY($1)
+         AND j.status IN ('${JobStatus.PENDING}', '${JobStatus.IN_PROGRESS}')`,
+      [targetIds],
+    );
+    const busyIds = new Set(busyRows.map((r) => r.targetId));
+
+    const skipped: { id: string; value: string; reason: string }[] = [];
+    const idleTargets: Target[] = [];
+
+    for (const target of targets) {
+      if (busyIds.has(target.id)) {
+        skipped.push({
+          id: target.id,
+          value: target.value,
+          reason: 'already scanning',
+        });
+      } else {
+        idleTargets.push(target);
+      }
+    }
+
+    if (idleTargets.length > 0) {
+      // Single batched UPDATE with an atomic SQL-side increment: a per-target
+      // read-modify-write loop would be N+1 queries and could lose increments
+      // under concurrent discover requests.
+      await this.repo
+        .createQueryBuilder()
+        .update(Target)
+        .set({
+          reScanCount: () => '"reScanCount" + 1',
+          lastDiscoveredAt: new Date(),
+        })
+        .where({ id: In(idleTargets.map((t) => t.id)) })
+        .execute();
+
+      for (const target of idleTargets) {
+        this.eventEmitter.emit(
+          `target.${target.type.toLocaleLowerCase()}.re-scan`,
+          target,
+        );
+      }
+    }
+
+    return {
+      totalStarted: idleTargets.length,
+      totalSkipped: skipped.length,
+      skipped,
+    };
   }
 
   /**
@@ -461,85 +593,122 @@ export class TargetsService implements OnModuleInit {
       Target & { totalAssetServices: number; status: string; duration: number }
     >
   > {
-    const { limit, page, sortBy, sortOrder, value, type, status, scope } = query;
+    const { limit, page, sortBy, sortOrder, value, type, status, scope } =
+      query;
 
     const offset = (page - 1) * limit;
 
-    const queryBuilder = this.repo
-      .createQueryBuilder('targets')
-      .innerJoin('targets.workspaceTargets', 'workspaceTarget')
-      .innerJoin('workspaceTarget.workspace', 'workspace')
-      .innerJoin('workspace.workspaceMembers', 'workspaceMember')
-      .leftJoin('targets.assets', 'asset')
-      .leftJoin('asset.assetServices', 'assetService')
-      .leftJoin('asset.jobs', 'job')
-      .where('workspace.id = :workspaceId', { workspaceId })
-      .select([
-        'targets.id as id',
-        'targets.value as value',
-        'targets.type as type',
-        'targets.lastDiscoveredAt as "lastDiscoveredAt"',
-        'targets.reScanCount as "reScanCount"',
-        'targets.scanSchedule as "scanSchedule"',
-        'targets.internalNetworkId as "internalNetworkId"',
-        `CAST(COUNT(DISTINCT CASE WHEN "assetService"."isErrorPage" = false THEN "assetService"."id" END) AS INTEGER) AS "totalAssetServices"`,
-        `CASE
-        WHEN COUNT(CASE WHEN job.status = '${JobStatus.IN_PROGRESS}' THEN 1 END) > 0 THEN '${JobStatus.IN_PROGRESS}'
-        WHEN COUNT(CASE WHEN job.status = '${JobStatus.PENDING}' THEN 1 END) > 0 THEN '${JobStatus.PENDING}'
-        WHEN COUNT(CASE WHEN job.status = '${JobStatus.COMPLETED}' THEN 1 END) > 0 THEN '${JobStatus.COMPLETED}'
-        ELSE '${JobStatus.COMPLETED}'
-      END AS status`,
-      ])
-      .groupBy('targets.id');
+    // `asset_services` and `jobs` are both one-to-many off `asset`. Joining them
+    // as siblings produces a cartesian product (services x jobs) per asset, which
+    // — with millions of jobs — explodes into a query that runs for tens of
+    // minutes and times out behind nginx. We instead aggregate each child in its
+    // own LATERAL subquery so neither fans the other out, keeping the work
+    // proportional to the page size. See git history / perf investigation.
 
-    if (value) {
-      queryBuilder.andWhere('targets.value LIKE :value', {
-        value: `%${value}%`,
-      });
-    }
-
-    if (type) {
-      queryBuilder.andWhere('targets.type = :type', { type });
-    }
-
-if (status) {
-      // Filter by computed status using HAVING clause
-      const statusCase = `CASE
-        WHEN COUNT(CASE WHEN job.status = '${JobStatus.IN_PROGRESS}' THEN 1 END) > 0 THEN '${JobStatus.IN_PROGRESS}'
-        WHEN COUNT(CASE WHEN job.status = '${JobStatus.PENDING}' THEN 1 END) > 0 THEN '${JobStatus.PENDING}'
-        WHEN COUNT(CASE WHEN job.status = '${JobStatus.COMPLETED}' THEN 1 END) > 0 THEN '${JobStatus.COMPLETED}'
+    // Computed-status expression, reused by the SELECT and the status filter.
+    // Job-status enum values are hard-coded constants, so inlining them is safe.
+    const statusExpr = `CASE
+        WHEN COUNT(*) FILTER (WHERE j.status = '${JobStatus.IN_PROGRESS}') > 0 THEN '${JobStatus.IN_PROGRESS}'
+        WHEN COUNT(*) FILTER (WHERE j.status = '${JobStatus.PENDING}') > 0 THEN '${JobStatus.PENDING}'
         ELSE '${JobStatus.COMPLETED}'
       END`;
 
-      if (status === JobStatus.COMPLETED) {
-        queryBuilder.having(
-          `(${statusCase}) = :status OR (COUNT(job.id) = 0 AND :status = '${JobStatus.COMPLETED}')`,
-          { status },
-        );
-      } else {
-        queryBuilder.having(`(${statusCase}) = :status`, { status });
-      }
+    // Build the shared WHERE clause with positional params ($1 = workspaceId).
+    const params: unknown[] = [workspaceId];
+    const conditions: string[] = ['wt."workspaceId" = $1'];
+
+    if (value) {
+      params.push(`%${value}%`);
+      conditions.push(`t.value LIKE $${params.length}`);
+    }
+    if (type) {
+      params.push(type);
+      conditions.push(`t.type = $${params.length}`);
+    }
+    if (scope !== undefined) {
+      conditions.push(
+        scope === TargetScopeType.INTERNAL
+          ? 't."internalNetworkId" IS NOT NULL'
+          : 't."internalNetworkId" IS NULL',
+      );
+    }
+    if (status) {
+      params.push(status);
+      // Correlated subquery (no cross-product) reproducing the computed status.
+      // A target with no jobs collapses to COMPLETED, matching the old behavior.
+      conditions.push(`(
+        SELECT ${statusExpr}
+        FROM assets a JOIN jobs j ON j."assetId" = a.id
+        WHERE a."targetId" = t.id
+      ) = $${params.length}`);
     }
 
-if (scope !== undefined) {
-      if (scope === TargetScopeType.INTERNAL) {
-        queryBuilder.andWhere('targets.internalNetworkId IS NOT NULL');
-      } else {
-        queryBuilder.andWhere('targets.internalNetworkId IS NULL');
-      }
-    }
+    const whereClause = conditions.join(' AND ');
 
-    if (sortBy === 'totalAssetServices' || sortBy === 'duration') {
-      queryBuilder.orderBy(`"${sortBy}"`, sortOrder);
-    } else if (sortBy in Target) {
-      queryBuilder.orderBy(`targets.${sortBy}`, sortOrder);
-    } else {
-      queryBuilder.orderBy('targets.createdAt', sortOrder);
-    }
+    // total: only touches `jobs` when a status filter is active; otherwise it is
+    // a cheap indexed count over targets/workspace_targets.
+    const totalRows: Array<{ cnt: string }> = await this.repo.query(
+      `SELECT COUNT(*)::int AS cnt
+       FROM targets t
+       INNER JOIN workspace_targets wt ON wt."targetId" = t.id
+       WHERE ${whereClause}`,
+      params,
+    );
+    const total = Number(totalRows[0]?.cnt ?? 0);
 
-    const total = await queryBuilder.getCount();
+    // Whitelist sort columns (avoids SQL injection and the previously broken
+    // `duration` branch, which referenced a column that was never selected).
+    const sortColumns: Record<string, string> = {
+      value: 't.value',
+      type: 't.type',
+      lastDiscoveredAt: 't."lastDiscoveredAt"',
+      reScanCount: 't."reScanCount"',
+      scanSchedule: 't."scanSchedule"',
+      createdAt: 't."createdAt"',
+      totalAssetServices: '"totalAssetServices"',
+    };
+    const orderColumn = sortColumns[sortBy] ?? 't."createdAt"';
+    const orderDir = sortOrder === SortOrder.ASC ? 'ASC' : 'DESC';
 
-    const targets = await queryBuilder.limit(limit).offset(offset).getRawMany();
+    const listParams = [...params, limit, offset];
+    const targets = await this.repo.query<
+      Array<
+        Target & {
+          totalAssetServices: number;
+          status: string;
+          duration: number;
+        }
+      >
+    >(
+      `SELECT
+         t.id AS id,
+         t.value AS value,
+         t.type AS type,
+         t."lastDiscoveredAt" AS "lastDiscoveredAt",
+         t."reScanCount" AS "reScanCount",
+         t."scanSchedule" AS "scanSchedule",
+         t."internalNetworkId" AS "internalNetworkId",
+         svc.cnt AS "totalAssetServices",
+         js.status AS status
+       FROM targets t
+       INNER JOIN workspace_targets wt ON wt."targetId" = t.id
+       LEFT JOIN LATERAL (
+         SELECT COUNT(DISTINCT s.id)::int AS cnt
+         FROM assets a
+         JOIN asset_services s ON s."assetId" = a.id
+         WHERE a."targetId" = t.id AND s."isErrorPage" = false
+       ) svc ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT ${statusExpr} AS status
+         FROM assets a
+         JOIN jobs j ON j."assetId" = a.id
+         WHERE a."targetId" = t.id
+       ) js ON TRUE
+       WHERE ${whereClause}
+       ORDER BY ${orderColumn} ${orderDir}
+       LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
+      listParams,
+    );
 
     return getManyResponse({ query, data: targets, total });
   }
@@ -590,31 +759,50 @@ if (scope !== undefined) {
    * @throws NotFoundException if the target is not found.
    * @returns The updated target entity.
    */
-  public async updateTarget(id: string, dto: UpdateTargetDto) {
+  public async updateTarget(id: string, dto: UpdateTargetDto): Promise<Target> {
     const target = await this.repo.findOneBy({ id });
     if (!target) {
       throw new NotFoundException('Target not found');
     }
 
-    let jobId: string | undefined;
-    // If scanSchedule was updated, also update the job in BullMQ
-    if (dto.scanSchedule !== undefined) {
+    let jobId: string | null | undefined;
+    const nextTarget = { ...target, ...dto } as Target;
+    const scanSchedule = dto.scanSchedule ?? target.scanSchedule;
+    const scanWindowChanged =
+      dto.scanWindowStart !== undefined ||
+      dto.scanWindowEnd !== undefined ||
+      dto.scanWindowTimezone !== undefined ||
+      dto.scanWindowDays !== undefined;
+    const shouldUpdateScheduleJob =
+      dto.scanSchedule !== undefined ||
+      (scanWindowChanged &&
+        scanSchedule !== undefined &&
+        scanSchedule !== CronSchedule.DISABLED);
+
+    if (shouldUpdateScheduleJob) {
       const job = await this.updateTargetScanScheduleJob(
-        target,
-        dto.scanSchedule,
+        nextTarget,
+        scanSchedule,
       );
       if (job) {
         jobId = job.repeatJobKey;
+      } else if (scanSchedule === CronSchedule.DISABLED) {
+        jobId = null;
       }
     }
 
     // Update the target in the database
-    const result = await this.repo.update(id, {
+    await this.repo.update(id, {
       ...dto,
       jobId,
     });
 
-    return result;
+    const updatedTarget = await this.repo.findOneBy({ id });
+    if (!updatedTarget) {
+      throw new NotFoundException('Target not found');
+    }
+
+    return updatedTarget;
   }
 
   /**
@@ -638,15 +826,46 @@ if (scope !== undefined) {
         target.id, // Job name is the target ID
         { id: target.id } as Target,
         {
-          repeat: {
-            pattern: scanSchedule,
-          },
+          repeat: this.buildTargetRepeatOptions(target, scanSchedule),
         },
       );
 
       return job;
     }
     return null;
+  }
+
+  private buildTargetRepeatOptions(
+    target: Target,
+    scanSchedule: CronSchedule,
+  ): RepeatOptions {
+    const repeat: RepeatOptions = {
+      pattern: this.buildTargetSchedulePattern(target, scanSchedule),
+    };
+
+    if (target.scanWindowStart && target.scanWindowTimezone) {
+      repeat.tz = target.scanWindowTimezone;
+    }
+
+    if (target.reScanCount === 0) {
+      repeat.immediately = true;
+    }
+
+    return repeat;
+  }
+
+  private buildTargetSchedulePattern(
+    target: Target,
+    scanSchedule: CronSchedule,
+  ): string {
+    if (!target.scanWindowStart) {
+      return scanSchedule;
+    }
+
+    const [hour, minute] = target.scanWindowStart.split(':');
+    const [, , dayOfMonth, month, dayOfWeek] = scanSchedule.split(' ');
+
+    return `${Number(minute)} ${Number(hour)} ${dayOfMonth} ${month} ${dayOfWeek}`;
   }
 
   /**

@@ -18,8 +18,11 @@ import {
 import { RedisService } from '@/services/redis/redis.service';
 import bindingCommand from '@/utils/bindingCommand';
 import { getManyResponse } from '@/utils/getManyResponse';
+import { resolveSortColumn } from '@/utils/resolveSortColumn';
+import { WORKER_TIMEOUT } from '@/common/constants/app.constants';
 import { InjectQueue } from '@nestjs/bullmq';
 import {
+  BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
@@ -33,6 +36,7 @@ import { DataSource, DeepPartial, In, Repository } from 'typeorm';
 import { AssetService } from '../assets/entities/asset-services.entity';
 import { Asset } from '../assets/entities/assets.entity';
 import { StorageService } from '../storage/storage.service';
+import { Target } from '../targets/entities/target.entity';
 import { Tool } from '../tools/entities/tools.entity';
 import { builtInTools } from '../tools/tools-provider/built-in-tools';
 import { ToolsService } from '../tools/tools.service';
@@ -44,14 +48,46 @@ import {
   CreateJobs,
   GetManyJobsQueryParams,
   GetNextJobResponseDto,
+  JobControlAction,
+  JobControlDirective,
   JobTimelineItem,
   JobTimelineQueryResult,
   JobTimelineResponseDto,
   UpdateResultDto,
+  WorkerControlResponseDto,
 } from './dto/jobs-registry.dto';
 import { JobErrorLog } from './entities/job-error-log.entity';
 import { JobHistory } from './entities/job-history.entity';
 import { Job } from './entities/job.entity';
+
+/** Columns a client is allowed to sort `jobs` rows by. */
+const JOB_SORT_COLUMNS = [
+  'createdAt',
+  'updatedAt',
+  'status',
+  'priority',
+  'category',
+  'pickJobAt',
+  'completedAt',
+  'retryCount',
+] as const;
+
+/** Columns a client is allowed to sort `job_histories` rows by. */
+const JOB_HISTORY_SORT_COLUMNS = [
+  'createdAt',
+  'updatedAt',
+  'jobHistoryName',
+] as const;
+
+const ISO_WEEKDAY_BY_SHORT_NAME: Record<string, number> = {
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+  Sun: 7,
+};
 
 @Injectable()
 export class JobsRegistryService {
@@ -73,11 +109,11 @@ export class JobsRegistryService {
   ): Promise<GetManyBaseResponseDto<Job>> {
     const { limit, page, sortOrder, jobHistoryId, jobStatus, workspaceId } =
       query;
-    let { sortBy } = query;
-
-    if (!(sortBy in Job)) {
-      sortBy = 'createdAt';
-    }
+    const sortBy = resolveSortColumn(
+      query.sortBy,
+      JOB_SORT_COLUMNS,
+      'createdAt',
+    );
 
     const qb = this.repo
       .createQueryBuilder('job')
@@ -193,6 +229,7 @@ export class JobsRegistryService {
         targetIds,
         assetIds,
         workspaceId,
+        tool.category,
       );
 
       // Step 3: iterate tools and create jobs
@@ -232,6 +269,7 @@ export class JobsRegistryService {
         targetIds,
         assetIds,
         workspaceId,
+        tool.category,
       );
 
       const filteredAssets = this.filterAssetsByCategory(assets, tool.category);
@@ -281,11 +319,30 @@ export class JobsRegistryService {
     targetIds?: string[],
     assetIds?: string[],
     workspaceId?: string,
+    category?: ToolCategory,
   ): Promise<Asset[]> {
     const assetsQueryBuilder = this.dataSource
       .getRepository(Asset)
       .createQueryBuilder('assets')
       .where('assets.isEnabled = true');
+
+    // Idempotency guard: skip assets that already have an open (pending or
+    // in-progress) job for this category, so repeated triggers cannot fan out
+    // duplicate jobs and explode the queue.
+    if (category) {
+      assetsQueryBuilder.andWhere(
+        `NOT EXISTS (
+          SELECT 1 FROM "jobs" "openJob"
+          WHERE "openJob"."assetId" = "assets"."id"
+            AND "openJob"."category" = :guardCategory
+            AND "openJob"."status" IN (:...openStatuses)
+        )`,
+        {
+          guardCategory: category,
+          openStatuses: [JobStatus.PENDING, JobStatus.IN_PROGRESS],
+        },
+      );
+    }
 
     if (targetIds && targetIds.length > 0) {
       assetsQueryBuilder.andWhere('assets.targetId IN (:...targetIds)', {
@@ -321,12 +378,32 @@ export class JobsRegistryService {
     targetIds?: string[],
     assetIds?: string[],
     workspaceId?: string,
+    category?: ToolCategory,
   ): Promise<AssetService[]> {
     const assetServicesQueryBuilder = this.dataSource
       .getRepository(AssetService)
       .createQueryBuilder('assetServices')
       .innerJoinAndSelect('assetServices.asset', 'asset')
       .where('asset.isEnabled = true');
+
+    // Idempotency guard: skip asset services that already have an open (pending
+    // or in-progress) job for this category, so repeated triggers cannot fan
+    // out duplicate jobs and explode the queue (root cause of the screenshot
+    // O(N^2) runaway).
+    if (category) {
+      assetServicesQueryBuilder.andWhere(
+        `NOT EXISTS (
+          SELECT 1 FROM "jobs" "openJob"
+          WHERE "openJob"."assetServiceId" = "assetServices"."id"
+            AND "openJob"."category" = :guardCategory
+            AND "openJob"."status" IN (:...openStatuses)
+        )`,
+        {
+          guardCategory: category,
+          openStatuses: [JobStatus.PENDING, JobStatus.IN_PROGRESS],
+        },
+      );
+    }
 
     if (targetIds && targetIds.length > 0) {
       assetServicesQueryBuilder.andWhere('asset.targetId IN (:...targetIds)', {
@@ -394,6 +471,14 @@ export class JobsRegistryService {
       throw new NotFoundException('Worker not found');
     }
 
+    // Operator paused the whole worker: hand out nothing. Running jobs are
+    // unaffected. (Worker row is cached ~30s above, so a pause can take up
+    // to 30s to gate dispatch; the worker-side dispatch_paused flag from the
+    // control poll usually kicks in sooner.)
+    if (worker.isPaused) {
+      return null;
+    }
+
     const isBuiltInTools = worker.type === WorkerType.BUILT_IN;
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -405,6 +490,33 @@ export class JobsRegistryService {
         .innerJoin('asset.target', 'target')
         .leftJoin('jobs.tool', 'tool')
         .where('jobs.status = :status', { status: JobStatus.PENDING })
+        // Scheduling window: a job is only dispatchable while its target's
+        // scan window (evaluated in the target's timezone) is open. Targets
+        // without a window are always dispatchable. Windows crossing
+        // midnight (start > end, e.g. 22:00–06:00) are handled by the ELSE
+        // branch. Jobs stay PENDING outside the window; already-running jobs
+        // are paused from getWorkerControl.
+        .andWhere(
+          `(
+            target."scanWindowStart" IS NULL
+            OR target."scanWindowEnd" IS NULL
+            OR (
+              (
+                target."scanWindowDays" IS NULL
+                OR cardinality(target."scanWindowDays") = 0
+                OR EXTRACT(ISODOW FROM (now() AT TIME ZONE COALESCE(target."scanWindowTimezone", 'UTC')))::int = ANY(target."scanWindowDays")
+              )
+              AND CASE
+                WHEN target."scanWindowStart" <= target."scanWindowEnd" THEN
+                  (now() AT TIME ZONE COALESCE(target."scanWindowTimezone", 'UTC'))::time >= target."scanWindowStart"
+                  AND (now() AT TIME ZONE COALESCE(target."scanWindowTimezone", 'UTC'))::time < target."scanWindowEnd"
+                ELSE
+                  (now() AT TIME ZONE COALESCE(target."scanWindowTimezone", 'UTC'))::time >= target."scanWindowStart"
+                  OR (now() AT TIME ZONE COALESCE(target."scanWindowTimezone", 'UTC'))::time < target."scanWindowEnd"
+              END
+            )
+          )`,
+        )
         // [OPT-1] Use addOrderBy for compound sort (priority first, then createdAt)
         .orderBy('jobs.priority', 'DESC')
         .addOrderBy('jobs.createdAt', 'ASC');
@@ -454,6 +566,7 @@ export class JobsRegistryService {
       // [OPT-4] SKIP LOCKED avoids workers blocking each other on the same row
       const job = await queryBuilder
         .setLock('pessimistic_write', undefined, ['jobs'])
+        .setOnLocked('skip_locked')
         .limit(1)
         .getOne();
 
@@ -509,10 +622,11 @@ export class JobsRegistryService {
     query: GetManyJobsQueryParams,
   ): Promise<GetManyBaseResponseDto<Job>> {
     const { page, limit, sortOrder, jobStatus, workerName } = query;
-    let { sortBy } = query;
-    if (!sortBy) {
-      sortBy = 'createdAt';
-    }
+    const sortBy = resolveSortColumn(
+      query.sortBy,
+      JOB_SORT_COLUMNS,
+      'createdAt',
+    );
 
     const qb = this.repo
       .createQueryBuilder('job')
@@ -544,10 +658,11 @@ export class JobsRegistryService {
     query: GetManyJobsQueryParams,
   ): Promise<GetManyBaseResponseDto<Job>> {
     const { page, limit, sortOrder, jobStatus, workerName } = query;
-    let { sortBy } = query;
-    if (!sortBy) {
-      sortBy = 'createdAt';
-    }
+    const sortBy = resolveSortColumn(
+      query.sortBy,
+      JOB_SORT_COLUMNS,
+      'createdAt',
+    );
 
     const qb = this.repo
       .createQueryBuilder('job')
@@ -845,11 +960,11 @@ export class JobsRegistryService {
     query: GetManyBaseQueryParams,
   ): Promise<GetManyBaseResponseDto<JobHistoryResponseDto>> {
     const { limit, page, sortOrder } = query;
-    let { sortBy } = query;
-
-    if (!(sortBy in JobHistory)) {
-      sortBy = 'createdAt';
-    }
+    const sortBy = resolveSortColumn(
+      query.sortBy,
+      JOB_HISTORY_SORT_COLUMNS,
+      'createdAt',
+    );
 
     // Define interface for raw query result
     interface RawJobHistoryResult {
@@ -857,6 +972,9 @@ export class JobsRegistryService {
       createdAt: Date;
       updatedAt: Date;
       totalJobs: string; // COUNT returns string in some databases
+      pauseEligibleJobs: string;
+      resumeEligibleJobs: string;
+      cancelEligibleJobs: string;
       status: JobStatus;
       workflowName: string;
       jobHistoryName: string;
@@ -882,13 +1000,31 @@ export class JobsRegistryService {
         '"jobHistory"."jobRunType" as "jobRunType"',
         // Subquery to count total jobs for this job history
         '(SELECT COUNT(*) FROM jobs WHERE "jobHistoryId" = "jobHistory".id) as "totalJobs"',
+        `(
+          SELECT COUNT(*) FROM jobs
+          WHERE "jobHistoryId" = "jobHistory".id
+          AND status IN ('${JobStatus.PENDING}', '${JobStatus.IN_PROGRESS}')
+        ) as "pauseEligibleJobs"`,
+        `(
+          SELECT COUNT(*) FROM jobs
+          WHERE "jobHistoryId" = "jobHistory".id
+          AND status = '${JobStatus.PAUSED}'
+        ) as "resumeEligibleJobs"`,
+        `(
+          SELECT COUNT(*) FROM jobs
+          WHERE "jobHistoryId" = "jobHistory".id
+          AND status IN ('${JobStatus.PENDING}', '${JobStatus.IN_PROGRESS}', '${JobStatus.PAUSED}')
+        ) as "cancelEligibleJobs"`,
         // Subquery with CASE to calculate status based on job statuses
         `(
           SELECT 
             CASE 
               WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.FAILED}') > 0 THEN '${JobStatus.FAILED}'
               WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.IN_PROGRESS}') > 0 THEN '${JobStatus.IN_PROGRESS}'
-              WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.COMPLETED}') = COUNT(*) AND COUNT(*) > 0 THEN '${JobStatus.COMPLETED}'
+              WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.PAUSED}') > 0 THEN '${JobStatus.PAUSED}'
+              WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.CANCELLED}') = COUNT(*) AND COUNT(*) > 0 THEN '${JobStatus.CANCELLED}'
+              WHEN COUNT(*) FILTER (WHERE status IN ('${JobStatus.COMPLETED}', '${JobStatus.CANCELLED}')) = COUNT(*) 
+                AND COUNT(*) FILTER (WHERE status = '${JobStatus.COMPLETED}') > 0 THEN '${JobStatus.COMPLETED}'
               ELSE '${JobStatus.PENDING}'
             END
           FROM jobs 
@@ -918,6 +1054,9 @@ export class JobsRegistryService {
       createdAt: raw.createdAt,
       updatedAt: raw.updatedAt,
       totalJobs: parseInt(raw.totalJobs),
+      pauseEligibleJobs: parseInt(raw.pauseEligibleJobs),
+      resumeEligibleJobs: parseInt(raw.resumeEligibleJobs),
+      cancelEligibleJobs: parseInt(raw.cancelEligibleJobs),
       status: raw.status,
       workflowName: raw.workflowName,
       jobHistoryName: raw.jobHistoryName,
@@ -1031,6 +1170,110 @@ export class JobsRegistryService {
     }
   }
 
+  /**
+   * Verifies that a job history has jobs in the specified workspace.
+   * Batch operations intentionally target only the jobs table under the
+   * history; scan outputs and asset data are left untouched.
+   */
+  private async verifyJobHistoryBelongsToWorkspace(
+    jobHistoryId: string,
+    workspaceId: string,
+  ): Promise<void> {
+    const belongsToWorkspace = await this.jobHistoryRepo
+      .createQueryBuilder('jobHistory')
+      .innerJoin('jobHistory.jobs', 'job')
+      .innerJoin('job.asset', 'asset')
+      .innerJoin('asset.target', 'target')
+      .innerJoin('target.workspaceTargets', 'workspaceTarget')
+      .innerJoin('workspaceTarget.workspace', 'workspace')
+      .where('jobHistory.id = :jobHistoryId', { jobHistoryId })
+      .andWhere('workspace.id = :workspaceId', { workspaceId })
+      .getExists();
+
+    if (!belongsToWorkspace) {
+      throw new NotFoundException('Job history not found in workspace');
+    }
+  }
+
+  public async pauseJobHistoryJobs(
+    workspaceId: string,
+    jobHistoryId: string,
+  ): Promise<DefaultMessageResponseDto> {
+    await this.verifyJobHistoryBelongsToWorkspace(jobHistoryId, workspaceId);
+
+    const result = await this.repo
+      .createQueryBuilder()
+      .update(Job)
+      .set({ status: JobStatus.PAUSED })
+      .where('"jobHistoryId" = :jobHistoryId', { jobHistoryId })
+      .andWhere('status IN (:...statuses)', {
+        statuses: [JobStatus.PENDING, JobStatus.IN_PROGRESS],
+      })
+      .execute();
+
+    return {
+      message: `${result.affected ?? 0} job(s) paused successfully`,
+    };
+  }
+
+  public async resumeJobHistoryJobs(
+    workspaceId: string,
+    jobHistoryId: string,
+  ): Promise<DefaultMessageResponseDto> {
+    await this.verifyJobHistoryBelongsToWorkspace(jobHistoryId, workspaceId);
+
+    const result = await this.repo
+      .createQueryBuilder()
+      .update(Job)
+      .set({ status: JobStatus.PENDING, workerId: () => 'NULL' })
+      .where('"jobHistoryId" = :jobHistoryId', { jobHistoryId })
+      .andWhere('status = :status', { status: JobStatus.PAUSED })
+      .execute();
+
+    return {
+      message: `${result.affected ?? 0} job(s) resumed successfully`,
+    };
+  }
+
+  public async cancelJobHistoryJobs(
+    workspaceId: string,
+    jobHistoryId: string,
+  ): Promise<DefaultMessageResponseDto> {
+    await this.verifyJobHistoryBelongsToWorkspace(jobHistoryId, workspaceId);
+
+    const result = await this.repo
+      .createQueryBuilder()
+      .update(Job)
+      .set({ status: JobStatus.CANCELLED })
+      .where('"jobHistoryId" = :jobHistoryId', { jobHistoryId })
+      .andWhere('status IN (:...statuses)', {
+        statuses: [JobStatus.PENDING, JobStatus.IN_PROGRESS, JobStatus.PAUSED],
+      })
+      .execute();
+
+    return {
+      message: `${result.affected ?? 0} job(s) cancelled successfully`,
+    };
+  }
+
+  public async deleteJobHistoryJobs(
+    workspaceId: string,
+    jobHistoryId: string,
+  ): Promise<DefaultMessageResponseDto> {
+    await this.verifyJobHistoryBelongsToWorkspace(jobHistoryId, workspaceId);
+
+    const result = await this.repo
+      .createQueryBuilder()
+      .delete()
+      .from(Job)
+      .where('"jobHistoryId" = :jobHistoryId', { jobHistoryId })
+      .execute();
+
+    return {
+      message: `${result.affected ?? 0} job(s) deleted successfully`,
+    };
+  }
+
   public async reRunJob(
     workspaceId: string,
     jobId: string,
@@ -1071,7 +1314,20 @@ export class JobsRegistryService {
       // Verify job exists and belongs to workspace
       const job = await this.verifyJobBelongsToWorkspace(jobId, workspaceId);
 
-      // Update job status to cancelled
+      if (
+        job.status !== JobStatus.PENDING &&
+        job.status !== JobStatus.IN_PROGRESS &&
+        job.status !== JobStatus.PAUSED
+      ) {
+        throw new BadRequestException(
+          `Job in status '${job.status}' cannot be cancelled`,
+        );
+      }
+
+      // Update job status to cancelled. If a worker is currently running the
+      // job it learns about the cancellation on its next control poll and
+      // kills the process; the late/partial result is dropped because result
+      // processing only accepts IN_PROGRESS jobs.
       job.status = JobStatus.CANCELLED;
 
       await queryRunner.manager.save(job);
@@ -1085,6 +1341,226 @@ export class JobsRegistryService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  /**
+   * Pauses a job. A PENDING job is simply excluded from dispatch; an
+   * IN_PROGRESS job additionally gets a PAUSE directive delivered to its
+   * worker on the next control poll so the active scan process is stopped.
+   */
+  public async pauseJob(
+    workspaceId: string,
+    jobId: string,
+  ): Promise<DefaultMessageResponseDto> {
+    const job = await this.verifyJobBelongsToWorkspace(jobId, workspaceId);
+
+    if (
+      job.status !== JobStatus.PENDING &&
+      job.status !== JobStatus.IN_PROGRESS
+    ) {
+      throw new BadRequestException(
+        `Job in status '${job.status}' cannot be paused`,
+      );
+    }
+
+    await this.repo.update(job.id, { status: JobStatus.PAUSED });
+
+    return { message: 'Job paused successfully' };
+  }
+
+  /**
+   * Resumes a paused job.
+   * - Paused while PENDING (no worker claim): back to PENDING.
+   * - Paused while IN_PROGRESS: requeued as PENDING. The previous process was
+   *   interrupted when the pause was applied.
+   */
+  public async resumeJob(
+    workspaceId: string,
+    jobId: string,
+  ): Promise<DefaultMessageResponseDto> {
+    const job = await this.verifyJobBelongsToWorkspace(jobId, workspaceId);
+
+    if (job.status !== JobStatus.PAUSED) {
+      throw new BadRequestException(
+        `Job in status '${job.status}' cannot be resumed`,
+      );
+    }
+
+    await this.repo
+      .createQueryBuilder()
+      .update()
+      .set({ status: JobStatus.PENDING, workerId: () => 'NULL' })
+      .where('id = :id', { id: job.id })
+      .execute();
+
+    return { message: 'Job requeued successfully' };
+  }
+
+  /**
+   * Control-plane poll answered to a worker every few seconds. Derives
+   * per-job directives statelessly from the current DB state of the jobs
+   * the worker reports as active, returns the worker's desired settings
+   * (concurrency, pause flag), and reconciles orphaned job claims.
+   */
+  public async getWorkerControl(
+    workerId: string,
+    activeJobIds: string[],
+  ): Promise<WorkerControlResponseDto> {
+    const worker = await this.dataSource
+      .getRepository(WorkerInstance)
+      .findOne({ where: { id: workerId } });
+
+    if (!worker) {
+      throw new NotFoundException('Worker not found');
+    }
+
+    const ids = (activeJobIds ?? []).filter((id) => !!id);
+    const directives: JobControlDirective[] = [];
+
+    if (ids.length > 0) {
+      const jobs = await this.repo.find({
+        where: { id: In(ids) },
+        relations: { asset: { target: true } },
+        select: {
+          id: true,
+          status: true,
+          asset: {
+            id: true,
+            target: {
+              id: true,
+              scanWindowStart: true,
+              scanWindowEnd: true,
+              scanWindowTimezone: true,
+              scanWindowDays: true,
+            },
+          },
+        },
+      });
+      const jobById = new Map(jobs.map((j) => [j.id, j]));
+
+      for (const id of ids) {
+        const job = jobById.get(id);
+        const status = job?.status;
+        if (!status || status === JobStatus.CANCELLED) {
+          // Cancelled or deleted while running: kill it.
+          directives.push({ jobId: id, action: JobControlAction.STOP });
+        } else if (status === JobStatus.PAUSED) {
+          directives.push({ jobId: id, action: JobControlAction.PAUSE });
+        } else if (status === JobStatus.IN_PROGRESS) {
+          if (!this.isTargetScanWindowOpen(job.asset?.target)) {
+            await this.repo.update(id, { status: JobStatus.PAUSED });
+            directives.push({ jobId: id, action: JobControlAction.PAUSE });
+            continue;
+          }
+          // Idempotent: only has an effect on workers that still have a
+          // resumable local process from an older worker version.
+          directives.push({ jobId: id, action: JobControlAction.RESUME });
+        }
+      }
+    }
+
+    // Reconcile orphaned claims: jobs the DB says this worker holds but the
+    // worker no longer reports (worker restarted mid-job, or a result was
+    // dropped). The pickJobAt cutoff protects jobs claimed between the
+    // worker building its active list and this request arriving.
+    const orphanCutoff = new Date(Date.now() - 2 * WORKER_TIMEOUT);
+
+    // IN_PROGRESS orphans are requeued for any worker to pick up.
+    const requeueQb = this.repo
+      .createQueryBuilder()
+      .update()
+      .set({ status: JobStatus.PENDING, workerId: () => 'NULL' })
+      .where('"workerId" = :workerId', { workerId })
+      .andWhere('status = :status', { status: JobStatus.IN_PROGRESS })
+      .andWhere('"pickJobAt" < :cutoff', { cutoff: orphanCutoff });
+    if (ids.length > 0) {
+      requeueQb.andWhere('id NOT IN (:...ids)', { ids });
+    }
+    await requeueQb.execute();
+
+    // PAUSED orphans stay paused (the pause was an operator decision) but
+    // the dead worker's claim is released so a later resume requeues them.
+    const releaseQb = this.repo
+      .createQueryBuilder()
+      .update()
+      .set({ workerId: () => 'NULL' })
+      .where('"workerId" = :workerId', { workerId })
+      .andWhere('status = :status', { status: JobStatus.PAUSED })
+      .andWhere('"pickJobAt" < :cutoff', { cutoff: orphanCutoff });
+    if (ids.length > 0) {
+      releaseQb.andWhere('id NOT IN (:...ids)', { ids });
+    }
+    await releaseQb.execute();
+
+    return {
+      directives,
+      maxConcurrency: worker.maxConcurrency ?? 0,
+      dispatchPaused: worker.isPaused === true,
+    };
+  }
+
+  private isTargetScanWindowOpen(
+    target?: Pick<
+      Target,
+      | 'scanWindowStart'
+      | 'scanWindowEnd'
+      | 'scanWindowTimezone'
+      | 'scanWindowDays'
+    >,
+    now = new Date(),
+  ): boolean {
+    if (!target?.scanWindowStart || !target.scanWindowEnd) {
+      return true;
+    }
+
+    const local = this.getLocalScanWindowTime(
+      now,
+      target.scanWindowTimezone ?? 'UTC',
+    );
+
+    if (
+      target.scanWindowDays?.length &&
+      !target.scanWindowDays.includes(local.isoWeekday)
+    ) {
+      return false;
+    }
+
+    const start = this.parseTimeToMinutes(target.scanWindowStart);
+    const end = this.parseTimeToMinutes(target.scanWindowEnd);
+
+    if (start <= end) {
+      return local.minutes >= start && local.minutes < end;
+    }
+
+    return local.minutes >= start || local.minutes < end;
+  }
+
+  private getLocalScanWindowTime(
+    date: Date,
+    timeZone: string,
+  ): { isoWeekday: number; minutes: number } {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(date);
+    const getPart = (type: string): string =>
+      parts.find((part) => part.type === type)?.value ?? '';
+    const hour = Number(getPart('hour'));
+    const minute = Number(getPart('minute'));
+    const weekday = getPart('weekday');
+
+    return {
+      isoWeekday: ISO_WEEKDAY_BY_SHORT_NAME[weekday] ?? 1,
+      minutes: hour * 60 + minute,
+    };
+  }
+
+  private parseTimeToMinutes(time: string): number {
+    const [hour, minute] = time.split(':');
+    return Number(hour) * 60 + Number(minute);
   }
 
   public async deleteJob(

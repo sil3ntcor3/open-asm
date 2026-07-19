@@ -10,7 +10,7 @@ FROM base AS builder
 
 COPY package.json ./
 
-ENV NODE_ENV production
+ENV NODE_ENV=production
 
 COPY . .
 RUN bun install

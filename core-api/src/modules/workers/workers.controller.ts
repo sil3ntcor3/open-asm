@@ -11,6 +11,8 @@ import {
   Controller,
   Get,
   Logger,
+  Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -23,6 +25,7 @@ import { join } from 'path';
 import { Observable } from 'rxjs';
 import {
   GetManyWorkersDto,
+  UpdateWorkerSettingsDto,
   WorkerAliveDto,
   WorkerJoinDto,
 } from './dto/workers.dto';
@@ -88,6 +91,22 @@ export class WorkersController {
   @Get()
   getWorkers(@Query() query: GetManyWorkersDto) {
     return this.workersService.getWorkers(query);
+  }
+
+  @Doc({
+    summary: 'Update worker runtime settings',
+    description:
+      'Change a worker instance\'s desired max concurrency and/or pause state at runtime. The worker applies the change on its next control poll (a few seconds); shrinking concurrency never kills running jobs.',
+    response: {
+      serialization: WorkerInstance,
+    },
+  })
+  @Patch('/:id/settings')
+  updateWorkerSettings(
+    @Param('id') id: string,
+    @Body() dto: UpdateWorkerSettingsDto,
+  ) {
+    return this.workersService.updateWorkerSettings(id, dto);
   }
 
   @GrpcMethod('WorkersService', 'GetManifest')
@@ -223,33 +242,21 @@ export class WorkersController {
   }
 
   @GrpcMethod('WorkersService', 'BuiltinToolRegistry')
-  async grpcBuiltinToolRegistry(): Promise<{
-    linux: string[];
-    windows: string[];
-    macos: string[];
-  }> {
-    const archivedPath = join(process.cwd(), 'public/archived');
+  async grpcBuiltinToolRegistry(request: {
+    os: string;
+    arch: string;
+  }): Promise<{ toolPaths: string[] }> {
+    const platform = `${request.os.toLowerCase()}_${request.arch.toLowerCase()}`;
+    const platformPath = join(process.cwd(), 'public/archived', platform);
 
-    const getFiles = async (dir: string): Promise<string[]> => {
-      try {
-        const files = await readdir(dir);
-        return files;
-      } catch {
-        return [];
-      }
-    };
-
-    const [linux, windows, macos] = await Promise.all([
-      getFiles(join(archivedPath, 'linux')),
-      getFiles(join(archivedPath, 'windows')),
-      getFiles(join(archivedPath, 'macos')),
-    ]);
-
-    return {
-      linux: linux.map((f) => `static/archived/linux/${f}`),
-      windows: windows.map((f) => `static/archived/windows/${f}`),
-      macos: macos.map((f) => `static/archived/macos/${f}`),
-    };
+    try {
+      const files = await readdir(platformPath);
+      return {
+        toolPaths: files.map((file) => `static/archived/${platform}/${file}`),
+      };
+    } catch {
+      return { toolPaths: [] };
+    }
   }
 
   @UseGuards(GrpcWorkerTokenGuard)
