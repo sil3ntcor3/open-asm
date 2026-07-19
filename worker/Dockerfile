@@ -9,8 +9,11 @@ WORKDIR /src/worker
 # Install git for go mod download
 RUN apk add --no-cache git ca-certificates
 
-# Copy the locally-replaced module and go mod files first (for layer caching)
+# Copy both locally-replaced modules and go mod files first. Go resolves local
+# replacements during `go mod download`, before the remaining worker source is
+# copied into the image.
 COPY grpc-client/go /src/grpc-client/go
+COPY worker/third_party/oasm-sdk-go ./third_party/oasm-sdk-go
 COPY worker/go.mod worker/go.sum ./
 
 # Download dependencies
