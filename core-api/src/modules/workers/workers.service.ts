@@ -6,7 +6,6 @@ import {
   WorkerScope,
   WorkerType,
 } from '@/common/enums/enum';
-import { RedisService } from '@/services/redis/redis.service';
 import { generateToken } from '@/utils/genToken';
 import { getManyResponse } from '@/utils/getManyResponse';
 import {
@@ -21,7 +20,7 @@ import { ConfigService } from '@nestjs/config';
 import { RpcException } from '@nestjs/microservices';
 import { Interval } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { randomUUID } from 'crypto';
+import { randomUUID, timingSafeEqual } from 'crypto';
 import { LessThan, Repository } from 'typeorm';
 import { ApiKeysService } from '../apikeys/apikeys.service';
 import { Asset } from '../assets/entities/assets.entity';
@@ -69,8 +68,6 @@ export class WorkersService {
 
     @Inject(forwardRef(() => ToolsService))
     private toolsService: ToolsService,
-
-    private redisService: RedisService,
 
     private aliveStreamManager: AliveStreamManager,
   ) {}
@@ -179,8 +176,14 @@ export class WorkersService {
   public async updateWorkerSettings(
     id: string,
     dto: UpdateWorkerSettingsDto,
+    workspaceId: string,
   ): Promise<WorkerInstance> {
-    const worker = await this.repo.findOne({ where: { id } });
+    const worker = await this.repo.findOne({
+      where: [
+        { id, workspace: { id: workspaceId } },
+        { id, scope: WorkerScope.CLOUD },
+      ],
+    });
     if (!worker) {
       throw new NotFoundException('Worker not found');
     }
@@ -383,50 +386,59 @@ export class WorkersService {
    * @returns A promise that resolves to the created worker instance.
    */
   public async join(dto: WorkerJoinDto): Promise<WorkerInstance> {
-    const { apiKey, signature, token, metadata, ipAddress } = dto;
+    const { apiKey, token, metadata, ipAddress } = dto;
 
-    // 1. Validate signature first (mandatory)
-    const workerSignature =
-      this.configService.get<string>('WORKER_SIGNATURE') || '';
+    if (token) {
+      const existingWorker = await this.repo.findOne({
+        where: { token },
+      });
+      if (!existingWorker) {
+        throw new UnauthorizedException('Invalid worker identity token');
+      }
 
-    if (signature !== workerSignature) {
-      throw new UnauthorizedException('Invalid worker signature');
+      await this.fallbackWorkerRejoin(existingWorker.id);
+      if (ipAddress) {
+        await this.repo.update({ id: existingWorker.id }, { ipAddress });
+      }
+      return existingWorker;
     }
 
-    // 2. Validate API key
-    const cloudApiKey = this.configService.get<string>('OASM_CLOUD_APIKEY');
-    const isCloudWorker = cloudApiKey === apiKey;
+    if (apiKey.length < 32 || apiKey === 'change_me') {
+      throw new UnauthorizedException(
+        'Worker enrollment token must be at least 32 characters',
+      );
+    }
 
-    // 3. For regular workers, validate API key exists in database
+    const cloudApiKey = this.configService.get<string>('OASM_CLOUD_APIKEY');
+    const isCloudWorker = this.secretsMatch(cloudApiKey, apiKey);
+
     if (!isCloudWorker) {
       const apiKeyRecord = await this.apiKeyService.apiKeysRepository.findOne({
         where: { key: apiKey },
       });
       if (!apiKeyRecord) {
-        throw new RpcException(`API key not found: ${apiKey}`);
+        throw new RpcException('Worker enrollment token is invalid');
       }
     }
 
-    // 4. Token rejoin: if token exists and is valid, allow rejoin for both cloud and regular workers
-    if (token) {
-      const existingWorker = await this.repo.findOne({
-        where: { token },
-      });
-      if (existingWorker) {
-        await this.fallbackWorkerRejoin(existingWorker.id);
-        if (ipAddress) {
-          await this.repo.update({ id: existingWorker.id }, { ipAddress });
-        }
-        return existingWorker;
-      }
-    }
-
-    // 5. Create new worker after successful authentication
     if (isCloudWorker) {
       return this.createCloudWorker(metadata, ipAddress);
     }
 
     return this.createRegularWorker(apiKey, metadata, ipAddress);
+  }
+
+  private secretsMatch(expected: string | undefined, actual: string): boolean {
+    if (!expected || expected.length < 32 || expected === 'change_me') {
+      return false;
+    }
+
+    const expectedBytes = Buffer.from(expected);
+    const actualBytes = Buffer.from(actual);
+    return (
+      expectedBytes.length === actualBytes.length &&
+      timingSafeEqual(expectedBytes, actualBytes)
+    );
   }
 
   /**
@@ -482,7 +494,7 @@ export class WorkersService {
     });
 
     if (!apiKeyRecord) {
-      throw new RpcException(`API key not found: ${apiKey}`);
+      throw new RpcException('Worker enrollment token is invalid');
     }
 
     const workerId = randomUUID();
@@ -615,8 +627,10 @@ export class WorkersService {
     if (!worker) {
       throw new RpcException(`Worker not found: ${workerId}`);
     }
-    await this.repo.update(workerId, { internalNetwork: { id: networkId } });
-    const workerWorkspaceId = worker.workspace.id;
+    const workerWorkspaceId = worker.workspace?.id ?? worker.workspaceId;
+    if (!workerWorkspaceId) {
+      throw new RpcException('Worker is not assigned to a workspace');
+    }
 
     // Find network and check workspace
     const network = await this.internalNetworkRepo.findOne({
@@ -630,6 +644,8 @@ export class WorkersService {
         `Network and worker belong to different workspaces`,
       );
     }
+
+    await this.repo.update(workerId, { internalNetwork: { id: networkId } });
 
     // Insert network interfaces, ignoring duplicates
     const interfacesToSave = networkInterfaces.map((ni) => ({
@@ -657,27 +673,4 @@ export class WorkersService {
     await this.repo.update(workerId, { enabledAgentMode: true });
   }
 
-  public async handleRemoteExecuteResult(result: {
-    id: string;
-    sessionId: string;
-    type: number;
-    data: Uint8Array;
-    exitCode: number;
-  }) {
-    const channel = `remote-execute:results:${result.sessionId}`;
-    const payload = JSON.stringify({
-      id: result.id,
-      sessionId: result.sessionId,
-      type: result.type,
-      data: Buffer.from(result.data).toString('utf-8'),
-      exitCode: result.exitCode,
-    });
-
-    Logger.log(
-      `[handleRemoteExecuteResult] Publishing to ${channel}: ${payload.substring(0, 100)}`,
-      'WorkersService',
-    );
-
-    await this.redisService.publish(channel, payload);
-  }
 }

@@ -71,9 +71,13 @@ export type Target = {
   totalAssetServices: number;
   status: JobStatus;
   scanSchedule: CronSchedule;
+  /** @nullable */
   scanWindowStart?: string | null;
+  /** @nullable */
   scanWindowEnd?: string | null;
+  /** @nullable */
   scanWindowTimezone?: string | null;
+  /** @nullable */
   scanWindowDays?: number[] | null;
 };
 
@@ -106,11 +110,6 @@ export type CreateMultipleTargetsDto = {
   startDiscovery?: boolean;
 };
 
-export type DiscoverTargetsDto = {
-  /** IDs of the targets to start discovery on */
-  targetIds: string[];
-};
-
 export type SkippedTargetDto = {
   id: string;
   value: string;
@@ -124,6 +123,11 @@ export type DiscoverTargetsResultDto = {
   totalSkipped: number;
   /** Details of skipped targets */
   skipped: SkippedTargetDto[];
+};
+
+export type DiscoverTargetsDto = {
+  /** IDs of the targets to start discovery on */
+  targetIds: string[];
 };
 
 export type GetManyTargetResponseDtoScanSchedule =
@@ -194,13 +198,13 @@ export const UpdateTargetDtoScanSchedule = {
 
 export type UpdateTargetDto = {
   scanSchedule?: UpdateTargetDtoScanSchedule;
-  /** Start of the execution window (HH:MM) in scanWindowTimezone. */
+  /** @nullable */
   scanWindowStart?: string | null;
-  /** End of the execution window (HH:MM) in scanWindowTimezone. */
+  /** @nullable */
   scanWindowEnd?: string | null;
-  /** IANA timezone the window is evaluated in. */
+  /** @nullable */
   scanWindowTimezone?: string | null;
-  /** ISO days of week (1 = Monday … 7 = Sunday); null/empty = every day. */
+  /** @nullable */
   scanWindowDays?: number[] | null;
 };
 
@@ -278,8 +282,11 @@ export type WorkspaceResponseDtoRole =
   (typeof WorkspaceResponseDtoRole)[keyof typeof WorkspaceResponseDtoRole];
 
 export const WorkspaceResponseDtoRole = {
+  viewer: 'viewer',
+  analyst: 'analyst',
+  operator: 'operator',
+  security_admin: 'security_admin',
   owner: 'owner',
-  member: 'member',
 } as const;
 
 export type WorkspaceResponseDto = {
@@ -647,10 +654,29 @@ export type DataPayloadResultRaw = { [key: string]: unknown };
 
 export type DataPayloadResultPayload = { [key: string]: unknown };
 
+export type DataPayloadResultOutcome =
+  (typeof DataPayloadResultOutcome)[keyof typeof DataPayloadResultOutcome];
+
+export const DataPayloadResultOutcome = {
+  EXECUTION_OUTCOME_UNSPECIFIED: 'EXECUTION_OUTCOME_UNSPECIFIED',
+  EXECUTION_OUTCOME_SUCCEEDED: 'EXECUTION_OUTCOME_SUCCEEDED',
+  EXECUTION_OUTCOME_FAILED: 'EXECUTION_OUTCOME_FAILED',
+  EXECUTION_OUTCOME_TIMED_OUT: 'EXECUTION_OUTCOME_TIMED_OUT',
+  EXECUTION_OUTCOME_CANCELED: 'EXECUTION_OUTCOME_CANCELED',
+  EXECUTION_OUTCOME_OUTPUT_LIMITED: 'EXECUTION_OUTCOME_OUTPUT_LIMITED',
+  EXECUTION_OUTCOME_START_FAILED: 'EXECUTION_OUTCOME_START_FAILED',
+} as const;
+
 export type DataPayloadResult = {
   error: boolean;
   raw: DataPayloadResultRaw;
   payload: DataPayloadResultPayload;
+  outcome?: DataPayloadResultOutcome;
+  exitCode?: number;
+  failureMessage?: string;
+  stdoutTruncated?: boolean;
+  stderrTruncated?: boolean;
+  stderr?: string;
 };
 
 export type UpdateResultDto = {
@@ -987,10 +1013,6 @@ export type SwitchAssetDto = {
   isEnabled: boolean;
 };
 
-export type WorkerAliveDto = {
-  token: string;
-};
-
 export type WorkerInstance = {
   id: string;
   createdAt: string;
@@ -1007,31 +1029,10 @@ export type WorkerInstance = {
   internalNetworkId: string;
   tools: Tool[];
   enabledAgentMode?: boolean;
-  /** Desired max concurrent jobs; null = worker's local default. */
+  /** @nullable */
   maxConcurrency?: number | null;
-  /** When true the worker is handed no new jobs (running jobs unaffected). */
   isPaused?: boolean;
   isOnline?: boolean;
-};
-
-export type UpdateWorkerSettingsDto = {
-  /** Desired number of concurrent jobs (1–100); null resets to local default. */
-  maxConcurrency?: number | null;
-  /** Pause/start the whole worker; running jobs are not affected. */
-  isPaused?: boolean;
-};
-
-export type WorkerMetadataDto = {
-  name?: string;
-  os?: string;
-};
-
-export type WorkerJoinDto = {
-  apiKey: string;
-  signature?: string;
-  token?: string;
-  ipAddress?: string;
-  metadata?: WorkerMetadataDto;
 };
 
 export type GetManyWorkerInstanceDto = {
@@ -1041,6 +1042,16 @@ export type GetManyWorkerInstanceDto = {
   limit: number;
   hasNextPage: boolean;
   pageCount: number;
+};
+
+export type UpdateWorkerSettingsDto = {
+  /**
+   * @minimum 1
+   * @maximum 100
+   * @nullable
+   */
+  maxConcurrency?: number | null;
+  isPaused?: boolean;
 };
 
 export type CreateToolDtoCategory =
@@ -1258,6 +1269,31 @@ export type ScanDto = {
   targetId: string;
 };
 
+export type VulnerabilityEvidenceMetadata = { [key: string]: unknown };
+
+export type VulnerabilityEvidenceRaw = { [key: string]: unknown };
+
+export type VulnerabilityEvidence = {
+  templateId?: string;
+  templatePath?: string;
+  type?: string;
+  matcherName?: string;
+  matcherStatus?: boolean;
+  extractorName?: string;
+  extractedResults?: string[];
+  matchedAt?: string;
+  host?: string;
+  ip?: string;
+  port?: string;
+  scheme?: string;
+  request?: string;
+  response?: string;
+  curlCommand?: string;
+  timestamp?: string;
+  metadata?: VulnerabilityEvidenceMetadata;
+  raw?: VulnerabilityEvidenceRaw;
+};
+
 export type UserRole = (typeof UserRole)[keyof typeof UserRole];
 
 export const UserRole = {
@@ -1296,27 +1332,6 @@ export type VulnerabilityDismissal = {
   vulnerability: Vulnerability;
 };
 
-export type VulnerabilityEvidence = {
-  templateId?: string;
-  templatePath?: string;
-  type?: string;
-  matcherName?: string;
-  matcherStatus?: boolean;
-  extractorName?: string;
-  extractedResults?: string[];
-  matchedAt?: string;
-  host?: string;
-  ip?: string;
-  port?: string;
-  scheme?: string;
-  request?: string;
-  response?: string;
-  curlCommand?: string;
-  timestamp?: string;
-  metadata?: Record<string, unknown>;
-  raw?: Record<string, unknown>;
-};
-
 export type Vulnerability = {
   id: string;
   createdAt: string;
@@ -1346,7 +1361,7 @@ export type Vulnerability = {
   solution: string;
   extractorName: string;
   extractedResults: string[];
-  evidence: VulnerabilityEvidence[];
+  evidence?: VulnerabilityEvidence[];
   publicationDate: string;
   modificationDate: string;
   firstDetectedDate: string;
@@ -1839,13 +1854,6 @@ export type CreateNotificationDto = {
   type: CreateNotificationDtoType;
   /** Metadata for the notification content (variables for translation) */
   metadata?: CreateNotificationDtoMetadata;
-};
-
-export type RunCommandDto = {
-  /** Command to execute */
-  command: string;
-  /** Session ID for the remote execution stream */
-  sessionId: string;
 };
 
 export type ToolProvider = {
@@ -2619,7 +2627,7 @@ export type VulnerabilitiesControllerGetVulnerabilitiesParams = {
   search?: string;
   page?: number;
   limit?: number;
-  sortBy?: string;
+  sortBy?: VulnerabilitiesControllerGetVulnerabilitiesSortBy;
   sortOrder?: string;
   targetIds?: string[];
   q?: string;
@@ -2649,6 +2657,21 @@ export type VulnerabilitiesControllerGetVulnerabilitiesParams = {
   targetId?: string;
 };
 
+export type VulnerabilitiesControllerGetVulnerabilitiesSortBy =
+  (typeof VulnerabilitiesControllerGetVulnerabilitiesSortBy)[keyof typeof VulnerabilitiesControllerGetVulnerabilitiesSortBy];
+
+export const VulnerabilitiesControllerGetVulnerabilitiesSortBy = {
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  name: 'name',
+  severity: 'severity',
+  firstDetectedDate: 'firstDetectedDate',
+  lastSeenDate: 'lastSeenDate',
+  cvssScore: 'cvssScore',
+  epssScore: 'epssScore',
+  vprScore: 'vprScore',
+} as const;
+
 export type VulnerabilitiesControllerGetVulnerabilitiesStatus =
   (typeof VulnerabilitiesControllerGetVulnerabilitiesStatus)[keyof typeof VulnerabilitiesControllerGetVulnerabilitiesStatus];
 
@@ -2672,14 +2695,53 @@ export const VulnerabilitiesControllerGetVulnerabilitiesSeverityItem = {
 export type VulnerabilitiesControllerGetVulnerabilitiesStatisticsParams = {
   workspaceId: string;
   targetIds?: string[];
-  status?: VulnerabilitiesControllerGetVulnerabilitiesStatus;
-  severity?: VulnerabilitiesControllerGetVulnerabilitiesSeverityItem[];
+  /**
+   * Filter by vulnerability status: open, dismissed, or all
+   */
+  status?: VulnerabilitiesControllerGetVulnerabilitiesStatisticsStatus;
+  /**
+   * Filter by severity levels: info, low, medium, high, critical
+   */
+  severity?: VulnerabilitiesControllerGetVulnerabilitiesStatisticsSeverityItem[];
+  /**
+   * Filter by creation date from (ISO 8601 format, e.g., 2026-01-01)
+   */
   createdFrom?: string;
+  /**
+   * Filter by creation date to (ISO 8601 format, e.g., 2026-01-31)
+   */
   createdTo?: string;
+  /**
+   * Filter by vulnerability tags
+   */
   tags?: string[];
+  /**
+   * Filter vulnerabilities by target ID
+   */
   targetId?: string;
   q?: string;
 };
+
+export type VulnerabilitiesControllerGetVulnerabilitiesStatisticsStatus =
+  (typeof VulnerabilitiesControllerGetVulnerabilitiesStatisticsStatus)[keyof typeof VulnerabilitiesControllerGetVulnerabilitiesStatisticsStatus];
+
+export const VulnerabilitiesControllerGetVulnerabilitiesStatisticsStatus = {
+  open: 'open',
+  dismissed: 'dismissed',
+  all: 'all',
+} as const;
+
+export type VulnerabilitiesControllerGetVulnerabilitiesStatisticsSeverityItem =
+  (typeof VulnerabilitiesControllerGetVulnerabilitiesStatisticsSeverityItem)[keyof typeof VulnerabilitiesControllerGetVulnerabilitiesStatisticsSeverityItem];
+
+export const VulnerabilitiesControllerGetVulnerabilitiesStatisticsSeverityItem =
+  {
+    info: 'info',
+    low: 'low',
+    medium: 'medium',
+    high: 'high',
+    critical: 'critical',
+  } as const;
 
 export type AgentsControllerGetConversationsParams = {
   search?: string;
@@ -2711,10 +2773,6 @@ export type NotificationsControllerGetNotificationsParams = {
   limit?: number;
   sortBy?: string;
   sortOrder?: string;
-};
-
-export type RemoteExecuteControllerStreamParams = {
-  sessionId: string;
 };
 
 export type ProvidersControllerGetManyProvidersParams = {
@@ -2913,13 +2971,6 @@ export type StorageControllerDownloadFileParams = {
    * Time-limited download token
    */
   token: string;
-};
-
-export type StorageControllerForwardImageParams = {
-  /**
-   * The URL of the image to forward
-   */
-  url: string;
 };
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
@@ -9207,6 +9258,182 @@ export const useJobsRegistryControllerCancelJob = <
 };
 
 /**
+ * Pause a pending or in-progress job. Pending jobs are excluded from dispatch; in-progress jobs are stopped on the worker and can be resumed later.
+ * @summary Pause a job
+ */
+export const jobsRegistryControllerPauseJob = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    { url: `/api/jobs-registry/${id}/pause`, method: 'POST', signal },
+    options,
+  );
+};
+
+export const getJobsRegistryControllerPauseJobMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof jobsRegistryControllerPauseJob>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof jobsRegistryControllerPauseJob>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ['jobsRegistryControllerPauseJob'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof jobsRegistryControllerPauseJob>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return jobsRegistryControllerPauseJob(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type JobsRegistryControllerPauseJobMutationResult = NonNullable<
+  Awaited<ReturnType<typeof jobsRegistryControllerPauseJob>>
+>;
+
+export type JobsRegistryControllerPauseJobMutationError = unknown;
+
+/**
+ * @summary Pause a job
+ */
+export const useJobsRegistryControllerPauseJob = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof jobsRegistryControllerPauseJob>>,
+      TError,
+      { id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof jobsRegistryControllerPauseJob>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getJobsRegistryControllerPauseJobMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Resume a paused job. Jobs paused while running continue on their worker if it is still alive, otherwise they are requeued.
+ * @summary Resume a paused job
+ */
+export const jobsRegistryControllerResumeJob = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    { url: `/api/jobs-registry/${id}/resume`, method: 'POST', signal },
+    options,
+  );
+};
+
+export const getJobsRegistryControllerResumeJobMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof jobsRegistryControllerResumeJob>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof jobsRegistryControllerResumeJob>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ['jobsRegistryControllerResumeJob'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof jobsRegistryControllerResumeJob>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return jobsRegistryControllerResumeJob(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type JobsRegistryControllerResumeJobMutationResult = NonNullable<
+  Awaited<ReturnType<typeof jobsRegistryControllerResumeJob>>
+>;
+
+export type JobsRegistryControllerResumeJobMutationError = unknown;
+
+/**
+ * @summary Resume a paused job
+ */
+export const useJobsRegistryControllerResumeJob = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof jobsRegistryControllerResumeJob>>,
+      TError,
+      { id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof jobsRegistryControllerResumeJob>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getJobsRegistryControllerResumeJobMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
  * Delete a job by its ID in the specified workspace
  * @summary Delete a job
  */
@@ -12321,188 +12548,6 @@ export function useAssetsControllerExportServicesToCSV<
 }
 
 /**
- * Confirms the operational status of a security assessment worker node in the cluster.
- * @summary Worker alive
- */
-export const workersControllerAlive = (
-  workerAliveDto: WorkerAliveDto,
-  options?: SecondParameter<typeof orvalClient>,
-  signal?: AbortSignal,
-) => {
-  return orvalClient<DefaultMessageResponseDto>(
-    {
-      url: `/api/workers/alive`,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      data: workerAliveDto,
-      signal,
-    },
-    options,
-  );
-};
-
-export const getWorkersControllerAliveMutationOptions = <
-  TError = unknown,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof workersControllerAlive>>,
-    TError,
-    { data: WorkerAliveDto },
-    TContext
-  >;
-  request?: SecondParameter<typeof orvalClient>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof workersControllerAlive>>,
-  TError,
-  { data: WorkerAliveDto },
-  TContext
-> => {
-  const mutationKey = ['workersControllerAlive'];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      'mutationKey' in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof workersControllerAlive>>,
-    { data: WorkerAliveDto }
-  > = (props) => {
-    const { data } = props ?? {};
-
-    return workersControllerAlive(data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type WorkersControllerAliveMutationResult = NonNullable<
-  Awaited<ReturnType<typeof workersControllerAlive>>
->;
-export type WorkersControllerAliveMutationBody = WorkerAliveDto;
-export type WorkersControllerAliveMutationError = unknown;
-
-/**
- * @summary Worker alive
- */
-export const useWorkersControllerAlive = <TError = unknown, TContext = unknown>(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof workersControllerAlive>>,
-      TError,
-      { data: WorkerAliveDto },
-      TContext
-    >;
-    request?: SecondParameter<typeof orvalClient>;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof workersControllerAlive>>,
-  TError,
-  { data: WorkerAliveDto },
-  TContext
-> => {
-  return useMutation(
-    getWorkersControllerAliveMutationOptions(options),
-    queryClient,
-  );
-};
-
-/**
- * Registers a new security assessment worker node to the distributed processing cluster.
- * @summary Worker join
- */
-export const workersControllerJoin = (
-  workerJoinDto: WorkerJoinDto,
-  options?: SecondParameter<typeof orvalClient>,
-  signal?: AbortSignal,
-) => {
-  return orvalClient<WorkerInstance>(
-    {
-      url: `/api/workers/join`,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      data: workerJoinDto,
-      signal,
-    },
-    options,
-  );
-};
-
-export const getWorkersControllerJoinMutationOptions = <
-  TError = unknown,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof workersControllerJoin>>,
-    TError,
-    { data: WorkerJoinDto },
-    TContext
-  >;
-  request?: SecondParameter<typeof orvalClient>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof workersControllerJoin>>,
-  TError,
-  { data: WorkerJoinDto },
-  TContext
-> => {
-  const mutationKey = ['workersControllerJoin'];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      'mutationKey' in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof workersControllerJoin>>,
-    { data: WorkerJoinDto }
-  > = (props) => {
-    const { data } = props ?? {};
-
-    return workersControllerJoin(data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type WorkersControllerJoinMutationResult = NonNullable<
-  Awaited<ReturnType<typeof workersControllerJoin>>
->;
-export type WorkersControllerJoinMutationBody = WorkerJoinDto;
-export type WorkersControllerJoinMutationError = unknown;
-
-/**
- * @summary Worker join
- */
-export const useWorkersControllerJoin = <TError = unknown, TContext = unknown>(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof workersControllerJoin>>,
-      TError,
-      { data: WorkerJoinDto },
-      TContext
-    >;
-    request?: SecondParameter<typeof orvalClient>;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof workersControllerJoin>>,
-  TError,
-  { data: WorkerJoinDto },
-  TContext
-> => {
-  return useMutation(
-    getWorkersControllerJoinMutationOptions(options),
-    queryClient,
-  );
-};
-
-/**
  * Fetches a paginated list of all active security assessment workers in the cluster.
  * @summary Get all workers with pagination and sorting.
  */
@@ -12860,6 +12905,102 @@ export function useWorkersControllerGetWorkers<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Change a worker instance's desired max concurrency and/or pause state at runtime. The worker applies the change on its next control poll (a few seconds); shrinking concurrency never kills running jobs.
+ * @summary Update worker runtime settings
+ */
+export const workersControllerUpdateWorkerSettings = (
+  id: string,
+  updateWorkerSettingsDto: UpdateWorkerSettingsDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<WorkerInstance>(
+    {
+      url: `/api/workers/${id}/settings`,
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      data: updateWorkerSettingsDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getWorkersControllerUpdateWorkerSettingsMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof workersControllerUpdateWorkerSettings>>,
+    TError,
+    { id: string; data: UpdateWorkerSettingsDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof workersControllerUpdateWorkerSettings>>,
+  TError,
+  { id: string; data: UpdateWorkerSettingsDto },
+  TContext
+> => {
+  const mutationKey = ['workersControllerUpdateWorkerSettings'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof workersControllerUpdateWorkerSettings>>,
+    { id: string; data: UpdateWorkerSettingsDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return workersControllerUpdateWorkerSettings(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type WorkersControllerUpdateWorkerSettingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof workersControllerUpdateWorkerSettings>>
+>;
+export type WorkersControllerUpdateWorkerSettingsMutationBody =
+  UpdateWorkerSettingsDto;
+export type WorkersControllerUpdateWorkerSettingsMutationError = unknown;
+
+/**
+ * @summary Update worker runtime settings
+ */
+export const useWorkersControllerUpdateWorkerSettings = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof workersControllerUpdateWorkerSettings>>,
+      TError,
+      { id: string; data: UpdateWorkerSettingsDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof workersControllerUpdateWorkerSettings>>,
+  TError,
+  { id: string; data: UpdateWorkerSettingsDto },
+  TContext
+> => {
+  return useMutation(
+    getWorkersControllerUpdateWorkerSettingsMutationOptions(options),
+    queryClient,
+  );
+};
 
 /**
  * Registers a new security assessment tool in the system with specified configuration and capabilities.
@@ -22612,268 +22753,6 @@ export const useNotificationsControllerMarkAsRead = <
 };
 
 /**
- * Publishes a command to the remote-execute channel via Redis pub/sub. The command is enriched with an id (nanoid) and sessionId (uuid) before publishing.
- * @summary Run a remote command
- */
-export const remoteExecuteControllerRunCommand = (
-  runCommandDto: RunCommandDto,
-  options?: SecondParameter<typeof orvalClient>,
-  signal?: AbortSignal,
-) => {
-  return orvalClient<AppResponseSerialization>(
-    {
-      url: `/api/remote-execute/run`,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      data: runCommandDto,
-      signal,
-    },
-    options,
-  );
-};
-
-export const getRemoteExecuteControllerRunCommandMutationOptions = <
-  TError = unknown,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof remoteExecuteControllerRunCommand>>,
-    TError,
-    { data: RunCommandDto },
-    TContext
-  >;
-  request?: SecondParameter<typeof orvalClient>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof remoteExecuteControllerRunCommand>>,
-  TError,
-  { data: RunCommandDto },
-  TContext
-> => {
-  const mutationKey = ['remoteExecuteControllerRunCommand'];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      'mutationKey' in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof remoteExecuteControllerRunCommand>>,
-    { data: RunCommandDto }
-  > = (props) => {
-    const { data } = props ?? {};
-
-    return remoteExecuteControllerRunCommand(data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type RemoteExecuteControllerRunCommandMutationResult = NonNullable<
-  Awaited<ReturnType<typeof remoteExecuteControllerRunCommand>>
->;
-export type RemoteExecuteControllerRunCommandMutationBody = RunCommandDto;
-export type RemoteExecuteControllerRunCommandMutationError = unknown;
-
-/**
- * @summary Run a remote command
- */
-export const useRemoteExecuteControllerRunCommand = <
-  TError = unknown,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof remoteExecuteControllerRunCommand>>,
-      TError,
-      { data: RunCommandDto },
-      TContext
-    >;
-    request?: SecondParameter<typeof orvalClient>;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof remoteExecuteControllerRunCommand>>,
-  TError,
-  { data: RunCommandDto },
-  TContext
-> => {
-  return useMutation(
-    getRemoteExecuteControllerRunCommandMutationOptions(options),
-    queryClient,
-  );
-};
-
-/**
- * Server-Sent Events endpoint that streams commands published to the remote-execute channel for a specific sessionId in real-time. Each event is a JSON-encoded RemoteCommandPayload.
- * @summary Subscribe to remote-execute stream
- */
-export const remoteExecuteControllerStream = (
-  params: RemoteExecuteControllerStreamParams,
-  options?: SecondParameter<typeof orvalClient>,
-  signal?: AbortSignal,
-) => {
-  return orvalClient<AppResponseSerialization>(
-    { url: `/api/remote-execute/stream`, method: 'GET', params, signal },
-    options,
-  );
-};
-
-export const getRemoteExecuteControllerStreamQueryKey = (
-  params?: RemoteExecuteControllerStreamParams,
-) => {
-  return [`/api/remote-execute/stream`, ...(params ? [params] : [])] as const;
-};
-
-export const getRemoteExecuteControllerStreamQueryOptions = <
-  TData = Awaited<ReturnType<typeof remoteExecuteControllerStream>>,
-  TError = unknown,
->(
-  params: RemoteExecuteControllerStreamParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof remoteExecuteControllerStream>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof orvalClient>;
-  },
-) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
-
-  const queryKey =
-    queryOptions?.queryKey ?? getRemoteExecuteControllerStreamQueryKey(params);
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof remoteExecuteControllerStream>>
-  > = ({ signal }) =>
-    remoteExecuteControllerStream(params, requestOptions, signal);
-
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof remoteExecuteControllerStream>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-};
-
-export type RemoteExecuteControllerStreamQueryResult = NonNullable<
-  Awaited<ReturnType<typeof remoteExecuteControllerStream>>
->;
-export type RemoteExecuteControllerStreamQueryError = unknown;
-
-export function useRemoteExecuteControllerStream<
-  TData = Awaited<ReturnType<typeof remoteExecuteControllerStream>>,
-  TError = unknown,
->(
-  params: RemoteExecuteControllerStreamParams,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof remoteExecuteControllerStream>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof remoteExecuteControllerStream>>,
-          TError,
-          Awaited<ReturnType<typeof remoteExecuteControllerStream>>
-        >,
-        'initialData'
-      >;
-    request?: SecondParameter<typeof orvalClient>;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useRemoteExecuteControllerStream<
-  TData = Awaited<ReturnType<typeof remoteExecuteControllerStream>>,
-  TError = unknown,
->(
-  params: RemoteExecuteControllerStreamParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof remoteExecuteControllerStream>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof remoteExecuteControllerStream>>,
-          TError,
-          Awaited<ReturnType<typeof remoteExecuteControllerStream>>
-        >,
-        'initialData'
-      >;
-    request?: SecondParameter<typeof orvalClient>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useRemoteExecuteControllerStream<
-  TData = Awaited<ReturnType<typeof remoteExecuteControllerStream>>,
-  TError = unknown,
->(
-  params: RemoteExecuteControllerStreamParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof remoteExecuteControllerStream>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof orvalClient>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-/**
- * @summary Subscribe to remote-execute stream
- */
-
-export function useRemoteExecuteControllerStream<
-  TData = Awaited<ReturnType<typeof remoteExecuteControllerStream>>,
-  TError = unknown,
->(
-  params: RemoteExecuteControllerStreamParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof remoteExecuteControllerStream>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof orvalClient>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-} {
-  const queryOptions = getRemoteExecuteControllerStreamQueryOptions(
-    params,
-    options,
-  );
-
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-/**
  * Get all providers with pagination, filtered by owner
  * @summary Get all providers
  */
@@ -32440,450 +32319,3 @@ export function useStorageControllerGetFile<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
-
-/**
- * @summary Forward an image from a URL
- */
-export const storageControllerForwardImage = (
-  params: StorageControllerForwardImageParams,
-  options?: SecondParameter<typeof orvalClient>,
-  signal?: AbortSignal,
-) => {
-  return orvalClient<Blob>(
-    {
-      url: `/api/storage/forward`,
-      method: 'GET',
-      params,
-      responseType: 'blob',
-      signal,
-    },
-    options,
-  );
-};
-
-export const getStorageControllerForwardImageQueryKey = (
-  params?: StorageControllerForwardImageParams,
-) => {
-  return [`/api/storage/forward`, ...(params ? [params] : [])] as const;
-};
-
-export const getStorageControllerForwardImageQueryOptions = <
-  TData = Awaited<ReturnType<typeof storageControllerForwardImage>>,
-  TError = void,
->(
-  params: StorageControllerForwardImageParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof storageControllerForwardImage>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof orvalClient>;
-  },
-) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
-
-  const queryKey =
-    queryOptions?.queryKey ?? getStorageControllerForwardImageQueryKey(params);
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof storageControllerForwardImage>>
-  > = ({ signal }) =>
-    storageControllerForwardImage(params, requestOptions, signal);
-
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof storageControllerForwardImage>>,
-    TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-};
-
-export type StorageControllerForwardImageQueryResult = NonNullable<
-  Awaited<ReturnType<typeof storageControllerForwardImage>>
->;
-export type StorageControllerForwardImageQueryError = void;
-
-export function useStorageControllerForwardImage<
-  TData = Awaited<ReturnType<typeof storageControllerForwardImage>>,
-  TError = void,
->(
-  params: StorageControllerForwardImageParams,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof storageControllerForwardImage>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof storageControllerForwardImage>>,
-          TError,
-          Awaited<ReturnType<typeof storageControllerForwardImage>>
-        >,
-        'initialData'
-      >;
-    request?: SecondParameter<typeof orvalClient>;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useStorageControllerForwardImage<
-  TData = Awaited<ReturnType<typeof storageControllerForwardImage>>,
-  TError = void,
->(
-  params: StorageControllerForwardImageParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof storageControllerForwardImage>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof storageControllerForwardImage>>,
-          TError,
-          Awaited<ReturnType<typeof storageControllerForwardImage>>
-        >,
-        'initialData'
-      >;
-    request?: SecondParameter<typeof orvalClient>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useStorageControllerForwardImage<
-  TData = Awaited<ReturnType<typeof storageControllerForwardImage>>,
-  TError = void,
->(
-  params: StorageControllerForwardImageParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof storageControllerForwardImage>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof orvalClient>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-/**
- * @summary Forward an image from a URL
- */
-
-export function useStorageControllerForwardImage<
-  TData = Awaited<ReturnType<typeof storageControllerForwardImage>>,
-  TError = void,
->(
-  params: StorageControllerForwardImageParams,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof storageControllerForwardImage>>,
-        TError,
-        TData
-      >
-    >;
-    request?: SecondParameter<typeof orvalClient>;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-} {
-  const queryOptions = getStorageControllerForwardImageQueryOptions(
-    params,
-    options,
-  );
-
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-/**
- * Pause a pending or in-progress job.
- * @summary Pause a job
- */
-export const jobsRegistryControllerPauseJob = (
-  id: string,
-  options?: SecondParameter<typeof orvalClient>,
-  signal?: AbortSignal,
-) => {
-  return orvalClient<DefaultMessageResponseDto>(
-    { url: `/api/jobs-registry/${id}/pause`, method: 'POST', signal },
-    options,
-  );
-};
-
-export const getJobsRegistryControllerPauseJobMutationOptions = <
-  TError = unknown,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof jobsRegistryControllerPauseJob>>,
-    TError,
-    { id: string },
-    TContext
-  >;
-  request?: SecondParameter<typeof orvalClient>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof jobsRegistryControllerPauseJob>>,
-  TError,
-  { id: string },
-  TContext
-> => {
-  const mutationKey = ['jobsRegistryControllerPauseJob'];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      'mutationKey' in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof jobsRegistryControllerPauseJob>>,
-    { id: string }
-  > = (props) => {
-    const { id } = props ?? {};
-
-    return jobsRegistryControllerPauseJob(id, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type JobsRegistryControllerPauseJobMutationResult = NonNullable<
-  Awaited<ReturnType<typeof jobsRegistryControllerPauseJob>>
->;
-
-export type JobsRegistryControllerPauseJobMutationError = unknown;
-
-/**
- * @summary Pause a job
- */
-export const useJobsRegistryControllerPauseJob = <
-  TError = unknown,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof jobsRegistryControllerPauseJob>>,
-      TError,
-      { id: string },
-      TContext
-    >;
-    request?: SecondParameter<typeof orvalClient>;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof jobsRegistryControllerPauseJob>>,
-  TError,
-  { id: string },
-  TContext
-> => {
-  return useMutation(
-    getJobsRegistryControllerPauseJobMutationOptions(options),
-    queryClient,
-  );
-};
-
-/**
- * Resume a paused job.
- * @summary Resume a paused job
- */
-export const jobsRegistryControllerResumeJob = (
-  id: string,
-  options?: SecondParameter<typeof orvalClient>,
-  signal?: AbortSignal,
-) => {
-  return orvalClient<DefaultMessageResponseDto>(
-    { url: `/api/jobs-registry/${id}/resume`, method: 'POST', signal },
-    options,
-  );
-};
-
-export const getJobsRegistryControllerResumeJobMutationOptions = <
-  TError = unknown,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof jobsRegistryControllerResumeJob>>,
-    TError,
-    { id: string },
-    TContext
-  >;
-  request?: SecondParameter<typeof orvalClient>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof jobsRegistryControllerResumeJob>>,
-  TError,
-  { id: string },
-  TContext
-> => {
-  const mutationKey = ['jobsRegistryControllerResumeJob'];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      'mutationKey' in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof jobsRegistryControllerResumeJob>>,
-    { id: string }
-  > = (props) => {
-    const { id } = props ?? {};
-
-    return jobsRegistryControllerResumeJob(id, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type JobsRegistryControllerResumeJobMutationResult = NonNullable<
-  Awaited<ReturnType<typeof jobsRegistryControllerResumeJob>>
->;
-
-export type JobsRegistryControllerResumeJobMutationError = unknown;
-
-/**
- * @summary Resume a paused job
- */
-export const useJobsRegistryControllerResumeJob = <
-  TError = unknown,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof jobsRegistryControllerResumeJob>>,
-      TError,
-      { id: string },
-      TContext
-    >;
-    request?: SecondParameter<typeof orvalClient>;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof jobsRegistryControllerResumeJob>>,
-  TError,
-  { id: string },
-  TContext
-> => {
-  return useMutation(
-    getJobsRegistryControllerResumeJobMutationOptions(options),
-    queryClient,
-  );
-};
-
-/**
- * Change a worker instance's desired max concurrency and/or pause state at runtime.
- * @summary Update worker runtime settings
- */
-export const workersControllerUpdateWorkerSettings = (
-  id: string,
-  updateWorkerSettingsDto: UpdateWorkerSettingsDto,
-  options?: SecondParameter<typeof orvalClient>,
-  signal?: AbortSignal,
-) => {
-  return orvalClient<WorkerInstance>(
-    {
-      url: `/api/workers/${id}/settings`,
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      data: updateWorkerSettingsDto,
-      signal,
-    },
-    options,
-  );
-};
-
-export const getWorkersControllerUpdateWorkerSettingsMutationOptions = <
-  TError = unknown,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof workersControllerUpdateWorkerSettings>>,
-    TError,
-    { id: string; data: UpdateWorkerSettingsDto },
-    TContext
-  >;
-  request?: SecondParameter<typeof orvalClient>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof workersControllerUpdateWorkerSettings>>,
-  TError,
-  { id: string; data: UpdateWorkerSettingsDto },
-  TContext
-> => {
-  const mutationKey = ['workersControllerUpdateWorkerSettings'];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      'mutationKey' in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof workersControllerUpdateWorkerSettings>>,
-    { id: string; data: UpdateWorkerSettingsDto }
-  > = (props) => {
-    const { id, data } = props ?? {};
-
-    return workersControllerUpdateWorkerSettings(id, data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type WorkersControllerUpdateWorkerSettingsMutationResult = NonNullable<
-  Awaited<ReturnType<typeof workersControllerUpdateWorkerSettings>>
->;
-
-export type WorkersControllerUpdateWorkerSettingsMutationBody =
-  UpdateWorkerSettingsDto;
-
-export type WorkersControllerUpdateWorkerSettingsMutationError = unknown;
-
-/**
- * @summary Update worker runtime settings
- */
-export const useWorkersControllerUpdateWorkerSettings = <
-  TError = unknown,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof workersControllerUpdateWorkerSettings>>,
-      TError,
-      { id: string; data: UpdateWorkerSettingsDto },
-      TContext
-    >;
-    request?: SecondParameter<typeof orvalClient>;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof workersControllerUpdateWorkerSettings>>,
-  TError,
-  { id: string; data: UpdateWorkerSettingsDto },
-  TContext
-> => {
-  return useMutation(
-    getWorkersControllerUpdateWorkerSettingsMutationOptions(options),
-    queryClient,
-  );
-};

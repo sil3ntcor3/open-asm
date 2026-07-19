@@ -9,7 +9,6 @@ import {
   type LLMConfigWithProviderDto,
 } from '@/services/apis/gen/queries';
 import { orvalClient } from '@/services/apis/axios-client';
-import { useRemoteExecuteStream } from '@/hooks/use-remote-execute-stream';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // ---------------------------------------------------------------------------
@@ -96,7 +95,6 @@ interface UseAgentChatReturn {
   hasSentFirstMessage: boolean;
   hasMoreMessages: boolean;
   isLoadingMoreMessages: boolean;
-  remoteExecuteEvents: Map<string, import('@/hooks/use-remote-execute-stream').RemoteExecuteStreamEvent[]>;
   onSendMessage: (content: string, options?: { agentMode?: string }) => void;
   onRetry: (() => void) | undefined;
   onStop: () => void;
@@ -226,7 +224,6 @@ export function useAgentChat({
   const [todos, setTodos] = useState<AgentTodoItem[]>([]);
   const [title, setTitle] = useState<string | null>(null);
   const [createdAt, setCreatedAt] = useState<string | null>(null);
-  const { appendEvent, eventsMap } = useRemoteExecuteStream();
   const { data: providers } =
     useAgentsControllerGetLLMConfigs<LLMConfigWithProviderDto[]>();
   const prefer = providers?.find((item) => item.isPreferred);
@@ -360,10 +357,6 @@ export function useAgentChat({
             return payload.todos;
           });
         }
-      }
-      if (data.type === 'data-remote-execute-output') {
-        const event = data.data as import('@/hooks/use-remote-execute-stream').RemoteExecuteStreamEvent;
-        appendEvent(event);
       }
     },
   });
@@ -623,7 +616,6 @@ export function useAgentChat({
     hasSentFirstMessage,
     hasMoreMessages: hasNextPage ?? false,
     isLoadingMoreMessages: isFetchingNextPage,
-    remoteExecuteEvents: eventsMap,
     onSendMessage: handleSendMessage,
     onRetry: onRetryAction,
     onStop: handleStop,

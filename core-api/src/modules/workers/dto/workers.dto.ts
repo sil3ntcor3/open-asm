@@ -15,8 +15,8 @@ import { Type, Transform } from 'class-transformer';
 
 export class WorkerManifestResponseDto {
   @ApiProperty({
-    description: 'Commands to initialize worker tools',
-    example: ['nuclei -ut'],
+    description: 'Commands to initialize worker tools (disabled by default)',
+    example: [],
     type: [String],
   })
   initCommands: string[];
@@ -38,10 +38,6 @@ export class WorkerJoinDto {
   @ApiProperty()
   @IsString()
   apiKey: string;
-
-  @ApiProperty({ required: false })
-  @IsString()
-  signature: string;
 
   @ApiProperty({ required: false })
   @IsString()
@@ -96,7 +92,13 @@ export class UpdateWorkerSettingsDto {
    * finish (running jobs are never killed). Null resets the worker to its
    * local WORKER_MAX_CONCURRENCY configuration.
    */
-  @ApiProperty({ required: false, nullable: true, minimum: 1, maximum: 100 })
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    type: Number,
+    minimum: 1,
+    maximum: 100,
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()

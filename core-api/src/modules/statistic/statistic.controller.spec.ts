@@ -39,7 +39,7 @@ describe('StatisticController', () => {
       const expectedResult = { assets: 10, targets: 5 } as any;
       mockStatisticService.getStatistics.mockResolvedValue(expectedResult);
 
-      const result = await controller.getStatistics(query);
+      const result = await controller.getStatistics(query, query.workspaceId);
       expect(result).toBe(expectedResult);
       expect(service.getStatistics).toHaveBeenCalledWith(query);
     });

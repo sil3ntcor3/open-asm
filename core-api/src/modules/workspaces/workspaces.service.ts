@@ -90,6 +90,7 @@ export class WorkspacesService implements OnModuleInit {
     await this.workspaceMembersRepository.save({
       workspace: newWorkspace,
       user: { id },
+      role: WorkspaceRole.OWNER,
     });
 
     await this.workflowsService.createDefaultWorkflows(newWorkspace.id);
@@ -340,16 +341,13 @@ export class WorkspacesService implements OnModuleInit {
     workspaceId: string,
     userContext: UserContextPayload,
   ): Promise<GetApiKeyResponseDto> {
+    const workspace = await this.getWorkspaceById(workspaceId, userContext);
+
     const apiKey = await this.apiKeyService.create({
       name: `API Key for workspace ${workspaceId}`,
       type: ApiKeyType.WORKSPACE,
       ref: workspaceId,
     });
-
-    const workspace = await this.getWorkspaceByIdAndOwner(
-      workspaceId,
-      userContext,
-    );
 
     workspace.apiKey = apiKey;
     await this.repo.save(workspace);
@@ -369,10 +367,7 @@ export class WorkspacesService implements OnModuleInit {
   ): Promise<GetWorkspaceConfigsDto> {
     const swaggerMetadata = getSwaggerMetadata(Workspace);
 
-    const workspace = await this.getWorkspaceByIdAndOwner(
-      workspaceId,
-      userContext,
-    );
+    const workspace = await this.getWorkspaceById(workspaceId, userContext);
 
     if (!workspace) {
       throw new NotFoundException('Workspace not found');
@@ -457,7 +452,7 @@ export class WorkspacesService implements OnModuleInit {
     workspaceId: string,
     userContext: UserContextPayload,
   ): Promise<GetApiKeyResponseDto> {
-    await this.getWorkspaceByIdAndOwner(workspaceId, userContext);
+    await this.getWorkspaceById(workspaceId, userContext);
     try {
       const apiKey = await this.apiKeyService.getCurrentApiKey(
         ApiKeyType.WORKSPACE,
@@ -483,7 +478,7 @@ export class WorkspacesService implements OnModuleInit {
    */
   public async getWorkspaceById(
     id: string,
-    userContext: UserContextPayload,
+    userContext: Pick<UserContextPayload, 'id'>,
   ): Promise<Workspace> {
     const userId = userContext.id;
     const workspace = await this.repo

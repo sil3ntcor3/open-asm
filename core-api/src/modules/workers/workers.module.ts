@@ -7,12 +7,11 @@ import { NetworkInterface } from '../internal-networks/entities/network-interfac
 import { Job } from '../jobs-registry/entities/job.entity';
 import { WorkspaceTool } from '../tools/entities/workspace_tools.entity';
 import { ToolsModule } from '../tools/tools.module';
-import { AgentConversation } from '@/modules/agents/entities/agent-conversation.entity';
 import { AliveStreamManager } from './alive-stream-manager.service';
 import { WorkerInstance } from './entities/worker.entity';
+import { ToolArtifactService } from './tool-artifact.service';
 import { WorkersController } from './workers.controller';
 import { WorkersService } from './workers.service';
-import { RemoteExecuteSubscribeService } from './remote-execute-subscribe.service';
 import { GrpcWorkerContext } from '@/common/guards/grpc-worker-context.service';
 
 @Global()
@@ -25,7 +24,6 @@ import { GrpcWorkerContext } from '@/common/guards/grpc-worker-context.service';
       WorkspaceTool,
       NetworkInterface,
       InternalNetwork,
-      AgentConversation,
     ]),
     ApiKeysModule,
     forwardRef(() => ToolsModule),
@@ -33,15 +31,15 @@ import { GrpcWorkerContext } from '@/common/guards/grpc-worker-context.service';
   controllers: [WorkersController],
   providers: [
     WorkersService,
-    RemoteExecuteSubscribeService,
     GrpcWorkerContext,
     AliveStreamManager,
+    ToolArtifactService,
   ],
   exports: [
     WorkersService,
-    RemoteExecuteSubscribeService,
     GrpcWorkerContext,
     AliveStreamManager,
+    ToolArtifactService,
   ],
 })
 export class WorkersModule {}

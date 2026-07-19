@@ -52,7 +52,6 @@ export default function AgentsChatPage() {
     hasSentFirstMessage,
     hasMoreMessages,
     isLoadingMoreMessages,
-    remoteExecuteEvents,
     onSendMessage,
     onRetry,
     onStop,
@@ -122,7 +121,6 @@ export default function AgentsChatPage() {
           todos={todos}
           showTodoAboveInput={!isLargeScreen}
           selectedToolCallId={selectedToolCallId}
-          remoteExecuteEvents={remoteExecuteEvents}
         />
       </div>
 

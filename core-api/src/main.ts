@@ -1,5 +1,6 @@
 import { ReflectionService } from '@grpc/reflection';
 import { Logger, ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { NestFactory, Reflector } from '@nestjs/core';
 import type { MicroserviceOptions } from '@nestjs/microservices';
 import { Transport } from '@nestjs/microservices';
@@ -24,6 +25,12 @@ import {
   DEFAULT_PORT,
 } from './common/constants/app.constants';
 import { AuthGuard } from './common/guards/auth.guard';
+import { WorkspacePolicyGuard } from './common/authorization/workspace-policy.guard';
+import {
+  getGrpcServerCredentials,
+  isGrpcReflectionEnabled,
+} from './common/grpc/grpc-transport';
+import { validateWorkerEnrollmentConfiguration } from './common/grpc/worker-enrollment';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,
@@ -51,6 +58,7 @@ async function bootstrap() {
   const reflector = app.get(Reflector);
 
   app.useGlobalGuards(new AuthGuard(reflector, app.get(AUTH_INSTANCE_KEY)));
+  app.useGlobalGuards(app.get(WorkspacePolicyGuard));
 
   // Configure cookie parser
   app.use(cookieParser());
@@ -109,7 +117,13 @@ async function bootstrap() {
   }
 
   fs.writeFileSync(pathOutputOpenApi, JSON.stringify(documentFactory()));
-  const grpcPort = process.env.GRPC_PORT ?? DEFAULT_GRPC_PORT;
+  const configService = app.get(ConfigService);
+  validateWorkerEnrollmentConfiguration(configService);
+  const grpcPort = configService.get<string>('GRPC_PORT') ?? DEFAULT_GRPC_PORT;
+  const grpcBindHost =
+    configService.get<string>('GRPC_BIND_HOST') ?? '0.0.0.0';
+  const grpcCredentials = getGrpcServerCredentials(configService);
+  const reflectionEnabled = isGrpcReflectionEnabled(configService);
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.GRPC,
     options: {
@@ -118,7 +132,8 @@ async function bootstrap() {
         join(__dirname, 'proto/workers.proto'),
         join(__dirname, 'proto/jobs_registry.proto'),
       ],
-      url: `0.0.0.0:${grpcPort}`,
+      url: `${grpcBindHost}:${grpcPort}`,
+      credentials: grpcCredentials,
       loader: {
         keepCase: false,
         longs: String,
@@ -127,8 +142,10 @@ async function bootstrap() {
         oneofs: true,
       },
       onLoadPackageDefinition: (pkg, server) => {
-        const reflection = new ReflectionService(pkg);
-        reflection.addToServer(server);
+        if (reflectionEnabled) {
+          const reflection = new ReflectionService(pkg);
+          reflection.addToServer(server);
+        }
       },
       maxReceiveMessageLength: 64 * 1024 * 1024,
       maxSendMessageLength: 64 * 1024 * 1024,

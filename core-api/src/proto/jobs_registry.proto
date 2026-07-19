@@ -73,6 +73,16 @@ message UpdateResultDto {
   DataPayloadResult data = 2;
 }
 
+enum ExecutionOutcome {
+  EXECUTION_OUTCOME_UNSPECIFIED = 0;
+  EXECUTION_OUTCOME_SUCCEEDED = 1;
+  EXECUTION_OUTCOME_FAILED = 2;
+  EXECUTION_OUTCOME_TIMED_OUT = 3;
+  EXECUTION_OUTCOME_CANCELED = 4;
+  EXECUTION_OUTCOME_OUTPUT_LIMITED = 5;
+  EXECUTION_OUTCOME_START_FAILED = 6;
+}
+
 message DataPayloadResult {
   bool error = 1;
   optional string raw = 2;
@@ -83,6 +93,12 @@ message DataPayloadResult {
     VulnerabilityList vulnerabilities = 6;
     AssetTagList asset_tags = 7;
   }
+  ExecutionOutcome outcome = 8;
+  int32 exit_code = 9;
+  string failure_message = 10;
+  bool stdout_truncated = 11;
+  bool stderr_truncated = 12;
+  string stderr = 13;
 }
 
 message AssetList {

@@ -301,11 +301,9 @@ export class TargetsService implements OnModuleInit {
       this.validateTargetValue(target.value, type, !!internalNetworkId);
     }
 
-    // Check if the workspace exists and the user is the owner
-    await this.workspacesService.getWorkspaceByIdAndOwner(
-      workspaceId,
-      userContext,
-    );
+    // Route policy decides which member roles may create targets. Keep the
+    // service-level lookup to prevent use against an inaccessible workspace.
+    await this.workspacesService.getWorkspaceById(workspaceId, userContext);
 
     const targetValues = targets.map((t) => t.value);
 
@@ -492,10 +490,7 @@ export class TargetsService implements OnModuleInit {
   ): Promise<DiscoverTargetsResultDto> {
     const { targetIds } = dto;
 
-    await this.workspacesService.getWorkspaceByIdAndOwner(
-      workspaceId,
-      userContext,
-    );
+    await this.workspacesService.getWorkspaceById(workspaceId, userContext);
 
     const workspaceConfigs =
       await this.workspacesService.getWorkspaceConfigValue(workspaceId);
@@ -725,30 +720,45 @@ export class TargetsService implements OnModuleInit {
   public async deleteTargetFromWorkspace(
     id: string,
     workspaceId: string,
-    userContext: UserContextPayload,
   ) {
-    await this.workspacesService.getWorkspaceByIdAndOwner(
-      workspaceId,
-      userContext,
-    );
+    await this.repo.manager.transaction(async (manager) => {
+      const workspaceTargetRepository = manager.getRepository(WorkspaceTarget);
+      const targetRepository = manager.getRepository(Target);
+      const workspaceTarget = await workspaceTargetRepository.findOne({
+        where: {
+          target: { id },
+          workspace: { id: workspaceId },
+        },
+        lock: { mode: 'pessimistic_write' },
+      });
 
-    const workspaceTarget = await this.workspaceTargetRepository.findOneBy({
-      target: { id },
-      workspace: { id: workspaceId },
-    });
+      if (!workspaceTarget) {
+        throw new NotFoundException('Target not found in workspace');
+      }
 
-    await this.repo.delete(id);
+      await workspaceTargetRepository.delete({
+        target: { id },
+        workspace: { id: workspaceId },
+      });
 
-    if (!workspaceTarget) {
-      throw new NotFoundException('Target not found in workspace');
-    }
-
-    await this.workspaceTargetRepository.delete({
-      target: { id },
-      workspace: { id: workspaceId },
+      const remainingWorkspaceCount = await workspaceTargetRepository.count({
+        where: { target: { id } },
+      });
+      if (remainingWorkspaceCount === 0) {
+        await targetRepository.delete(id);
+      }
     });
 
     return { message: 'Target deleted successfully' };
+  }
+
+  /**
+   * Starts a rescan only after proving that the target belongs to the selected
+   * workspace.
+   */
+  public async reScanTarget(id: string, workspaceId: string) {
+    await this.assertTargetInWorkspace(id, workspaceId);
+    return this.assetService.reScan(id);
   }
 
   /**
@@ -759,7 +769,12 @@ export class TargetsService implements OnModuleInit {
    * @throws NotFoundException if the target is not found.
    * @returns The updated target entity.
    */
-  public async updateTarget(id: string, dto: UpdateTargetDto): Promise<Target> {
+  public async updateTarget(
+    id: string,
+    dto: UpdateTargetDto,
+    workspaceId: string,
+  ): Promise<Target> {
+    await this.assertTargetInWorkspace(id, workspaceId);
     const target = await this.repo.findOneBy({ id });
     if (!target) {
       throw new NotFoundException('Target not found');
@@ -803,6 +818,20 @@ export class TargetsService implements OnModuleInit {
     }
 
     return updatedTarget;
+  }
+
+  /** Verifies target membership before any ID-based mutation or execution. */
+  private async assertTargetInWorkspace(
+    targetId: string,
+    workspaceId: string,
+  ): Promise<void> {
+    const workspaceTarget = await this.workspaceTargetRepository.findOneBy({
+      target: { id: targetId },
+      workspace: { id: workspaceId },
+    });
+    if (!workspaceTarget) {
+      throw new NotFoundException('Target not found in workspace');
+    }
   }
 
   /**

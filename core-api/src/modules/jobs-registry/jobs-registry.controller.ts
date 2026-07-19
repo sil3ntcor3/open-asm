@@ -1,4 +1,6 @@
 import { WORKER_TOKEN_HEADER } from '@/common/constants/app.constants';
+import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
+import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
 import { Public, WorkspaceId } from '@/common/decorators/app.decorator';
 import { WorkerTokenAuth } from '@/common/decorators/worker-token-auth.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
@@ -10,7 +12,6 @@ import {
 import { IdQueryParamDto } from '@/common/dtos/id-query-param.dto';
 import { GrpcWorkerContext } from '@/common/guards/grpc-worker-context.service';
 import { GrpcWorkerTokenGuard } from '@/common/guards/grpc-worker-token.guard';
-import { WorkspaceOwnerGuard } from '@/common/guards/workspace-owner.guard';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
 import { Metadata } from '@grpc/grpc-js';
 import {
@@ -80,8 +81,12 @@ export class JobsRegistryController {
     },
   })
   @Get('')
-  getManyJobs(@Query() query: GetManyJobsRequestDto) {
-    return this.jobsRegistryService.getManyJobs(query);
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
+  getManyJobs(
+    @Query() query: GetManyJobsRequestDto,
+    @WorkspaceId() workspaceId: string,
+  ) {
+    return this.jobsRegistryService.getManyJobs({ ...query, workspaceId });
   }
 
   @Doc({
@@ -96,6 +101,7 @@ export class JobsRegistryController {
     },
   })
   @Get('/timeline')
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   getJobsTimeline(@WorkspaceId() workspaceId: string) {
     return this.jobsRegistryService.getJobsTimeline(workspaceId);
   }
@@ -152,6 +158,7 @@ export class JobsRegistryController {
     },
   })
   @Get('/histories')
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   getManyJobHistories(
     @WorkspaceId() workspaceId: string,
     @Query() query: GetManyBaseQueryParams,
@@ -171,6 +178,7 @@ export class JobsRegistryController {
     },
   })
   @Get('/histories/:id')
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   getJobHistoryDetail(
     @WorkspaceId() workspaceId: string,
     @Param('id') id: string,
@@ -178,7 +186,7 @@ export class JobsRegistryController {
     return this.jobsRegistryService.getJobHistoryDetail(workspaceId, id);
   }
 
-  @UseGuards(WorkspaceOwnerGuard)
+  @WorkspacePolicy(WorkspaceAction.SCAN_EXECUTE)
   @Doc({
     summary: 'Pause jobs in a job history',
     description:
@@ -198,7 +206,7 @@ export class JobsRegistryController {
     return this.jobsRegistryService.pauseJobHistoryJobs(workspaceId, params.id);
   }
 
-  @UseGuards(WorkspaceOwnerGuard)
+  @WorkspacePolicy(WorkspaceAction.SCAN_EXECUTE)
   @Doc({
     summary: 'Resume jobs in a job history',
     description:
@@ -221,7 +229,7 @@ export class JobsRegistryController {
     );
   }
 
-  @UseGuards(WorkspaceOwnerGuard)
+  @WorkspacePolicy(WorkspaceAction.SCAN_EXECUTE)
   @Doc({
     summary: 'Cancel jobs in a job history',
     description:
@@ -244,7 +252,7 @@ export class JobsRegistryController {
     );
   }
 
-  @UseGuards(WorkspaceOwnerGuard)
+  @WorkspacePolicy(WorkspaceAction.SCAN_EXECUTE)
   @Doc({
     summary: 'Delete jobs in a job history',
     description:
@@ -267,7 +275,7 @@ export class JobsRegistryController {
     );
   }
 
-  @UseGuards(WorkspaceOwnerGuard)
+  @WorkspacePolicy(WorkspaceAction.SCAN_EXECUTE)
   @Doc({
     summary: 'Re-run a job',
     description:
@@ -287,7 +295,7 @@ export class JobsRegistryController {
     return this.jobsRegistryService.reRunJob(workspaceId, params.id);
   }
 
-  @UseGuards(WorkspaceOwnerGuard)
+  @WorkspacePolicy(WorkspaceAction.SCAN_EXECUTE)
   @Doc({
     summary: 'Cancel a job',
     description: 'Cancel a job by its ID in the specified workspace',
@@ -306,7 +314,7 @@ export class JobsRegistryController {
     return this.jobsRegistryService.cancelJob(workspaceId, params.id);
   }
 
-  @UseGuards(WorkspaceOwnerGuard)
+  @WorkspacePolicy(WorkspaceAction.SCAN_EXECUTE)
   @Doc({
     summary: 'Pause a job',
     description:
@@ -326,7 +334,7 @@ export class JobsRegistryController {
     return this.jobsRegistryService.pauseJob(workspaceId, params.id);
   }
 
-  @UseGuards(WorkspaceOwnerGuard)
+  @WorkspacePolicy(WorkspaceAction.SCAN_EXECUTE)
   @Doc({
     summary: 'Resume a paused job',
     description:
@@ -346,7 +354,7 @@ export class JobsRegistryController {
     return this.jobsRegistryService.resumeJob(workspaceId, params.id);
   }
 
-  @UseGuards(WorkspaceOwnerGuard)
+  @WorkspacePolicy(WorkspaceAction.SCAN_EXECUTE)
   @Doc({
     summary: 'Delete a job',
     description: 'Delete a job by its ID in the specified workspace',

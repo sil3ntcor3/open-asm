@@ -96,7 +96,7 @@ export class WorkerInstance extends BaseEntity {
    * (WORKER_MAX_CONCURRENCY). Delivered to the worker on its
    * next control poll; shrinking takes effect as running jobs finish.
    */
-  @ApiProperty({ required: false, nullable: true })
+  @ApiProperty({ required: false, nullable: true, type: Number })
   @Column({ type: 'int', nullable: true })
   maxConcurrency?: number | null;
 

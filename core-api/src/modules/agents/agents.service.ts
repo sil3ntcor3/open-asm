@@ -92,7 +92,7 @@ export class AgentsService {
       {
         id: AgentMode.AGENT,
         name: 'Agent',
-        description: 'Auto pentest, connect terminal, and more',
+        description: 'Analyze workspace security data and coordinate scans',
         color: '#3b82f6',
         isAvailable: true,
       },

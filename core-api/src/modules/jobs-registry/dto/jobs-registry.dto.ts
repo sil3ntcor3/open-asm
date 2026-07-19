@@ -10,6 +10,7 @@ import { Workflow } from '@/modules/workflows/entities/workflow.entity';
 import { ApiProperty, PickType } from '@nestjs/swagger';
 import { Expose, Transform, Type } from 'class-transformer';
 import { IsBoolean, IsIn, IsObject, IsOptional, IsUUID } from 'class-validator';
+import { IsEnum, IsInt, IsString } from 'class-validator';
 import { JobHistory } from '../entities/job-history.entity';
 import { Job } from '../entities/job.entity';
 
@@ -80,6 +81,61 @@ export class DataPayloadResult {
     },
   )
   payload: JobDataResultType;
+
+  @ApiProperty({
+    enum: [
+      'EXECUTION_OUTCOME_UNSPECIFIED',
+      'EXECUTION_OUTCOME_SUCCEEDED',
+      'EXECUTION_OUTCOME_FAILED',
+      'EXECUTION_OUTCOME_TIMED_OUT',
+      'EXECUTION_OUTCOME_CANCELED',
+      'EXECUTION_OUTCOME_OUTPUT_LIMITED',
+      'EXECUTION_OUTCOME_START_FAILED',
+    ],
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum({
+    EXECUTION_OUTCOME_UNSPECIFIED: 'EXECUTION_OUTCOME_UNSPECIFIED',
+    EXECUTION_OUTCOME_SUCCEEDED: 'EXECUTION_OUTCOME_SUCCEEDED',
+    EXECUTION_OUTCOME_FAILED: 'EXECUTION_OUTCOME_FAILED',
+    EXECUTION_OUTCOME_TIMED_OUT: 'EXECUTION_OUTCOME_TIMED_OUT',
+    EXECUTION_OUTCOME_CANCELED: 'EXECUTION_OUTCOME_CANCELED',
+    EXECUTION_OUTCOME_OUTPUT_LIMITED: 'EXECUTION_OUTCOME_OUTPUT_LIMITED',
+    EXECUTION_OUTCOME_START_FAILED: 'EXECUTION_OUTCOME_START_FAILED',
+  })
+  @Expose()
+  outcome?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsInt()
+  @Expose()
+  exitCode?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  @Expose()
+  failureMessage?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  @Expose()
+  stdoutTruncated?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  @Expose()
+  stderrTruncated?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  @Expose()
+  stderr?: string;
 }
 export class UpdateResultDto {
   @ApiProperty()
