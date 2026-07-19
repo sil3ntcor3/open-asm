@@ -172,6 +172,33 @@ task dev
 task worker:dev
 ```
 
+### Branch and Container Image Channels
+
+Use `dev` as the integration branch for testing changes and `main` as the
+stable branch. Develop changes on short-lived feature branches, open pull
+requests into `dev`, and promote tested changes from `dev` to `main` with a
+pull request.
+
+Changes to a service automatically publish the matching Docker Hub image:
+
+| Git branch | Mutable image tag | Purpose |
+|------------|-------------------|---------|
+| `dev` | `sil3ntcor3/myoasm-<service>:dev` | Integration testing |
+| `main` | `sil3ntcor3/myoasm-<service>:latest` | Stable deployments |
+
+Every build also publishes an immutable
+`sil3ntcor3/myoasm-<service>:sha-<12-character-commit>` tag for traceability.
+The supported service names are `console`, `api`, and `worker`.
+
+Pull and run the development images with the Compose override:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml pull
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --no-build
+```
+
+Set `MYOASM_IMAGE_TAG` to an immutable `sha-...` tag to test an exact build.
+
 ### Key Commands
 
 ```bash

@@ -1,0 +1,12 @@
+services:
+  console:
+    image: sil3ntcor3/myoasm-console:${MYOASM_IMAGE_TAG:-dev}
+
+  core-api:
+    image: sil3ntcor3/myoasm-api:${MYOASM_IMAGE_TAG:-dev}
+
+  oasm-worker:
+    image: sil3ntcor3/myoasm-worker:${MYOASM_IMAGE_TAG:-dev}
+
+  migration:
+    image: sil3ntcor3/myoasm-api:${MYOASM_IMAGE_TAG:-dev}
