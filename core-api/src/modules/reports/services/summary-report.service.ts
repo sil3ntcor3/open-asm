@@ -14,6 +14,15 @@ import type { ReportData } from '../types/report-data.type';
 type RiskLevel = Exclude<Severity, Severity.INFO>;
 type ScanStatus = VulnerabilityAnalyzeStatus | Exclude<JobStatus, JobStatus.CANCELLED>;
 
+interface TargetReportRow {
+  t_id: string;
+  t_value: string;
+  t_type: TargetType;
+  t_lastDiscoveredAt: Date | null;
+  vulnCount: string;
+  targetStatus: string;
+}
+
 @Injectable()
 export class SummaryReportService {
   constructor(
@@ -411,7 +420,7 @@ export class SummaryReportService {
     workspaceId: string,
     options?: { startDate?: Date; endDate?: Date; targetIds?: string[] },
     limit = 10,
-  ) {
+  ): Promise<ReportData['targets']> {
     // `vulnerabilities` and `jobs` are both one-to-many off `asset`. Joining
     // them as siblings forms a cartesian product (vulns x jobs) per asset,
     // which exceeds statement_timeout on well-scanned targets. Aggregate each
@@ -439,7 +448,7 @@ export class SummaryReportService {
     }
     params.push(limit);
 
-    const targets = (await this.targetRepo.query(
+    const targets = await this.targetRepo.query<TargetReportRow[]>(
       `SELECT
          t.id AS t_id,
          t.value AS t_value,
@@ -468,16 +477,9 @@ export class SummaryReportService {
        ) js ON TRUE
        WHERE ${outerConditions.join(' AND ')}
        ORDER BY vl.cnt DESC
-       LIMIT $${params.length}`,
+      LIMIT $${params.length}`,
       params,
-    )) as Array<{
-      t_id: string;
-      t_value: string;
-      t_type: TargetType;
-      t_lastDiscoveredAt: Date | null;
-      vulnCount: string;
-      targetStatus: string;
-    }>;
+    );
 
     return targets.map((t) => ({
       id: t.t_id,
