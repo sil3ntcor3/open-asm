@@ -68,7 +68,7 @@ jobs:
           CHANGED=()
           $add_console && CHANGED+=( '{"image":"sil3ntcor3/myoasm-console:latest","context":"console","dockerfile":"console/Dockerfile"}' )
           $add_api && CHANGED+=( '{"image":"sil3ntcor3/myoasm-api:latest","context":"core-api","dockerfile":"core-api/Dockerfile"}' )
-          $add_worker && CHANGED+=( '{"image":"sil3ntcor3/myoasm-worker:latest","context":".","dockerfile":"worker/Dockerfile"}' )
+          $add_worker && CHANGED+=( '{"image":"sil3ntcor3/myoasm-worker:latest","context":"worker","dockerfile":"worker/Dockerfile"}' )
 
           if [ ${#CHANGED[@]} -eq 0 ]; then
             MATRIX='{"include":[]}'
