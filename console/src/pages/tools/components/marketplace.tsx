@@ -1,4 +1,7 @@
-import { useToolsControllerGetManyTools } from '@/services/apis/gen/queries';
+import {
+  getToolsControllerGetManyToolsQueryKey,
+  useToolsControllerGetManyTools,
+} from '@/services/apis/gen/queries';
 import { LayoutGrid } from 'lucide-react';
 import ToolsList from '../tools-list';
 import ToolInstallButton from './tool-install-button';
@@ -12,7 +15,10 @@ const Marketplace = () => {
     {},
     {
       query: {
-        queryKey: [selectedWorkspaceId],
+        queryKey: [
+          ...getToolsControllerGetManyToolsQueryKey({}),
+          selectedWorkspaceId,
+        ],
         enabled: !!selectedWorkspaceId,
       },
     },
