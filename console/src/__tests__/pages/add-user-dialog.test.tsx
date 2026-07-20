@@ -1,5 +1,6 @@
 import { AddUserDialog } from '@/pages/admin/add-user-dialog';
 import { renderWithProviders, screen, waitFor } from '@/test/utils';
+import { workspaceRolePermissionsFixture } from '@/test/fixtures/workspace-role-permissions';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { createUser, addWorkspaceMember } = vi.hoisted(() => ({
@@ -30,6 +31,11 @@ vi.mock('@/hooks/useWorkspaceSelector', () => ({
 
 vi.mock('@/services/apis/gen/queries', () => ({
   workspacesControllerAddWorkspaceMember: addWorkspaceMember,
+  useWorkspacesControllerGetWorkspaceRolePermissions: vi.fn(() => ({
+    data: workspaceRolePermissionsFixture,
+    isLoading: false,
+    isError: false,
+  })),
 }));
 
 describe('AddUserDialog', () => {

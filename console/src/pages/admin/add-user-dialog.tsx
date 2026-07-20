@@ -37,6 +37,7 @@ import { Loader2Icon, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
+import { useWorkspacePermissions } from '@/hooks/useWorkspacePermissions';
 import { z } from 'zod';
 
 const formSchema = z.object({
@@ -52,11 +53,9 @@ type FormValues = z.infer<typeof formSchema>;
 export function AddUserDialog() {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
-  const { selectedWorkspace, workspaces } = useWorkspaceSelector();
-  const currentWorkspace = workspaces.find(
-    (workspace) => workspace.id === selectedWorkspace,
-  );
-  const canAssignWorkspaceRole = currentWorkspace?.role === 'owner';
+  const { selectedWorkspace } = useWorkspaceSelector();
+  const { can } = useWorkspacePermissions();
+  const canAssignWorkspaceRole = can('member.manage');
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	pb "github.com/oasm-platform/open-asm/grpc-client/go/jobs_registry"
+	pb "github.com/sil3ntcor3/open-asm/grpc-client/go/jobs_registry"
 )
 
 func (c *Client) JobsNext(ctx context.Context) (*pb.Job, error) {

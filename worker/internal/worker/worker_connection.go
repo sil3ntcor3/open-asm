@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/oasm-platform/oasm-sdk-go/oasm"
-	"github.com/oasm-platform/open-asm/grpc-client/go/workers"
+	"github.com/sil3ntcor3/open-asm/grpc-client/go/workers"
 )
 
 func connectWorker(ctx context.Context, client *oasm.Client, ready chan<- bool) {

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderWithProviders, screen, waitFor } from '@/test/utils';
 import Settings from '@/pages/settings/settings';
 import { useParams } from '@tanstack/react-router';
+import { workspaceRolePermissionsFixture } from '@/test/fixtures/workspace-role-permissions';
 
 vi.mock('@tanstack/react-router', async () => {
   const actual = await vi.importActual('@tanstack/react-router');
@@ -16,6 +17,18 @@ vi.mock('@/utils/authClient', () => ({
     data: { user: { id: 'user-1', role: 'admin' } },
   })),
 }));
+
+vi.mock('@/services/apis/gen/queries', async () => {
+  const actual = await vi.importActual('@/services/apis/gen/queries');
+  return {
+    ...actual,
+    useWorkspacesControllerGetWorkspaceRolePermissions: vi.fn(() => ({
+      data: workspaceRolePermissionsFixture,
+      isLoading: false,
+      isError: false,
+    })),
+  };
+});
 
 vi.mock('@/pages/settings/components/workspace-settings', () => ({
   default: () => <div data-testid="workspace-settings">WorkspaceSettings</div>,
@@ -98,6 +111,21 @@ describe('Settings Page', () => {
       ).toBeInTheDocument();
       expect(screen.getByTestId('workspace-members')).toBeInTheDocument();
     });
+  });
+
+  it('renders the server-enforced role and permission matrix', async () => {
+    vi.mocked(useParams).mockReturnValue({ tab: 'permissions' });
+
+    renderWithProviders(<Settings />);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Roles and permissions' }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText('Platform roles')).toBeInTheDocument();
+    expect(await screen.findByText('Workspace roles')).toBeInTheDocument();
+    expect(screen.getByText('Security Administrator')).toBeInTheDocument();
+    expect(screen.getByText('Create targets')).toBeInTheDocument();
+    expect(screen.getByText('Run scans')).toBeInTheDocument();
   });
 
   it('filters tabs based on user role', async () => {

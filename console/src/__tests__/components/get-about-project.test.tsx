@@ -9,14 +9,13 @@ const { checkForUpdates } = vi.hoisted(() => ({
 vi.mock('@/services/apis/gen/queries', () => ({
   useRootControllerGetLatestVersion: vi.fn(() => ({
     data: {
-      currentVersion: '0.6.3-dev+abc123',
+      currentVersion: '0.1.0-dev.42+abc123',
       currentCommit: 'abc123',
       channel: 'dev',
-      latestVersion: '0.6.3',
+      latestVersion: '0.1.0',
       isLatest: true,
       releaseDate: '2026-07-03T15:37:06Z',
-      releaseUrl:
-        'https://github.com/oasm-platform/open-asm/releases/tag/v0.6.3',
+      releaseUrl: 'https://github.com/sil3ntcor3/open-asm/releases/tag/v0.1.0',
       lastCheckedAt: '2026-07-19T14:00:00.000Z',
       notes: 'Release notes',
     },
@@ -40,14 +39,20 @@ describe('GetAboutProject', () => {
   it('shows installed build identity and the latest stable release', async () => {
     renderWithProviders(<GetAboutProject />);
 
-    expect(await screen.findByText('0.6.3-dev+abc123')).toBeInTheDocument();
+    expect(
+      await screen.findByText('0.1.0-dev.42+abc123'),
+    ).toBeInTheDocument();
     expect(await screen.findByText('Development channel')).toBeInTheDocument();
     expect(
       await screen.findByText('Latest stable release'),
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'View release' })).toHaveAttribute(
       'href',
-      'https://github.com/oasm-platform/open-asm/releases/tag/v0.6.3',
+      'https://github.com/sil3ntcor3/open-asm/releases/tag/v0.1.0',
+    );
+    expect(screen.getByRole('link', { name: /License/ })).toHaveAttribute(
+      'href',
+      'https://github.com/sil3ntcor3/open-asm/blob/main/LICENSE',
     );
   });
 

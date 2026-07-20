@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	jobRegistryPb "github.com/oasm-platform/open-asm/grpc-client/go/jobs_registry"
-	workerPb "github.com/oasm-platform/open-asm/grpc-client/go/workers"
+	jobRegistryPb "github.com/sil3ntcor3/open-asm/grpc-client/go/jobs_registry"
+	workerPb "github.com/sil3ntcor3/open-asm/grpc-client/go/workers"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -90,9 +90,9 @@ func (c *Client) Jobs() jobRegistryPb.JobsRegistryServiceClient {
 }
 
 func (c *Client) WorkerID() string {
-    return c.workerID
+	return c.workerID
 }
 
 func (c *Client) Token() string {
-    return c.token
+	return c.token
 }

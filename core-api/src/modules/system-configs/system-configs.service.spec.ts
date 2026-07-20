@@ -59,14 +59,18 @@ describe('SystemConfigsService', () => {
 
   it('can force an update check and cache the release metadata', async () => {
     const release = {
-      tag_name: 'v0.6.3',
-      html_url: 'https://github.com/oasm-platform/open-asm/releases/tag/v0.6.3',
+      tag_name: 'v0.1.0',
+      html_url: 'https://github.com/sil3ntcor3/open-asm/releases/tag/v0.1.0',
       body: 'Release notes',
       published_at: '2026-07-03T15:37:06Z',
     };
     jest.mocked(axios.get).mockResolvedValue({ data: release });
 
     await expect(service.checkForUpdates(true)).resolves.toBe(true);
+
+    expect(axios.get).toHaveBeenCalledWith(
+      'https://api.github.com/repos/sil3ntcor3/open-asm/releases/latest',
+    );
 
     expect(mockRedisService.set).toHaveBeenCalledWith(
       'version:last_check',

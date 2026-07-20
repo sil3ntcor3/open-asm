@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     Downloads the latest oasm-worker binary for your platform from
-    https://github.com/oasm-platform/open-asm releases, verifies it,
+    https://github.com/sil3ntcor3/open-asm releases, verifies it,
     and optionally starts the worker immediately.
 
 .PARAMETER ApiKey
@@ -62,7 +62,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Repository = "oasm-platform/open-asm"
+$Repository = "sil3ntcor3/open-asm"
 
 # ============================================================
 # Platform Detection

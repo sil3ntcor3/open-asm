@@ -1,9 +1,15 @@
-import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { ToolsControllerGetManyToolsType, useToolsControllerInstallTool, useToolsControllerUninstallTool, type Tool } from "@/services/apis/gen/queries";
-import { CheckCircle } from "lucide-react";
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useWorkspacePermissions } from '@/hooks/useWorkspacePermissions';
+import {
+  ToolsControllerGetManyToolsType,
+  useToolsControllerInstallTool,
+  useToolsControllerUninstallTool,
+  type Tool,
+} from '@/services/apis/gen/queries';
+import { CheckCircle } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
 interface ToolInstallButtonProps {
   tool: Tool;
@@ -11,7 +17,13 @@ interface ToolInstallButtonProps {
   onInstallChange?: () => void; // Callback when installation status changes
 }
 
-const ToolInstallButton = ({ tool, workspaceId, onInstallChange }: ToolInstallButtonProps) => {
+const ToolInstallButton = ({
+  tool,
+  workspaceId,
+  onInstallChange,
+}: ToolInstallButtonProps) => {
+  const { can, isLoading: isLoadingPermissions } = useWorkspacePermissions();
+  const canManageTools = can('tool.manage');
   // State to track the installation status
   const [isInstalled, setIsInstalled] = useState(tool.isInstalled);
 
@@ -26,10 +38,29 @@ const ToolInstallButton = ({ tool, workspaceId, onInstallChange }: ToolInstallBu
   // Using mutation hook for uninstall API
   const uninstallToolMutation = useToolsControllerUninstallTool();
 
+  const isBuiltIn = tool.type === ToolsControllerGetManyToolsType.built_in;
+
+  if (isBuiltIn) {
+    return (
+      <Button variant="outline" disabled>
+        <CheckCircle className="w-4 h-4" />
+        Built-in
+      </Button>
+    );
+  }
+
+  if (isLoadingPermissions || !canManageTools) {
+    return (
+      <Button variant="outline" disabled>
+        {isLoadingPermissions ? 'Loading...' : 'Read only'}
+      </Button>
+    );
+  }
+
   const handleInstall = () => {
     // Check if workspaceId exists
     if (!workspaceId) {
-      toast("No workspace selected");
+      toast('No workspace selected');
       return;
     }
 
@@ -45,23 +76,23 @@ const ToolInstallButton = ({ tool, workspaceId, onInstallChange }: ToolInstallBu
       },
       {
         onSuccess: () => {
-          toast("Tool installed successfully");
+          toast('Tool installed successfully');
           // Call callback to update the interface
           if (onInstallChange) onInstallChange();
         },
         onError: () => {
           // Revert the UI state on error
           setIsInstalled(false);
-          toast("Failed to install tool");
+          toast('Failed to install tool');
         },
-      }
+      },
     );
   };
 
   const handleUninstall = () => {
     // Check if workspaceId exists
     if (!workspaceId) {
-      toast("No workspace selected");
+      toast('No workspace selected');
       return;
     }
 
@@ -77,41 +108,34 @@ const ToolInstallButton = ({ tool, workspaceId, onInstallChange }: ToolInstallBu
       },
       {
         onSuccess: () => {
-          toast("Tool uninstalled successfully");
+          toast('Tool uninstalled successfully');
           // Call callback to update the interface
           if (onInstallChange) onInstallChange();
         },
         onError: () => {
           // Revert the UI state on error
           setIsInstalled(true);
-          toast("Failed to uninstall tool");
+          toast('Failed to uninstall tool');
         },
-      }
+      },
     );
   };
 
   // If the tool is installed (based on local state), show the installed button with checkmark
   if (isInstalled) {
-    // For built-in tools, they cannot be uninstalled
-    const isBuiltIn = tool.type === ToolsControllerGetManyToolsType.built_in;
-
     return (
       <ConfirmDialog
         title="Uninstall Tool"
         description={`Are you sure you want to uninstall "${tool.name}"?`}
         onConfirm={handleUninstall}
-        disabled={isBuiltIn}
         trigger={
-          <Button
-            variant="outline"
-            disabled={uninstallToolMutation.isPending || isBuiltIn}
-          >
+          <Button variant="outline" disabled={uninstallToolMutation.isPending}>
             {uninstallToolMutation.isPending ? (
-              "Uninstalling..."
+              'Uninstalling...'
             ) : (
               <>
                 <CheckCircle className="w-4 h-4" />
-                {isBuiltIn ? "Built-in" : "Installed"}
+                Installed
               </>
             )}
           </Button>
@@ -128,11 +152,7 @@ const ToolInstallButton = ({ tool, workspaceId, onInstallChange }: ToolInstallBu
       onConfirm={handleInstall}
       trigger={
         <Button variant="default" disabled={installToolMutation.isPending}>
-          {installToolMutation.isPending ? (
-            "Installing..."
-          ) : (
-            "Install"
-          )}
+          {installToolMutation.isPending ? 'Installing...' : 'Install'}
         </Button>
       }
     />

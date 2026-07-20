@@ -209,6 +209,34 @@ export class WorkersService {
   }
 
   /**
+   * Resolves the worker scope used for settings authorization without exposing
+   * a workspace worker that belongs to a different workspace.
+   */
+  public async getWorkerManagementScope(
+    id: string,
+    workspaceId: string,
+  ): Promise<WorkerScope> {
+    const worker = await this.repo.findOne({
+      where: { id },
+      select: {
+        id: true,
+        scope: true,
+        workspaceId: true,
+      },
+    });
+
+    if (
+      !worker ||
+      (worker.scope === WorkerScope.WORKSPACE &&
+        worker.workspaceId !== workspaceId)
+    ) {
+      throw new NotFoundException('Worker not found');
+    }
+
+    return worker.scope;
+  }
+
+  /**
    * Retrieves a paginated list of workers.
    *
    * @param query - The query parameters for filtering and pagination,
@@ -672,5 +700,4 @@ export class WorkersService {
   public async enableAgentMode(workerId: string): Promise<void> {
     await this.repo.update(workerId, { enabledAgentMode: true });
   }
-
 }

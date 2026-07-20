@@ -331,6 +331,78 @@ export type GetManyWorkspaceResponseDtoDto = {
   pageCount: number;
 };
 
+export type WorkspaceRoleDefinitionDtoRole =
+  (typeof WorkspaceRoleDefinitionDtoRole)[keyof typeof WorkspaceRoleDefinitionDtoRole];
+
+export const WorkspaceRoleDefinitionDtoRole = {
+  viewer: 'viewer',
+  analyst: 'analyst',
+  operator: 'operator',
+  security_admin: 'security_admin',
+  owner: 'owner',
+} as const;
+
+export type WorkspaceRoleDefinitionDtoPermissionsItem =
+  (typeof WorkspaceRoleDefinitionDtoPermissionsItem)[keyof typeof WorkspaceRoleDefinitionDtoPermissionsItem];
+
+export const WorkspaceRoleDefinitionDtoPermissionsItem = {
+  workspaceread: 'workspace.read',
+  workspacemanage: 'workspace.manage',
+  secretmanage: 'secret.manage',
+  targetcreate: 'target.create',
+  targetmanage: 'target.manage',
+  scanexecute: 'scan.execute',
+  findingtriage: 'finding.triage',
+  reportmanage: 'report.manage',
+  agentuse: 'agent.use',
+  agentmanage: 'agent.manage',
+  membermanage: 'member.manage',
+  workerread: 'worker.read',
+  workermanage: 'worker.manage',
+  toolmanage: 'tool.manage',
+  templatemanage: 'template.manage',
+} as const;
+
+export type WorkspaceRoleDefinitionDto = {
+  role: WorkspaceRoleDefinitionDtoRole;
+  label: string;
+  description: string;
+  permissions: WorkspaceRoleDefinitionDtoPermissionsItem[];
+};
+
+export type WorkspaceActionDefinitionDtoAction =
+  (typeof WorkspaceActionDefinitionDtoAction)[keyof typeof WorkspaceActionDefinitionDtoAction];
+
+export const WorkspaceActionDefinitionDtoAction = {
+  workspaceread: 'workspace.read',
+  workspacemanage: 'workspace.manage',
+  secretmanage: 'secret.manage',
+  targetcreate: 'target.create',
+  targetmanage: 'target.manage',
+  scanexecute: 'scan.execute',
+  findingtriage: 'finding.triage',
+  reportmanage: 'report.manage',
+  agentuse: 'agent.use',
+  agentmanage: 'agent.manage',
+  membermanage: 'member.manage',
+  workerread: 'worker.read',
+  workermanage: 'worker.manage',
+  toolmanage: 'tool.manage',
+  templatemanage: 'template.manage',
+} as const;
+
+export type WorkspaceActionDefinitionDto = {
+  action: WorkspaceActionDefinitionDtoAction;
+  label: string;
+  description: string;
+  category: string;
+};
+
+export type WorkspaceRolePermissionsResponseDto = {
+  roles: WorkspaceRoleDefinitionDto[];
+  actions: WorkspaceActionDefinitionDto[];
+};
+
 export type WorkspaceMemberResponseDtoRole =
   (typeof WorkspaceMemberResponseDtoRole)[keyof typeof WorkspaceMemberResponseDtoRole];
 
@@ -5078,6 +5150,193 @@ export const useWorkspacesControllerUpdateWorkspaceConfigs = <
     queryClient,
   );
 };
+
+/**
+ * Returns the canonical five-role permission matrix enforced by workspace authorization.
+ * @summary Get workspace role permissions
+ */
+export const workspacesControllerGetWorkspaceRolePermissions = (
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<WorkspaceRolePermissionsResponseDto>(
+    { url: `/api/workspaces/role-permissions`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getWorkspacesControllerGetWorkspaceRolePermissionsQueryKey =
+  () => {
+    return [`/api/workspaces/role-permissions`] as const;
+  };
+
+export const getWorkspacesControllerGetWorkspaceRolePermissionsQueryOptions = <
+  TData = Awaited<
+    ReturnType<typeof workspacesControllerGetWorkspaceRolePermissions>
+  >,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<
+      Awaited<
+        ReturnType<typeof workspacesControllerGetWorkspaceRolePermissions>
+      >,
+      TError,
+      TData
+    >
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getWorkspacesControllerGetWorkspaceRolePermissionsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof workspacesControllerGetWorkspaceRolePermissions>>
+  > = ({ signal }) =>
+    workspacesControllerGetWorkspaceRolePermissions(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof workspacesControllerGetWorkspaceRolePermissions>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type WorkspacesControllerGetWorkspaceRolePermissionsQueryResult =
+  NonNullable<
+    Awaited<ReturnType<typeof workspacesControllerGetWorkspaceRolePermissions>>
+  >;
+export type WorkspacesControllerGetWorkspaceRolePermissionsQueryError = unknown;
+
+export function useWorkspacesControllerGetWorkspaceRolePermissions<
+  TData = Awaited<
+    ReturnType<typeof workspacesControllerGetWorkspaceRolePermissions>
+  >,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<
+          ReturnType<typeof workspacesControllerGetWorkspaceRolePermissions>
+        >,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<
+            ReturnType<typeof workspacesControllerGetWorkspaceRolePermissions>
+          >,
+          TError,
+          Awaited<
+            ReturnType<typeof workspacesControllerGetWorkspaceRolePermissions>
+          >
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useWorkspacesControllerGetWorkspaceRolePermissions<
+  TData = Awaited<
+    ReturnType<typeof workspacesControllerGetWorkspaceRolePermissions>
+  >,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<
+          ReturnType<typeof workspacesControllerGetWorkspaceRolePermissions>
+        >,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<
+            ReturnType<typeof workspacesControllerGetWorkspaceRolePermissions>
+          >,
+          TError,
+          Awaited<
+            ReturnType<typeof workspacesControllerGetWorkspaceRolePermissions>
+          >
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useWorkspacesControllerGetWorkspaceRolePermissions<
+  TData = Awaited<
+    ReturnType<typeof workspacesControllerGetWorkspaceRolePermissions>
+  >,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<
+          ReturnType<typeof workspacesControllerGetWorkspaceRolePermissions>
+        >,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get workspace role permissions
+ */
+
+export function useWorkspacesControllerGetWorkspaceRolePermissions<
+  TData = Awaited<
+    ReturnType<typeof workspacesControllerGetWorkspaceRolePermissions>
+  >,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<
+          ReturnType<typeof workspacesControllerGetWorkspaceRolePermissions>
+        >,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions =
+    getWorkspacesControllerGetWorkspaceRolePermissionsQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * Lists members and their roles in the selected workspace.

@@ -5,7 +5,7 @@ import (
 	"os"
 	"runtime"
 
-	pb "github.com/oasm-platform/open-asm/grpc-client/go/workers"
+	pb "github.com/sil3ntcor3/open-asm/grpc-client/go/workers"
 )
 
 func getMetadata() *pb.WorkerMetadata {

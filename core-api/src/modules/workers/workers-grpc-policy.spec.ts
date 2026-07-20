@@ -1,5 +1,6 @@
 import { GrpcWorkerTokenGuard } from '@/common/guards/grpc-worker-token.guard';
 import { WORKER_TOKEN_HEADER } from '@/common/constants/app.constants';
+import type { WorkspacePolicyService } from '@/common/authorization/workspace-policy.service';
 import type { GrpcWorkerContext } from '@/common/guards/grpc-worker-context.service';
 import { Metadata } from '@grpc/grpc-js';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
@@ -47,6 +48,7 @@ describe('WorkersController gRPC policy', () => {
       {} as AliveStreamManager,
       {} as ToolArtifactService,
       grpcWorkerContext,
+      {} as WorkspacePolicyService,
     );
     const metadata = new Metadata();
     metadata.set(WORKER_TOKEN_HEADER, 'issued-token');

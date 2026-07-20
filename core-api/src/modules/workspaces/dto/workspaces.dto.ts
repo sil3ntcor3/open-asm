@@ -1,5 +1,6 @@
 import { GetManyBaseQueryParams } from '@/common/dtos/get-many-base.dto';
 import { WorkspaceRole } from '@/common/enums/enum';
+import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
 import { ApiProperty, PartialType, PickType } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsEmail, IsIn, IsOptional, IsUUID } from 'class-validator';
@@ -163,4 +164,40 @@ export class WorkspaceMemberResponseDto {
 
   @ApiProperty({ enum: WorkspaceRole })
   role: WorkspaceRole;
+}
+
+export class WorkspaceActionDefinitionDto {
+  @ApiProperty({ enum: WorkspaceAction })
+  action: WorkspaceAction;
+
+  @ApiProperty()
+  label: string;
+
+  @ApiProperty()
+  description: string;
+
+  @ApiProperty()
+  category: string;
+}
+
+export class WorkspaceRoleDefinitionDto {
+  @ApiProperty({ enum: WorkspaceRole })
+  role: WorkspaceRole;
+
+  @ApiProperty()
+  label: string;
+
+  @ApiProperty()
+  description: string;
+
+  @ApiProperty({ enum: WorkspaceAction, isArray: true })
+  permissions: readonly WorkspaceAction[];
+}
+
+export class WorkspaceRolePermissionsResponseDto {
+  @ApiProperty({ type: [WorkspaceRoleDefinitionDto] })
+  roles: WorkspaceRoleDefinitionDto[];
+
+  @ApiProperty({ type: [WorkspaceActionDefinitionDto] })
+  actions: WorkspaceActionDefinitionDto[];
 }
