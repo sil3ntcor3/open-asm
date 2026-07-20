@@ -1,6 +1,6 @@
 # Stage 1: Build
 # Build context is the REPO ROOT (see docker-compose.yml): worker/go.mod
-# replaces github.com/oasm-platform/open-asm/grpc-client/go with the local
+# replaces github.com/sil3ntcor3/open-asm/grpc-client/go with the local
 # ../grpc-client/go, so both directories must be inside the context.
 FROM golang:1.26-alpine AS builder
 

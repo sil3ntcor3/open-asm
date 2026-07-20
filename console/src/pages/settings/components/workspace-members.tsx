@@ -47,6 +47,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Loader2Icon, Trash2, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { useWorkspacePermissions } from '@/hooks/useWorkspacePermissions';
 
 const initials = (name: string) =>
   name
@@ -62,7 +63,8 @@ export default function WorkspaceMembers() {
   const selected = workspaces.find(
     (workspace) => workspace.id === selectedWorkspace,
   );
-  const canManage = selected?.role === 'owner';
+  const { can } = useWorkspacePermissions();
+  const canManage = can('member.manage');
   const [addOpen, setAddOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<AssignableWorkspaceRole>('viewer');

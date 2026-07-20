@@ -168,7 +168,7 @@ export default function GetAboutProject() {
       <a
         target="_blank"
         rel="noreferrer"
-        href="https://github.com/oasm-platform/open-asm/blob/main/LICENSE"
+        href="https://github.com/sil3ntcor3/open-asm/blob/main/LICENSE"
       >
         <Card className="transition-colors hover:bg-muted/40">
           <CardHeader>

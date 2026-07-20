@@ -3,7 +3,7 @@ package oasm
 import (
 	"time"
 
-	pb "github.com/oasm-platform/open-asm/grpc-client/go/jobs_registry"
+	pb "github.com/sil3ntcor3/open-asm/grpc-client/go/jobs_registry"
 )
 
 func (c *Client) GetDNSRecordsMap(job *pb.Job) map[string]interface{} {

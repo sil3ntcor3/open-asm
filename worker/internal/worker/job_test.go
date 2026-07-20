@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/oasm-platform/open-asm/grpc-client/go/jobs_registry"
+	"github.com/sil3ntcor3/open-asm/grpc-client/go/jobs_registry"
 )
 
 func TestRunToolCommandClassifiesExecutionOutcomes(t *testing.T) {

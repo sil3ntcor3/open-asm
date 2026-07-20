@@ -17,7 +17,7 @@ set -euo pipefail
 #   - 64-bit Linux or macOS (amd64 or arm64)
 # ============================================================
 
-REPOSITORY="oasm-platform/open-asm"
+REPOSITORY="sil3ntcor3/open-asm"
 DEFAULT_INSTALL_DIR="$HOME/.oasm-worker"
 DEFAULT_GRPC_HOST="localhost"
 DEFAULT_GRPC_PORT=16276

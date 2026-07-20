@@ -1,15 +1,19 @@
 import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
 import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
+import { WorkspacePolicyService } from '@/common/authorization/workspace-policy.service';
 import { WORKER_TOKEN_HEADER } from '@/common/constants/app.constants';
-import { WorkspaceId } from '@/common/decorators/app.decorator';
+import { UserContext, WorkspaceId } from '@/common/decorators/app.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
+import { Role, WorkerScope } from '@/common/enums/enum';
 import { GrpcWorkerContext } from '@/common/guards/grpc-worker-context.service';
 import { GrpcWorkerTokenGuard } from '@/common/guards/grpc-worker-token.guard';
+import { UserContextPayload } from '@/common/interfaces/app.interface';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
 import { Metadata } from '@grpc/grpc-js';
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Logger,
   Param,
@@ -40,6 +44,7 @@ export class WorkersController {
     private readonly aliveStreamManager: AliveStreamManager,
     private readonly toolArtifactService: ToolArtifactService,
     private readonly grpcWorkerContext: GrpcWorkerContext,
+    private readonly workspacePolicyService: WorkspacePolicyService,
   ) {}
 
   /** Resolves the worker identity established by GrpcWorkerTokenGuard. */
@@ -75,18 +80,37 @@ export class WorkersController {
   @Doc({
     summary: 'Update worker runtime settings',
     description:
-      'Change a worker instance\'s desired max concurrency and/or pause state at runtime. The worker applies the change on its next control poll (a few seconds); shrinking concurrency never kills running jobs.',
+      "Change a worker instance's desired max concurrency and/or pause state at runtime. The worker applies the change on its next control poll (a few seconds); shrinking concurrency never kills running jobs.",
     response: {
       serialization: WorkerInstance,
     },
   })
   @Patch('/:id/settings')
-  @WorkspacePolicy(WorkspaceAction.WORKER_MANAGE)
-  updateWorkerSettings(
+  async updateWorkerSettings(
     @Param('id') id: string,
     @Body() dto: UpdateWorkerSettingsDto,
+    @UserContext() userContext: UserContextPayload,
     @WorkspaceId() workspaceId: string,
   ) {
+    const scope = await this.workersService.getWorkerManagementScope(
+      id,
+      workspaceId,
+    );
+
+    if (scope === WorkerScope.CLOUD) {
+      if (userContext.role !== Role.ADMIN) {
+        throw new ForbiddenException(
+          'Only platform administrators can manage global workers',
+        );
+      }
+    } else {
+      await this.workspacePolicyService.assertAllowed(
+        userContext.id,
+        workspaceId,
+        WorkspaceAction.WORKER_MANAGE,
+      );
+    }
+
     return this.workersService.updateWorkerSettings(id, dto, workspaceId);
   }
 
@@ -216,17 +240,20 @@ export class WorkersController {
 
   @GrpcMethod('WorkersService', 'ConnectInternalNetwork')
   @UseGuards(GrpcWorkerTokenGuard)
-  async grpcConnectInternalNetwork(request: {
-    workerId: string;
-    networkId: string;
-    networkInterfaces: Array<{
-      interfaceName: string;
-      ipAddress: string;
-      cidr: string;
-      gatewayIp: string;
-      gatewayMac: string;
-    }>;
-  }, metadata: Metadata): Promise<{ message: string }> {
+  async grpcConnectInternalNetwork(
+    request: {
+      workerId: string;
+      networkId: string;
+      networkInterfaces: Array<{
+        interfaceName: string;
+        ipAddress: string;
+        cidr: string;
+        gatewayIp: string;
+        gatewayMac: string;
+      }>;
+    },
+    metadata: Metadata,
+  ): Promise<{ message: string }> {
     return this.workersService.connectInternalNetwork({
       ...request,
       workerId: this.authenticatedWorkerId(metadata),

@@ -81,6 +81,7 @@ export const mockWorkspaces = [
     id: 'workspace-1',
     name: 'Test Workspace',
     slug: 'test-workspace',
+    role: 'operator',
     createdAt: '2026-01-01T00:00:00Z',
   },
 ];

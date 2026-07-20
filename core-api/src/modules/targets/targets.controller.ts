@@ -1,6 +1,7 @@
 import { UserContext, WorkspaceId } from '@/common/decorators/app.decorator';
 import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
 import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
+import { WorkspacePolicyService } from '@/common/authorization/workspace-policy.service';
 import { Doc } from '@/common/doc/doc.decorator';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import { IdQueryParamDto } from '@/common/dtos/id-query-param.dto';
@@ -33,7 +34,10 @@ import { TargetsService } from './targets.service';
 
 @Controller('targets')
 export class TargetsController {
-  constructor(private readonly targetsService: TargetsService) {}
+  constructor(
+    private readonly targetsService: TargetsService,
+    private readonly workspacePolicyService: WorkspacePolicyService,
+  ) {}
 
   @Doc({
     summary: 'Create multiple targets in bulk',
@@ -48,11 +52,19 @@ export class TargetsController {
   })
   @Post('bulk')
   @WorkspacePolicy(WorkspaceAction.TARGET_CREATE)
-  createMultipleTargets(
+  async createMultipleTargets(
     @Body() dto: CreateMultipleTargetsDto,
     @UserContext() userContext: UserContextPayload,
     @WorkspaceId() workspaceId: string,
-  ) {
+  ): Promise<BulkTargetResultDto> {
+    if (dto.startDiscovery !== false) {
+      await this.workspacePolicyService.assertAllowed(
+        userContext.id,
+        workspaceId,
+        WorkspaceAction.SCAN_EXECUTE,
+      );
+    }
+
     return this.targetsService.createMultipleTargets(
       dto,
       workspaceId,

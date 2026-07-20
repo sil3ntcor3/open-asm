@@ -39,30 +39,35 @@ describe('WorkspacePolicyService', () => {
     [WorkspaceRole.OWNER, WorkspaceAction.WORKER_READ, true],
     [WorkspaceRole.SECURITY_ADMIN, WorkspaceAction.WORKER_MANAGE, true],
     [WorkspaceRole.OWNER, WorkspaceAction.WORKER_MANAGE, false],
+    [WorkspaceRole.SECURITY_ADMIN, WorkspaceAction.SECRET_MANAGE, true],
+    [WorkspaceRole.OWNER, WorkspaceAction.SECRET_MANAGE, false],
     [WorkspaceRole.OWNER, WorkspaceAction.MEMBER_MANAGE, true],
     [WorkspaceRole.SECURITY_ADMIN, WorkspaceAction.MEMBER_MANAGE, false],
     [WorkspaceRole.OWNER, WorkspaceAction.WORKSPACE_MANAGE, true],
+    [WorkspaceRole.OWNER, WorkspaceAction.TARGET_CREATE, true],
+    [WorkspaceRole.OWNER, WorkspaceAction.TARGET_MANAGE, true],
     [WorkspaceRole.OWNER, WorkspaceAction.SCAN_EXECUTE, false],
-  ])(
-    'enforces %s permission for %s',
-    async (role, action, shouldAllow) => {
-      const { service } = createService(role);
+  ])('enforces %s permission for %s', async (role, action, shouldAllow) => {
+    const { service } = createService(role);
 
-      const assertion = service.assertAllowed(userId, workspaceId, action);
+    const assertion = service.assertAllowed(userId, workspaceId, action);
 
-      if (shouldAllow) {
-        await expect(assertion).resolves.toBeUndefined();
-      } else {
-        await expect(assertion).rejects.toThrow('Workspace action denied');
-      }
-    },
-  );
+    if (shouldAllow) {
+      await expect(assertion).resolves.toBeUndefined();
+    } else {
+      await expect(assertion).rejects.toThrow('Workspace action denied');
+    }
+  });
 
   it('denies a user who is not a member of the selected workspace', async () => {
     const { service, repository } = createService();
 
     await expect(
-      service.assertAllowed(userId, workspaceId, WorkspaceAction.WORKSPACE_READ),
+      service.assertAllowed(
+        userId,
+        workspaceId,
+        WorkspaceAction.WORKSPACE_READ,
+      ),
     ).rejects.toThrow('Workspace action denied');
     expect(repository.findOne).toHaveBeenCalledWith({
       where: {
@@ -70,5 +75,42 @@ describe('WorkspacePolicyService', () => {
         user: { id: userId },
       },
     });
+  });
+
+  it('publishes the same five-role permission catalog used for enforcement', () => {
+    const { service } = createService();
+    const catalogService = service as WorkspacePolicyService & {
+      getRolePermissions?: () => Array<{
+        role: WorkspaceRole;
+        permissions: WorkspaceAction[];
+      }>;
+    };
+
+    expect(catalogService.getRolePermissions).toBeDefined();
+    if (!catalogService.getRolePermissions) return;
+
+    const catalog = catalogService.getRolePermissions();
+    expect(catalog.map(({ role }) => role)).toEqual([
+      WorkspaceRole.VIEWER,
+      WorkspaceRole.ANALYST,
+      WorkspaceRole.OPERATOR,
+      WorkspaceRole.SECURITY_ADMIN,
+      WorkspaceRole.OWNER,
+    ]);
+    expect(
+      catalog.find(({ role }) => role === WorkspaceRole.OWNER)?.permissions,
+    ).toEqual(
+      expect.arrayContaining([
+        WorkspaceAction.TARGET_CREATE,
+        WorkspaceAction.TARGET_MANAGE,
+        WorkspaceAction.MEMBER_MANAGE,
+      ]),
+    );
+    expect(
+      catalog.find(({ role }) => role === WorkspaceRole.OWNER)?.permissions,
+    ).not.toContain(WorkspaceAction.SCAN_EXECUTE);
+    expect(
+      catalog.find(({ role }) => role === WorkspaceRole.OWNER)?.permissions,
+    ).not.toContain(WorkspaceAction.SECRET_MANAGE);
   });
 });

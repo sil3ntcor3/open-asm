@@ -10,7 +10,7 @@ require (
 	github.com/go-rod/stealth v0.4.9
 	github.com/joho/godotenv v1.5.1
 	github.com/oasm-platform/oasm-sdk-go v0.1.11
-	github.com/oasm-platform/open-asm/grpc-client/go v0.0.0-20260618004722-4483b4b84523
+	github.com/sil3ntcor3/open-asm/grpc-client/go v0.0.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	google.golang.org/grpc v1.82.0
@@ -45,6 +45,6 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
-replace github.com/oasm-platform/open-asm/grpc-client/go => ../grpc-client/go
+replace github.com/sil3ntcor3/open-asm/grpc-client/go => ../grpc-client/go
 
 replace github.com/oasm-platform/oasm-sdk-go => ./third_party/oasm-sdk-go

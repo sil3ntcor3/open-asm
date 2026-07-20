@@ -1,6 +1,10 @@
 import { UserContext, WorkspaceId } from '@/common/decorators/app.decorator';
 import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
 import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
+import {
+  WORKSPACE_ACTION_DEFINITIONS,
+  WorkspacePolicyService,
+} from '@/common/authorization/workspace-policy.service';
 import { Doc } from '@/common/doc/doc.decorator';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import { IdQueryParamDto } from '@/common/dtos/id-query-param.dto';
@@ -33,6 +37,7 @@ import {
   UpdateWorkspaceDto,
   WorkspaceMemberParamsDto,
   WorkspaceMemberResponseDto,
+  WorkspaceRolePermissionsResponseDto,
   WorkspaceResponseDto,
 } from './dto/workspaces.dto';
 import { Workspace } from './entities/workspace.entity';
@@ -41,7 +46,10 @@ import { WorkspacesService } from './workspaces.service';
 @ApiTags('Workspaces')
 @Controller('workspaces')
 export class WorkspacesController {
-  constructor(private readonly workspacesService: WorkspacesService) {}
+  constructor(
+    private readonly workspacesService: WorkspacesService,
+    private readonly workspacePolicyService: WorkspacePolicyService,
+  ) {}
 
   @Doc({
     summary: 'Create Workspace',
@@ -145,6 +153,24 @@ export class WorkspacesController {
       req,
       res,
     );
+  }
+
+  @Doc({
+    summary: 'Get workspace role permissions',
+    description:
+      'Returns the canonical five-role permission matrix enforced by workspace authorization.',
+    response: {
+      serialization: WorkspaceRolePermissionsResponseDto,
+    },
+  })
+  @Get('role-permissions')
+  getWorkspaceRolePermissions(): WorkspaceRolePermissionsResponseDto {
+    return {
+      roles: this.workspacePolicyService.getRolePermissions(),
+      actions: WORKSPACE_ACTION_DEFINITIONS.map((definition) => ({
+        ...definition,
+      })),
+    };
   }
 
   @Doc({

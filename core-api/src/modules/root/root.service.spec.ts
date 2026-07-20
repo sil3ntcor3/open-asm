@@ -14,7 +14,7 @@ describe('RootService', () => {
   beforeEach(async () => {
     redisGet = jest.fn();
     configValues = {
-      APP_VERSION: '0.6.3-dev+abc123',
+      APP_VERSION: '0.1.0-dev.42+abc123',
       APP_CHANNEL: 'dev',
       APP_COMMIT: 'abc123',
       NODE_ENV: 'production',
@@ -67,11 +67,11 @@ describe('RootService', () => {
       if (key === 'version:latest') {
         return Promise.resolve(
           JSON.stringify({
-            tag_name: 'v0.6.3',
+            tag_name: 'v0.1.0',
             body: 'Test release notes',
             published_at: '2026-07-03T15:37:06Z',
             html_url:
-              'https://github.com/oasm-platform/open-asm/releases/tag/v0.6.3',
+              'https://github.com/sil3ntcor3/open-asm/releases/tag/v0.1.0',
           }),
         );
       }
@@ -82,15 +82,14 @@ describe('RootService', () => {
     });
 
     await expect(service.getLatestVersion()).resolves.toEqual({
-      currentVersion: '0.6.3-dev+abc123',
+      currentVersion: '0.1.0-dev.42+abc123',
       currentCommit: 'abc123',
       channel: 'dev',
-      latestVersion: '0.6.3',
+      latestVersion: '0.1.0',
       isLatest: true,
       notes: 'Test release notes',
       releaseDate: '2026-07-03T15:37:06Z',
-      releaseUrl:
-        'https://github.com/oasm-platform/open-asm/releases/tag/v0.6.3',
+      releaseUrl: 'https://github.com/sil3ntcor3/open-asm/releases/tag/v0.1.0',
       lastCheckedAt: '2026-07-19T14:00:00.000Z',
     });
   });
@@ -99,7 +98,7 @@ describe('RootService', () => {
     redisGet.mockResolvedValue(null);
 
     await expect(service.getLatestVersion()).resolves.toEqual({
-      currentVersion: '0.6.3-dev+abc123',
+      currentVersion: '0.1.0-dev.42+abc123',
       currentCommit: 'abc123',
       channel: 'dev',
       latestVersion: null,

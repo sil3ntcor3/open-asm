@@ -4,7 +4,7 @@ package oasm
 // 	"encoding/json" // Hoặc dùng yaml
 // 	"os"
 //
-// 	pb "github.com/oasm-platform/open-asm/grpc-client/go/workers"
+// 	pb "github.com/sil3ntcor3/open-asm/grpc-client/go/workers"
 // )
 //
 // // helper to save worker state

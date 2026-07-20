@@ -11,6 +11,7 @@ import { NetworkInterface } from '../internal-networks/entities/network-interfac
 import { WorkspaceTool } from '../tools/entities/workspace_tools.entity';
 import { ToolsService } from '../tools/tools.service';
 import { RedisService } from '@/services/redis/redis.service';
+import { WorkerScope } from '@/common/enums/enum';
 import { AliveStreamManager } from './alive-stream-manager.service';
 import { WorkerInstance } from './entities/worker.entity';
 import { WorkersService } from './workers.service';
@@ -185,9 +186,7 @@ describe('WorkersService', () => {
 
       await service.autoCleanupWorkersAndJobs();
 
-      expect(mockAliveStreamManager.isActive).toHaveBeenCalledWith(
-        'worker-1',
-      );
+      expect(mockAliveStreamManager.isActive).toHaveBeenCalledWith('worker-1');
       expect(mockWorkerInstanceRepository.delete).toHaveBeenCalledWith(
         'worker-1',
       );
@@ -211,9 +210,7 @@ describe('WorkersService', () => {
 
       await service.autoCleanupWorkersAndJobs();
 
-      expect(mockAliveStreamManager.isActive).toHaveBeenCalledWith(
-        'worker-1',
-      );
+      expect(mockAliveStreamManager.isActive).toHaveBeenCalledWith('worker-1');
       expect(mockWorkerInstanceRepository.delete).not.toHaveBeenCalled();
     });
 
@@ -282,8 +279,8 @@ describe('WorkersService', () => {
 
     it('accepts a strong configured enrollment token without a shared blank signature', async () => {
       const apiKey = 'a-strong-worker-enrollment-token-1234567890';
-      (mockConfigService.get as jest.Mock).mockImplementation(
-        (key: string) => (key === 'OASM_CLOUD_APIKEY' ? apiKey : undefined),
+      (mockConfigService.get as jest.Mock).mockImplementation((key: string) =>
+        key === 'OASM_CLOUD_APIKEY' ? apiKey : undefined,
       );
       (mockWorkerInstanceRepository.save as jest.Mock).mockResolvedValue(
         undefined,
@@ -332,6 +329,44 @@ describe('WorkersService', () => {
           { id: 'worker-1', scope: 'cloud' },
         ],
       });
+    });
+  });
+
+  describe('getWorkerManagementScope', () => {
+    it('returns the scope of a global worker', async () => {
+      (mockWorkerInstanceRepository.findOne as jest.Mock).mockResolvedValue({
+        id: 'worker-1',
+        scope: WorkerScope.CLOUD,
+        workspaceId: null,
+      });
+
+      await expect(
+        service.getWorkerManagementScope('worker-1', 'workspace-1'),
+      ).resolves.toBe(WorkerScope.CLOUD);
+    });
+
+    it('returns the scope of a worker in the selected workspace', async () => {
+      (mockWorkerInstanceRepository.findOne as jest.Mock).mockResolvedValue({
+        id: 'worker-1',
+        scope: WorkerScope.WORKSPACE,
+        workspaceId: 'workspace-1',
+      });
+
+      await expect(
+        service.getWorkerManagementScope('worker-1', 'workspace-1'),
+      ).resolves.toBe(WorkerScope.WORKSPACE);
+    });
+
+    it('hides a worker owned by another workspace', async () => {
+      (mockWorkerInstanceRepository.findOne as jest.Mock).mockResolvedValue({
+        id: 'worker-1',
+        scope: WorkerScope.WORKSPACE,
+        workspaceId: 'workspace-2',
+      });
+
+      await expect(
+        service.getWorkerManagementScope('worker-1', 'workspace-1'),
+      ).rejects.toThrow('Worker not found');
     });
   });
 
