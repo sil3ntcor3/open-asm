@@ -24,11 +24,15 @@ import { Request, Response } from 'express';
 import { GetWorkspaceConfigsDto } from './dto/get-workspace-configs.dto';
 import { UpdateWorkspaceConfigsDto } from './dto/update-workspace-configs.dto';
 import {
+  AddWorkspaceMemberDto,
   ArchiveWorkspaceDto,
   CreateWorkspaceDto,
   GetApiKeyResponseDto,
   GetManyWorkspacesDto,
+  UpdateWorkspaceMemberRoleDto,
   UpdateWorkspaceDto,
+  WorkspaceMemberParamsDto,
+  WorkspaceMemberResponseDto,
   WorkspaceResponseDto,
 } from './dto/workspaces.dto';
 import { Workspace } from './entities/workspace.entity';
@@ -141,6 +145,66 @@ export class WorkspacesController {
       req,
       res,
     );
+  }
+
+  @Doc({
+    summary: 'Get workspace members',
+    description: 'Lists members and their roles in the selected workspace.',
+    response: {
+      serialization: WorkspaceMemberResponseDto,
+      isArray: true,
+    },
+  })
+  @Get(':id/members')
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ, { workspaceParam: 'id' })
+  getWorkspaceMembers(@Param() { id }: IdQueryParamDto) {
+    return this.workspacesService.getWorkspaceMembers(id);
+  }
+
+  @Doc({
+    summary: 'Add workspace member',
+    description:
+      'Adds an existing account to a workspace with an assignable workspace role.',
+    response: {
+      serialization: WorkspaceMemberResponseDto,
+    },
+  })
+  @Post(':id/members')
+  @WorkspacePolicy(WorkspaceAction.MEMBER_MANAGE, { workspaceParam: 'id' })
+  addWorkspaceMember(
+    @Param() { id }: IdQueryParamDto,
+    @Body() dto: AddWorkspaceMemberDto,
+  ) {
+    return this.workspacesService.addWorkspaceMember(id, dto);
+  }
+
+  @Doc({
+    summary: 'Update workspace member role',
+    description: 'Changes an existing member role. Owner transfer is excluded.',
+    response: {
+      serialization: WorkspaceMemberResponseDto,
+    },
+  })
+  @Patch(':id/members/:userId')
+  @WorkspacePolicy(WorkspaceAction.MEMBER_MANAGE, { workspaceParam: 'id' })
+  updateWorkspaceMemberRole(
+    @Param() { id, userId }: WorkspaceMemberParamsDto,
+    @Body() dto: UpdateWorkspaceMemberRoleDto,
+  ) {
+    return this.workspacesService.updateWorkspaceMemberRole(id, userId, dto);
+  }
+
+  @Doc({
+    summary: 'Remove workspace member',
+    description: 'Removes a non-owner member from the workspace.',
+    response: {
+      serialization: DefaultMessageResponseDto,
+    },
+  })
+  @Delete(':id/members/:userId')
+  @WorkspacePolicy(WorkspaceAction.MEMBER_MANAGE, { workspaceParam: 'id' })
+  removeWorkspaceMember(@Param() { id, userId }: WorkspaceMemberParamsDto) {
+    return this.workspacesService.removeWorkspaceMember(id, userId);
   }
 
   @Doc({

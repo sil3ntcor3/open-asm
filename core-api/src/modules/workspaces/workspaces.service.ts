@@ -13,6 +13,7 @@ import getSwaggerMetadata, {
 } from '@/utils/getSwaggerMetadata';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -23,6 +24,7 @@ import { randomUUID } from 'crypto';
 import { Request, Response } from 'express';
 import { In, Repository } from 'typeorm';
 import { Job } from '@/modules/jobs-registry/entities/job.entity';
+import { User } from '../auth/entities/user.entity';
 import { ApiKeysService } from '../apikeys/apikeys.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Target } from '../targets/entities/target.entity';
@@ -32,9 +34,12 @@ import { GetWorkspaceConfigsDto } from './dto/get-workspace-configs.dto';
 import { UpdateWorkspaceConfigsDto } from './dto/update-workspace-configs.dto';
 import {
   CreateWorkspaceDto,
+  AddWorkspaceMemberDto,
   GetApiKeyResponseDto,
   GetManyWorkspacesDto,
+  UpdateWorkspaceMemberRoleDto,
   UpdateWorkspaceDto,
+  WorkspaceMemberResponseDto,
 } from './dto/workspaces.dto';
 import { WorkspaceMembers } from './entities/workspace-members.entity';
 import { Workspace } from './entities/workspace.entity';
@@ -48,12 +53,98 @@ export class WorkspacesService implements OnModuleInit {
     private readonly workspaceMembersRepository: Repository<WorkspaceMembers>,
     @InjectRepository(WorkspaceTarget)
     private readonly workspaceTargetRepository: Repository<WorkspaceTarget>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
     private apiKeyService: ApiKeysService,
     private notificationsService: NotificationsService,
     private workflowsService: WorkflowsService,
   ) {}
 
   async onModuleInit() {}
+
+  private toWorkspaceMemberResponse(
+    member: Pick<WorkspaceMembers, 'role' | 'user'>,
+  ): WorkspaceMemberResponseDto {
+    return {
+      id: member.user.id,
+      name: member.user.name,
+      image: member.user.image ?? null,
+      role: member.role,
+    };
+  }
+
+  public async getWorkspaceMembers(
+    workspaceId: string,
+  ): Promise<WorkspaceMemberResponseDto[]> {
+    const members = await this.workspaceMembersRepository.find({
+      where: { workspace: { id: workspaceId } },
+      relations: ['user'],
+    });
+
+    return members.map((member) => this.toWorkspaceMemberResponse(member));
+  }
+
+  public async addWorkspaceMember(
+    workspaceId: string,
+    dto: AddWorkspaceMemberDto,
+  ): Promise<WorkspaceMemberResponseDto> {
+    const user = await this.userRepository.findOne({
+      where: { email: dto.email.trim().toLowerCase() },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const existingMember = await this.workspaceMembersRepository.findOne({
+      where: {
+        workspace: { id: workspaceId },
+        user: { id: user.id },
+      },
+    });
+
+    if (existingMember) {
+      throw new ConflictException('User is already a workspace member');
+    }
+
+    const member = await this.workspaceMembersRepository.save({
+      workspace: { id: workspaceId },
+      user,
+      role: dto.role,
+    });
+
+    return this.toWorkspaceMemberResponse({ ...member, user });
+  }
+
+  public async updateWorkspaceMemberRole(
+    workspaceId: string,
+    userId: string,
+    dto: UpdateWorkspaceMemberRoleDto,
+  ): Promise<WorkspaceMemberResponseDto> {
+    const member = await this.getWorkspaceMember(workspaceId, userId);
+
+    if (member.role === WorkspaceRole.OWNER) {
+      throw new BadRequestException('Workspace owner role cannot be changed');
+    }
+
+    member.role = dto.role;
+    const updatedMember = await this.workspaceMembersRepository.save(member);
+    return this.toWorkspaceMemberResponse(updatedMember);
+  }
+
+  public async removeWorkspaceMember(
+    workspaceId: string,
+    userId: string,
+  ): Promise<DefaultMessageResponseDto> {
+    const member = await this.getWorkspaceMember(workspaceId, userId);
+
+    if (member.role === WorkspaceRole.OWNER) {
+      throw new BadRequestException('Workspace owner cannot be removed');
+    }
+
+    await this.workspaceMembersRepository.remove(member);
+    return { message: 'Workspace member removed successfully' };
+  }
 
   /**
    * Creates a new workspace, and adds the requesting user as a member.

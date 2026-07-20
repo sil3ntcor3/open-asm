@@ -331,6 +331,68 @@ export type GetManyWorkspaceResponseDtoDto = {
   pageCount: number;
 };
 
+export type WorkspaceMemberResponseDtoRole =
+  (typeof WorkspaceMemberResponseDtoRole)[keyof typeof WorkspaceMemberResponseDtoRole];
+
+export const WorkspaceMemberResponseDtoRole = {
+  viewer: 'viewer',
+  analyst: 'analyst',
+  operator: 'operator',
+  security_admin: 'security_admin',
+  owner: 'owner',
+} as const;
+
+export type WorkspaceMemberResponseDto = {
+  /** User ID */
+  id: string;
+  /** Display name */
+  name: string;
+  /**
+   * Profile image
+   * @nullable
+   */
+  image: string | null;
+  role: WorkspaceMemberResponseDtoRole;
+};
+
+/**
+ * Role to grant in this workspace
+ */
+export type AddWorkspaceMemberDtoRole =
+  (typeof AddWorkspaceMemberDtoRole)[keyof typeof AddWorkspaceMemberDtoRole];
+
+export const AddWorkspaceMemberDtoRole = {
+  viewer: 'viewer',
+  analyst: 'analyst',
+  operator: 'operator',
+  security_admin: 'security_admin',
+} as const;
+
+export type AddWorkspaceMemberDto = {
+  /** Existing user email address */
+  email: string;
+  /** Role to grant in this workspace */
+  role: AddWorkspaceMemberDtoRole;
+};
+
+/**
+ * New role in this workspace
+ */
+export type UpdateWorkspaceMemberRoleDtoRole =
+  (typeof UpdateWorkspaceMemberRoleDtoRole)[keyof typeof UpdateWorkspaceMemberRoleDtoRole];
+
+export const UpdateWorkspaceMemberRoleDtoRole = {
+  viewer: 'viewer',
+  analyst: 'analyst',
+  operator: 'operator',
+  security_admin: 'security_admin',
+} as const;
+
+export type UpdateWorkspaceMemberRoleDto = {
+  /** New role in this workspace */
+  role: UpdateWorkspaceMemberRoleDtoRole;
+};
+
 export type UpdateWorkspaceDtoArchivedAt = { [key: string]: unknown };
 
 export type UpdateWorkspaceDto = {
@@ -459,11 +521,6 @@ export type CreateFirstAdminDto = {
   password: string;
 };
 
-/**
- * Current system version
- */
-export type GetMetadataDtoCurrentVersion = { [key: string]: unknown };
-
 export type GetMetadataDto = {
   isInit: boolean;
   isAssistant: boolean;
@@ -474,8 +531,11 @@ export type GetMetadataDto = {
    * @nullable
    */
   logoPath: string | null;
-  /** Current system version */
-  currentVersion: GetMetadataDtoCurrentVersion;
+  /**
+   * Current system version
+   * @nullable
+   */
+  currentVersion: string | null;
 };
 
 export type GetVersionDto = {
@@ -484,6 +544,16 @@ export type GetVersionDto = {
    * @nullable
    */
   currentVersion: string | null;
+  /**
+   * Source commit included in the installed build
+   * @nullable
+   */
+  currentCommit: string | null;
+  /**
+   * Installed release channel
+   * @nullable
+   */
+  channel: string | null;
   /**
    * Latest system version
    * @nullable
@@ -499,6 +569,16 @@ export type GetVersionDto = {
    * @nullable
    */
   notes: string | null;
+  /**
+   * Release page URL
+   * @nullable
+   */
+  releaseUrl: string | null;
+  /**
+   * Time of the last successful check
+   * @nullable
+   */
+  lastCheckedAt: string | null;
   /**
    * Is latest version
    * @nullable
@@ -736,7 +816,7 @@ export type JobHistoryDetailResponseDto = {
   jobHistoryName: string;
 };
 
-export type PickTypeClass = {
+export type PickToolIdName = {
   id: string;
   name: string;
 };
@@ -746,7 +826,7 @@ export type AssetTag = {
   createdAt: string;
   updatedAt: string;
   tag: string;
-  tool: PickTypeClass;
+  tool: PickToolIdName;
 };
 
 export type TlsInfoFingerprintHash = { [key: string]: unknown };
@@ -5000,6 +5080,478 @@ export const useWorkspacesControllerUpdateWorkspaceConfigs = <
 };
 
 /**
+ * Lists members and their roles in the selected workspace.
+ * @summary Get workspace members
+ */
+export const workspacesControllerGetWorkspaceMembers = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<WorkspaceMemberResponseDto[]>(
+    { url: `/api/workspaces/${id}/members`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getWorkspacesControllerGetWorkspaceMembersQueryKey = (
+  id: string,
+) => {
+  return [`/api/workspaces/${id}/members`] as const;
+};
+
+export const getWorkspacesControllerGetWorkspaceMembersQueryOptions = <
+  TData = Awaited<ReturnType<typeof workspacesControllerGetWorkspaceMembers>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof workspacesControllerGetWorkspaceMembers>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getWorkspacesControllerGetWorkspaceMembersQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof workspacesControllerGetWorkspaceMembers>>
+  > = ({ signal }) =>
+    workspacesControllerGetWorkspaceMembers(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof workspacesControllerGetWorkspaceMembers>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type WorkspacesControllerGetWorkspaceMembersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof workspacesControllerGetWorkspaceMembers>>
+>;
+export type WorkspacesControllerGetWorkspaceMembersQueryError = unknown;
+
+export function useWorkspacesControllerGetWorkspaceMembers<
+  TData = Awaited<ReturnType<typeof workspacesControllerGetWorkspaceMembers>>,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof workspacesControllerGetWorkspaceMembers>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof workspacesControllerGetWorkspaceMembers>>,
+          TError,
+          Awaited<ReturnType<typeof workspacesControllerGetWorkspaceMembers>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useWorkspacesControllerGetWorkspaceMembers<
+  TData = Awaited<ReturnType<typeof workspacesControllerGetWorkspaceMembers>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof workspacesControllerGetWorkspaceMembers>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof workspacesControllerGetWorkspaceMembers>>,
+          TError,
+          Awaited<ReturnType<typeof workspacesControllerGetWorkspaceMembers>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useWorkspacesControllerGetWorkspaceMembers<
+  TData = Awaited<ReturnType<typeof workspacesControllerGetWorkspaceMembers>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof workspacesControllerGetWorkspaceMembers>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get workspace members
+ */
+
+export function useWorkspacesControllerGetWorkspaceMembers<
+  TData = Awaited<ReturnType<typeof workspacesControllerGetWorkspaceMembers>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof workspacesControllerGetWorkspaceMembers>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getWorkspacesControllerGetWorkspaceMembersQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Adds an existing account to a workspace with an assignable workspace role.
+ * @summary Add workspace member
+ */
+export const workspacesControllerAddWorkspaceMember = (
+  id: string,
+  addWorkspaceMemberDto: AddWorkspaceMemberDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<WorkspaceMemberResponseDto>(
+    {
+      url: `/api/workspaces/${id}/members`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: addWorkspaceMemberDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getWorkspacesControllerAddWorkspaceMemberMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof workspacesControllerAddWorkspaceMember>>,
+    TError,
+    { id: string; data: AddWorkspaceMemberDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof workspacesControllerAddWorkspaceMember>>,
+  TError,
+  { id: string; data: AddWorkspaceMemberDto },
+  TContext
+> => {
+  const mutationKey = ['workspacesControllerAddWorkspaceMember'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof workspacesControllerAddWorkspaceMember>>,
+    { id: string; data: AddWorkspaceMemberDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return workspacesControllerAddWorkspaceMember(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type WorkspacesControllerAddWorkspaceMemberMutationResult = NonNullable<
+  Awaited<ReturnType<typeof workspacesControllerAddWorkspaceMember>>
+>;
+export type WorkspacesControllerAddWorkspaceMemberMutationBody =
+  AddWorkspaceMemberDto;
+export type WorkspacesControllerAddWorkspaceMemberMutationError = unknown;
+
+/**
+ * @summary Add workspace member
+ */
+export const useWorkspacesControllerAddWorkspaceMember = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof workspacesControllerAddWorkspaceMember>>,
+      TError,
+      { id: string; data: AddWorkspaceMemberDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof workspacesControllerAddWorkspaceMember>>,
+  TError,
+  { id: string; data: AddWorkspaceMemberDto },
+  TContext
+> => {
+  return useMutation(
+    getWorkspacesControllerAddWorkspaceMemberMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Changes an existing member role. Owner transfer is excluded.
+ * @summary Update workspace member role
+ */
+export const workspacesControllerUpdateWorkspaceMemberRole = (
+  id: string,
+  userId: string,
+  updateWorkspaceMemberRoleDto: UpdateWorkspaceMemberRoleDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<WorkspaceMemberResponseDto>(
+    {
+      url: `/api/workspaces/${id}/members/${userId}`,
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      data: updateWorkspaceMemberRoleDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getWorkspacesControllerUpdateWorkspaceMemberRoleMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof workspacesControllerUpdateWorkspaceMemberRole>>,
+    TError,
+    { id: string; userId: string; data: UpdateWorkspaceMemberRoleDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof workspacesControllerUpdateWorkspaceMemberRole>>,
+  TError,
+  { id: string; userId: string; data: UpdateWorkspaceMemberRoleDto },
+  TContext
+> => {
+  const mutationKey = ['workspacesControllerUpdateWorkspaceMemberRole'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof workspacesControllerUpdateWorkspaceMemberRole>>,
+    { id: string; userId: string; data: UpdateWorkspaceMemberRoleDto }
+  > = (props) => {
+    const { id, userId, data } = props ?? {};
+
+    return workspacesControllerUpdateWorkspaceMemberRole(
+      id,
+      userId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type WorkspacesControllerUpdateWorkspaceMemberRoleMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof workspacesControllerUpdateWorkspaceMemberRole>>
+  >;
+export type WorkspacesControllerUpdateWorkspaceMemberRoleMutationBody =
+  UpdateWorkspaceMemberRoleDto;
+export type WorkspacesControllerUpdateWorkspaceMemberRoleMutationError =
+  unknown;
+
+/**
+ * @summary Update workspace member role
+ */
+export const useWorkspacesControllerUpdateWorkspaceMemberRole = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof workspacesControllerUpdateWorkspaceMemberRole>>,
+      TError,
+      { id: string; userId: string; data: UpdateWorkspaceMemberRoleDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof workspacesControllerUpdateWorkspaceMemberRole>>,
+  TError,
+  { id: string; userId: string; data: UpdateWorkspaceMemberRoleDto },
+  TContext
+> => {
+  return useMutation(
+    getWorkspacesControllerUpdateWorkspaceMemberRoleMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Removes a non-owner member from the workspace.
+ * @summary Remove workspace member
+ */
+export const workspacesControllerRemoveWorkspaceMember = (
+  id: string,
+  userId: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    {
+      url: `/api/workspaces/${id}/members/${userId}`,
+      method: 'DELETE',
+      signal,
+    },
+    options,
+  );
+};
+
+export const getWorkspacesControllerRemoveWorkspaceMemberMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof workspacesControllerRemoveWorkspaceMember>>,
+    TError,
+    { id: string; userId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof workspacesControllerRemoveWorkspaceMember>>,
+  TError,
+  { id: string; userId: string },
+  TContext
+> => {
+  const mutationKey = ['workspacesControllerRemoveWorkspaceMember'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof workspacesControllerRemoveWorkspaceMember>>,
+    { id: string; userId: string }
+  > = (props) => {
+    const { id, userId } = props ?? {};
+
+    return workspacesControllerRemoveWorkspaceMember(
+      id,
+      userId,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type WorkspacesControllerRemoveWorkspaceMemberMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof workspacesControllerRemoveWorkspaceMember>>
+  >;
+
+export type WorkspacesControllerRemoveWorkspaceMemberMutationError = unknown;
+
+/**
+ * @summary Remove workspace member
+ */
+export const useWorkspacesControllerRemoveWorkspaceMember = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof workspacesControllerRemoveWorkspaceMember>>,
+      TError,
+      { id: string; userId: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof workspacesControllerRemoveWorkspaceMember>>,
+  TError,
+  { id: string; userId: string },
+  TContext
+> => {
+  return useMutation(
+    getWorkspacesControllerRemoveWorkspaceMemberMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
  * Fetches detailed information about a specific security workspace using its unique identifier, including all associated metadata and configuration.
  * @summary Get Workspace By ID
  */
@@ -7048,6 +7600,91 @@ export function useRootControllerGetLatestVersion<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Refreshes release information from GitHub and returns the current update status.
+ * @summary Check for updates.
+ */
+export const rootControllerCheckForUpdates = (
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<GetVersionDto>(
+    { url: `/api/version/check`, method: 'POST', signal },
+    options,
+  );
+};
+
+export const getRootControllerCheckForUpdatesMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rootControllerCheckForUpdates>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rootControllerCheckForUpdates>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ['rootControllerCheckForUpdates'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rootControllerCheckForUpdates>>,
+    void
+  > = () => {
+    return rootControllerCheckForUpdates(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RootControllerCheckForUpdatesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rootControllerCheckForUpdates>>
+>;
+
+export type RootControllerCheckForUpdatesMutationError = unknown;
+
+/**
+ * @summary Check for updates.
+ */
+export const useRootControllerCheckForUpdates = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof rootControllerCheckForUpdates>>,
+      TError,
+      void,
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof rootControllerCheckForUpdates>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(
+    getRootControllerCheckForUpdatesMutationOptions(options),
+    queryClient,
+  );
+};
 
 /**
  * Retrieves the current system configuration settings
@@ -21350,7 +21987,7 @@ export function useAgentsControllerGetSkills<
 }
 
 /**
- * Create a new user skill for the workspace (workspace owner only)
+ * Create a new user skill for the workspace
  * @summary Create skill
  */
 export const agentsControllerCreateSkill = (
@@ -21444,7 +22081,7 @@ export const useAgentsControllerCreateSkill = <
 };
 
 /**
- * Update a user skill (workspace owner only)
+ * Update a user skill for the workspace
  * @summary Update skill
  */
 export const agentsControllerUpdateSkill = (
@@ -21539,7 +22176,7 @@ export const useAgentsControllerUpdateSkill = <
 };
 
 /**
- * Delete a user skill (workspace owner only)
+ * Delete a user skill from the workspace
  * @summary Delete skill
  */
 export const agentsControllerDeleteSkill = (
@@ -21627,7 +22264,7 @@ export const useAgentsControllerDeleteSkill = <
 };
 
 /**
- * Enable or disable a user skill (workspace owner only)
+ * Enable or disable a user skill for the workspace
  * @summary Toggle skill
  */
 export const agentsControllerToggleSkill = (
@@ -29625,7 +30262,7 @@ export function useInternalNetworksControllerGetManyInternalNetworks<
 }
 
 /**
- * Creates a new internal network for the specified workspace. Only the workspace owner can perform this action.
+ * Creates a new internal network for the specified workspace.
  * @summary Create an internal network
  */
 export const internalNetworksControllerCreateInternalNetwork = (
@@ -30557,7 +31194,7 @@ export function useInternalNetworksControllerGetInternalNetworkById<
 }
 
 /**
- * Updates the name of an existing internal network. Only the workspace owner can perform this action.
+ * Updates the name of an existing internal network.
  * @summary Update an internal network by ID
  */
 export const internalNetworksControllerUpdateInternalNetworkById = (
@@ -30671,7 +31308,7 @@ export const useInternalNetworksControllerUpdateInternalNetworkById = <
 };
 
 /**
- * Deletes an existing internal network. Only the workspace owner can perform this action.
+ * Deletes an existing internal network.
  * @summary Delete an internal network
  */
 export const internalNetworksControllerDeleteInternalNetwork = (

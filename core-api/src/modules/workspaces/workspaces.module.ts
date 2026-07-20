@@ -9,10 +9,16 @@ import { WorkspacesController } from './workspaces.controller';
 import { WorkspacesService } from './workspaces.service';
 import { WorkspacePolicyService } from '@/common/authorization/workspace-policy.service';
 import { WorkspacePolicyGuard } from '@/common/authorization/workspace-policy.guard';
+import { User } from '../auth/entities/user.entity';
 @Global()
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Workspace, WorkspaceMembers, WorkspaceTarget]),
+    TypeOrmModule.forFeature([
+      Workspace,
+      WorkspaceMembers,
+      WorkspaceTarget,
+      User,
+    ]),
     ApiKeysModule,
     forwardRef(() => WorkflowsModule),
   ],

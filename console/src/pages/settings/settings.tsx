@@ -7,6 +7,7 @@ import GetAboutProject from './components/get-about-project';
 import Preferences from './components/preferences';
 import SecuritySettings from './components/security-settings';
 import WorkspaceSettings from './components/workspace-settings';
+import WorkspaceMembers from './components/workspace-members';
 
 interface TabContentProps {
   title: string;
@@ -47,6 +48,16 @@ export const settingsTabGroups: SettingsTabGroup[] = [
           description: 'Manage your workspace settings',
         },
         component: <WorkspaceSettings />,
+      },
+      {
+        id: 'members',
+        label: 'Members',
+        path: '/settings/members',
+        content: {
+          title: 'Workspace members',
+          description: 'Manage member access and workspace roles',
+        },
+        component: <WorkspaceMembers />,
       },
       {
         id: 'apikeys',

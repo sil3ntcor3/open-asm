@@ -9,6 +9,8 @@ export enum WorkspaceAction {
   REPORT_MANAGE = 'report.manage',
   AGENT_USE = 'agent.use',
   AGENT_MANAGE = 'agent.manage',
+  MEMBER_MANAGE = 'member.manage',
+  WORKER_READ = 'worker.read',
   WORKER_MANAGE = 'worker.manage',
   TOOL_MANAGE = 'tool.manage',
   TEMPLATE_MANAGE = 'template.manage',

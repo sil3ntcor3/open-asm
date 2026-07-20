@@ -8,8 +8,17 @@ import { RootService } from './root.service';
 
 describe('RootService', () => {
   let service: RootService;
+  let redisGet: jest.Mock;
+  let configValues: Record<string, string | undefined>;
 
   beforeEach(async () => {
+    redisGet = jest.fn();
+    configValues = {
+      APP_VERSION: '0.6.3-dev+abc123',
+      APP_CHANNEL: 'dev',
+      APP_COMMIT: 'abc123',
+      NODE_ENV: 'production',
+    };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RootService,
@@ -34,23 +43,13 @@ describe('RootService', () => {
         {
           provide: ConfigService,
           useValue: {
-            get: jest.fn((key: string) => {
-              if (key === 'APP_VERSION') return '1.0.0';
-              if (key === 'NODE_ENV') return 'test';
-              return null;
-            }),
+            get: jest.fn((key: string) => configValues[key]),
           },
         },
         {
           provide: RedisService,
           useValue: {
-            get: jest.fn().mockResolvedValue(
-              JSON.stringify({
-                tag_name: 'v1.0.0',
-                body: 'Test release notes',
-                published_at: '2024-01-01T00:00:00Z',
-              }),
-            ),
+            get: redisGet,
           },
         },
       ],
@@ -61,5 +60,54 @@ describe('RootService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  it('returns the installed build identity and cached update status', async () => {
+    redisGet.mockImplementation((key: string) => {
+      if (key === 'version:latest') {
+        return Promise.resolve(
+          JSON.stringify({
+            tag_name: 'v0.6.3',
+            body: 'Test release notes',
+            published_at: '2026-07-03T15:37:06Z',
+            html_url:
+              'https://github.com/oasm-platform/open-asm/releases/tag/v0.6.3',
+          }),
+        );
+      }
+      if (key === 'version:last_check') {
+        return Promise.resolve('2026-07-19T14:00:00.000Z');
+      }
+      return Promise.resolve(null);
+    });
+
+    await expect(service.getLatestVersion()).resolves.toEqual({
+      currentVersion: '0.6.3-dev+abc123',
+      currentCommit: 'abc123',
+      channel: 'dev',
+      latestVersion: '0.6.3',
+      isLatest: true,
+      notes: 'Test release notes',
+      releaseDate: '2026-07-03T15:37:06Z',
+      releaseUrl:
+        'https://github.com/oasm-platform/open-asm/releases/tag/v0.6.3',
+      lastCheckedAt: '2026-07-19T14:00:00.000Z',
+    });
+  });
+
+  it('reports an unavailable update check without hiding the installed version', async () => {
+    redisGet.mockResolvedValue(null);
+
+    await expect(service.getLatestVersion()).resolves.toEqual({
+      currentVersion: '0.6.3-dev+abc123',
+      currentCommit: 'abc123',
+      channel: 'dev',
+      latestVersion: null,
+      isLatest: null,
+      notes: null,
+      releaseDate: null,
+      releaseUrl: null,
+      lastCheckedAt: null,
+    });
   });
 });

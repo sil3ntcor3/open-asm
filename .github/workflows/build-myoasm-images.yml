@@ -99,6 +99,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -115,13 +117,28 @@ jobs:
       - name: Build and push
         run: |
           case "$GITHUB_REF_NAME" in
-            main) image_channel="latest" ;;
-            dev) image_channel="dev" ;;
+            main)
+              image_channel="latest"
+              app_channel="stable"
+              ;;
+            dev)
+              image_channel="dev"
+              app_channel="dev"
+              ;;
             *)
               echo "Unsupported image branch: $GITHUB_REF_NAME"
               exit 1
               ;;
           esac
+
+          latest_tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo 'v0.0.0')"
+          base_version="${latest_tag#v}"
+          short_commit="${GITHUB_SHA::12}"
+          if [ "$app_channel" = "dev" ]; then
+            app_version="${base_version}-dev+${short_commit}"
+          else
+            app_version="$base_version"
+          fi
 
           # The console image uses Bun during build; ARM64 emulation on GitHub Actions
           # is unstable here and causes the qemu Illegal instruction failure seen in CI.
@@ -129,6 +146,12 @@ jobs:
             --platform linux/amd64 \
             -t "${{ matrix.image }}:${image_channel}" \
             -t "${{ matrix.image }}:sha-${GITHUB_SHA::12}" \
+            --build-arg "APP_VERSION=${app_version}" \
+            --build-arg "APP_CHANNEL=${app_channel}" \
+            --build-arg "APP_COMMIT=${short_commit}" \
+            --label "org.opencontainers.image.version=${app_version}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
             --push \
             --file "${{ matrix.dockerfile }}" \
             "${{ matrix.context }}"

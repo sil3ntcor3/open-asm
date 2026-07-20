@@ -5,7 +5,7 @@ import { Column, Entity, Index, ManyToOne } from 'typeorm';
 import { Workspace } from './workspace.entity';
 
 @Entity('workspace_members')
-@Index('IDX_wm_workspace_user', ['workspace', 'user'])
+@Index('IDX_wm_workspace_user', ['workspace', 'user'], { unique: true })
 @Index('IDX_wm_userId', ['user'])
 export class WorkspaceMembers extends BaseEntity {
   @ManyToOne(() => Workspace, (workspace) => workspace.workspaceMembers, {

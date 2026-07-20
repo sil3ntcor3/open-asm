@@ -6,11 +6,15 @@ import type { Repository } from 'typeorm';
 import { StorageService } from '../storage/storage.service';
 import { SystemConfig } from './entities/system-config.entity';
 import { SystemConfigsService } from './system-configs.service';
+import axios from 'axios';
+
+jest.mock('axios');
 
 describe('SystemConfigsService', () => {
   let service: SystemConfigsService;
   let mockSystemConfigRepository: Partial<Repository<SystemConfig>>;
   let mockStorageService: Partial<StorageService>;
+  let mockRedisService: { get: jest.Mock; set: jest.Mock };
 
   beforeEach(async () => {
     mockSystemConfigRepository = {
@@ -23,7 +27,7 @@ describe('SystemConfigsService', () => {
       deleteFile: jest.fn(),
     };
 
-    const mockRedisService = {
+    mockRedisService = {
       get: jest.fn(),
       set: jest.fn(),
     };
@@ -51,6 +55,27 @@ describe('SystemConfigsService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  it('can force an update check and cache the release metadata', async () => {
+    const release = {
+      tag_name: 'v0.6.3',
+      html_url: 'https://github.com/oasm-platform/open-asm/releases/tag/v0.6.3',
+      body: 'Release notes',
+      published_at: '2026-07-03T15:37:06Z',
+    };
+    jest.mocked(axios.get).mockResolvedValue({ data: release });
+
+    await expect(service.checkForUpdates(true)).resolves.toBe(true);
+
+    expect(mockRedisService.set).toHaveBeenCalledWith(
+      'version:last_check',
+      expect.any(String),
+    );
+    expect(mockRedisService.set).toHaveBeenCalledWith(
+      'version:latest',
+      JSON.stringify(release),
+    );
   });
 
   describe('removeLogo', () => {

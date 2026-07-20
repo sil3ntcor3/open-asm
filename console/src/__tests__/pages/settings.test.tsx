@@ -25,6 +25,10 @@ vi.mock('@/pages/settings/components/api-keys-settings', () => ({
   default: () => <div data-testid="api-keys-settings">ApiKeysSettings</div>,
 }));
 
+vi.mock('@/pages/settings/components/workspace-members', () => ({
+  default: () => <div data-testid="workspace-members">WorkspaceMembers</div>,
+}));
+
 vi.mock('@/pages/settings/components/preferences', () => ({
   default: () => <div data-testid="preferences">Preferences</div>,
 }));
@@ -34,7 +38,9 @@ vi.mock('@/pages/settings/components/security-settings', () => ({
 }));
 
 vi.mock('@/pages/settings/components/brand-name-and-logo', () => ({
-  default: () => <div data-testid="brand-settings">BrandNameAndLogoSettings</div>,
+  default: () => (
+    <div data-testid="brand-settings">BrandNameAndLogoSettings</div>
+  ),
 }));
 
 vi.mock('@/pages/settings/components/get-about-project', () => ({
@@ -74,8 +80,23 @@ describe('Settings Page', () => {
     renderWithProviders(<Settings />);
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Preferences' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: 'Preferences' }),
+      ).toBeInTheDocument();
       expect(screen.getByTestId('preferences')).toBeInTheDocument();
+    });
+  });
+
+  it('exposes workspace member role management', async () => {
+    vi.mocked(useParams).mockReturnValue({ tab: 'members' });
+
+    renderWithProviders(<Settings />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: 'Workspace members' }),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('workspace-members')).toBeInTheDocument();
     });
   });
 

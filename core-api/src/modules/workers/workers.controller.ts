@@ -64,7 +64,7 @@ export class WorkersController {
     },
   })
   @Get()
-  @WorkspacePolicy(WorkspaceAction.WORKER_MANAGE)
+  @WorkspacePolicy(WorkspaceAction.WORKER_READ)
   getWorkers(
     @Query() query: GetManyWorkersDto,
     @WorkspaceId() workspaceId: string,

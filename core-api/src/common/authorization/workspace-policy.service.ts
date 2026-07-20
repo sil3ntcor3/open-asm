@@ -5,7 +5,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { WorkspaceAction } from './workspace-action.enum';
 
-const ACTION_ROLES: Readonly<Record<WorkspaceAction, readonly WorkspaceRole[]>> = {
+const ACTION_ROLES: Readonly<
+  Record<WorkspaceAction, readonly WorkspaceRole[]>
+> = {
   [WorkspaceAction.WORKSPACE_READ]: [
     WorkspaceRole.VIEWER,
     WorkspaceRole.ANALYST,
@@ -45,6 +47,14 @@ const ACTION_ROLES: Readonly<Record<WorkspaceAction, readonly WorkspaceRole[]>> 
     WorkspaceRole.OWNER,
   ],
   [WorkspaceAction.AGENT_MANAGE]: [
+    WorkspaceRole.SECURITY_ADMIN,
+    WorkspaceRole.OWNER,
+  ],
+  [WorkspaceAction.MEMBER_MANAGE]: [WorkspaceRole.OWNER],
+  [WorkspaceAction.WORKER_READ]: [
+    WorkspaceRole.VIEWER,
+    WorkspaceRole.ANALYST,
+    WorkspaceRole.OPERATOR,
     WorkspaceRole.SECURITY_ADMIN,
     WorkspaceRole.OWNER,
   ],
