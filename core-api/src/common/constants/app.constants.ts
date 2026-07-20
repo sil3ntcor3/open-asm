@@ -14,7 +14,15 @@ export const LIMIT_WORKSPACE_CREATE = 5;
 export const API_KEY_LENGTH = 36;
 export const MCP_API_KEY_HEADER = 'api-key';
 export const WORKER_TOKEN_HEADER = 'worker-token';
-export const AUTH_IGNORE_ROUTERS = ['mcp', 'messages'];
+export const AUTH_IGNORE_ROUTERS = [
+  'mcp',
+  'messages',
+  '/admin/create-user',
+  '/admin/set-role',
+  '/admin/ban-user',
+  '/admin/unban-user',
+  '/admin/remove-user',
+];
 export const WEBAPP_ANALYZER_SRC_URL =
   'https://raw.githubusercontent.com/oasm-platform/webappanalyzer/main/src';
 export const GET_WORKSPACE_MCP_TOOL_NAME = 'get_workspaces';

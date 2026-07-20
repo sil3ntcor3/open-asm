@@ -1,28 +1,46 @@
 import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import {
-  type WorkspaceRoleDefinitionDtoPermissionsItem,
-  useWorkspacesControllerGetWorkspaceRolePermissions,
-} from '@/services/apis/gen/queries';
-import { hasWorkspacePermission } from '@/utils/workspace-roles';
+  getWorkspaceRoles,
+  rbacKeys,
+  type WorkspaceAction,
+} from '@/services/apis/rbac';
+import { useQuery } from '@tanstack/react-query';
 import { useCallback } from 'react';
 
-/** Exposes the selected workspace role and its server-defined capabilities. */
+interface WorkspaceAccessSummary {
+  id: string;
+  roleId?: string | null;
+  roleKey?: string | null;
+  accessSource?: 'membership' | 'platform_admin';
+}
+
+/** Exposes the selected workspace's server-defined relational capabilities. */
 export function useWorkspacePermissions() {
   const { selectedWorkspace, workspaces } = useWorkspaceSelector();
-  const role = workspaces.find(
-    (workspace) => workspace.id === selectedWorkspace,
-  )?.role;
-  const { data, isLoading, isError } =
-    useWorkspacesControllerGetWorkspaceRolePermissions();
+  const workspace = workspaces.find(
+    (candidate) => candidate.id === selectedWorkspace,
+  ) as WorkspaceAccessSummary | undefined;
+  const isPlatformAdmin = workspace?.accessSource === 'platform_admin';
+  const isOwner = workspace?.roleKey === 'owner';
+  const { data: roles = [], isLoading, isError } = useQuery({
+    queryKey: rbacKeys.roles(selectedWorkspace),
+    queryFn: () => getWorkspaceRoles(selectedWorkspace),
+    enabled: Boolean(selectedWorkspace),
+  });
 
   const can = useCallback(
-    (action: WorkspaceRoleDefinitionDtoPermissionsItem) =>
-      hasWorkspacePermission(data?.roles ?? [], role, action),
-    [data?.roles, role],
+    (action: WorkspaceAction) => {
+      if (isPlatformAdmin || isOwner) return true;
+      return (
+        roles
+          .find((role) => role.id === workspace?.roleId)
+          ?.permissions.includes(action) ?? false
+      );
+    }, [isOwner, isPlatformAdmin, roles, workspace?.roleId],
   );
 
   return {
-    role,
+    role: workspace?.roleKey,
     can,
     isLoading,
     isError,

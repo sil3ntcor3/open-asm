@@ -105,7 +105,7 @@ export class WorkersController {
       }
     } else {
       await this.workspacePolicyService.assertAllowed(
-        userContext.id,
+        { id: userContext.id, role: userContext.role },
         workspaceId,
         WorkspaceAction.WORKER_MANAGE,
       );

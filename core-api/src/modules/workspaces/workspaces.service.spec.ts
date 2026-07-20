@@ -13,7 +13,10 @@ import { WorkspaceTarget } from '../targets/entities/workspace-target.entity';
 import { WorkflowsService } from '../workflows/workflows.service';
 import { User } from '../auth/entities/user.entity';
 import { WorkspaceMembers } from './entities/workspace-members.entity';
+import type { WorkspaceAccessRole } from './entities/workspace-access-role.entity';
 import { Workspace } from './entities/workspace.entity';
+import { PROTECTED_WORKSPACE_ROLE_IDS } from './workspace-role.constants';
+import { WorkspaceRolesService } from './workspace-roles.service';
 import { WorkspacesService } from './workspaces.service';
 
 describe('WorkspacesService', () => {
@@ -25,6 +28,7 @@ describe('WorkspacesService', () => {
   let mockApiKeysService: Partial<ApiKeysService>;
   let mockNotificationsService: Partial<NotificationsService>;
   let mockDataSource: Partial<DataSource>;
+  let mockWorkspaceRolesService: Partial<WorkspaceRolesService>;
 
   // Test data
   const testUserId = randomUUID();
@@ -179,6 +183,9 @@ describe('WorkspacesService', () => {
     };
 
     mockDataSource = {};
+    mockWorkspaceRolesService = {
+      getAssignableRole: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -214,6 +221,10 @@ describe('WorkspacesService', () => {
           },
         },
         {
+          provide: WorkspaceRolesService,
+          useValue: mockWorkspaceRolesService,
+        },
+        {
           provide: DataSource,
           useValue: mockDataSource,
         },
@@ -243,8 +254,44 @@ describe('WorkspacesService', () => {
     expect(mockWorkspaceMembersRepository.save).toHaveBeenCalledWith({
       workspace,
       user: { id: testUserId },
-      role: WorkspaceRole.OWNER,
+      roleId: PROTECTED_WORKSPACE_ROLE_IDS[WorkspaceRole.OWNER],
     });
+  });
+
+  it('allows a platform admin to retrieve a workspace without membership', async () => {
+    const workspace = {
+      id: testWorkspaceId,
+      owner: { id: randomUUID() },
+    } as Workspace;
+    (
+      mockWorkspaceRepository as unknown as { getOne: jest.Mock }
+    ).getOne.mockResolvedValue(workspace);
+
+    await expect(
+      service.getWorkspaceById(testWorkspaceId, {
+        ...testUserContext,
+        role: Role.ADMIN,
+      }),
+    ).resolves.toBe(workspace);
+
+    expect(
+      (mockWorkspaceRepository as unknown as { andWhere: jest.Mock }).andWhere,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('allows a platform admin through legacy owner service checks', async () => {
+    const workspace = {
+      id: testWorkspaceId,
+      owner: { id: randomUUID() },
+    } as Workspace;
+    jest.spyOn(mockWorkspaceRepository, 'findOne').mockResolvedValue(workspace);
+
+    await expect(
+      service.getWorkspaceByIdAndOwner(testWorkspaceId, {
+        ...testUserContext,
+        role: Role.ADMIN,
+      }),
+    ).resolves.toBe(workspace);
   });
 
   describe('workspace member roles', () => {
@@ -254,7 +301,13 @@ describe('WorkspacesService', () => {
       jest.spyOn(mockWorkspaceMembersRepository, 'find').mockResolvedValue([
         {
           id: randomUUID(),
-          role: WorkspaceRole.ANALYST,
+          roleId: PROTECTED_WORKSPACE_ROLE_IDS[WorkspaceRole.ANALYST],
+          accessRole: {
+            id: PROTECTED_WORKSPACE_ROLE_IDS[WorkspaceRole.ANALYST],
+            key: WorkspaceRole.ANALYST,
+            name: 'Analyst',
+            protected: true,
+          },
           user: {
             id: memberId,
             name: 'Analyst User',
@@ -271,7 +324,10 @@ describe('WorkspacesService', () => {
           id: memberId,
           name: 'Analyst User',
           image: 'https://example.com/analyst.png',
-          role: WorkspaceRole.ANALYST,
+          roleId: PROTECTED_WORKSPACE_ROLE_IDS[WorkspaceRole.ANALYST],
+          roleKey: WorkspaceRole.ANALYST,
+          roleName: 'Analyst',
+          roleProtected: true,
         },
       ]);
     });
@@ -287,25 +343,38 @@ describe('WorkspacesService', () => {
       jest
         .spyOn(mockWorkspaceMembersRepository, 'findOne')
         .mockResolvedValue(null);
+      const operatorRole = {
+        id: PROTECTED_WORKSPACE_ROLE_IDS[WorkspaceRole.OPERATOR],
+        key: WorkspaceRole.OPERATOR,
+        name: 'Operator',
+        protected: true,
+      } as WorkspaceAccessRole;
+      jest
+        .spyOn(mockWorkspaceRolesService, 'getAssignableRole')
+        .mockResolvedValue(operatorRole);
       jest
         .spyOn(mockWorkspaceMembersRepository, 'save')
         .mockResolvedValue({
           id: randomUUID(),
           user,
           workspace: { id: testWorkspaceId },
-          role: WorkspaceRole.OPERATOR,
+          roleId: operatorRole.id,
+          accessRole: operatorRole,
         } as WorkspaceMembers);
 
       await expect(
         service.addWorkspaceMember(testWorkspaceId, {
           email: user.email,
-          role: WorkspaceRole.OPERATOR,
+          roleId: operatorRole.id,
         }),
       ).resolves.toEqual({
         id: memberId,
         name: 'Operator User',
         image: null,
-        role: WorkspaceRole.OPERATOR,
+        roleId: operatorRole.id,
+        roleKey: WorkspaceRole.OPERATOR,
+        roleName: 'Operator',
+        roleProtected: true,
       });
     });
 
@@ -316,18 +385,68 @@ describe('WorkspacesService', () => {
           id: randomUUID(),
           user: { id: testUserId },
           workspace: { id: testWorkspaceId },
-          role: WorkspaceRole.OWNER,
+          roleId: PROTECTED_WORKSPACE_ROLE_IDS[WorkspaceRole.OWNER],
+          accessRole: {
+            id: PROTECTED_WORKSPACE_ROLE_IDS[WorkspaceRole.OWNER],
+            key: WorkspaceRole.OWNER,
+            name: 'Owner',
+            protected: true,
+          },
         } as WorkspaceMembers);
 
       await expect(
         service.updateWorkspaceMemberRole(testWorkspaceId, testUserId, {
-          role: WorkspaceRole.VIEWER,
+          roleId: PROTECTED_WORKSPACE_ROLE_IDS[WorkspaceRole.VIEWER],
         }),
       ).rejects.toThrow('Workspace owner role cannot be changed');
     });
   });
 
   describe('getWorkspaces', () => {
+    it('returns every workspace to a platform admin without requiring membership', async () => {
+      const query = {
+        limit: 10,
+        page: 1,
+        sortBy: 'createdAt',
+        sortOrder: SortOrder.DESC,
+      };
+      const adminContext = { ...testUserContext, role: Role.ADMIN };
+      (mockWorkspaceRepository.query as jest.Mock)
+        .mockResolvedValueOnce([{ total: '1' }])
+        .mockResolvedValueOnce([
+          {
+            ...mockOwnerWorkspaceResult[0],
+            workspace_ownerId: randomUUID(),
+            member_role_id: null,
+            member_role_key: null,
+            member_role_name: null,
+            member_role_protected: null,
+          },
+        ]);
+
+      const result = await service.getWorkspaces(
+        query,
+        adminContext,
+        { headers: {} } as Request,
+        { cookie: jest.fn() } as unknown as Response,
+      );
+
+      const countQuery = (mockWorkspaceRepository.query as jest.Mock).mock
+        .calls[0][0] as string;
+      const dataQuery = (mockWorkspaceRepository.query as jest.Mock).mock
+        .calls[1][0] as string;
+      expect(countQuery).not.toContain('INNER JOIN workspace_members');
+      expect(dataQuery).toContain('LEFT JOIN workspace_members');
+      expect(result.data[0]).toEqual(
+        expect.objectContaining({
+          accessSource: 'platform_admin',
+          roleId: null,
+          roleKey: null,
+          roleName: 'Platform Administrator',
+        }),
+      );
+    });
+
     // Test case 1: User là owner của workspace → trả về role = 'owner'
     it('should return workspace with role owner when user is owner', async () => {
       // Arrange
@@ -349,7 +468,7 @@ describe('WorkspacesService', () => {
       // Assert
       expect(result).toBeDefined();
       expect(result.data).toHaveLength(1);
-      expect(result.data[0].role).toBe('owner');
+      expect(result.data[0].roleKey).toBe('owner');
       expect(result.data[0].id).toBe(testWorkspaceId);
       expect(result.data[0].name).toBe('Test Workspace');
       expect(result.total).toBe(0);
@@ -376,7 +495,7 @@ describe('WorkspacesService', () => {
       // Assert
       expect(result).toBeDefined();
       expect(result.data).toHaveLength(1);
-      expect(result.data[0].role).toBe(WorkspaceRole.ANALYST);
+      expect(result.data[0].roleKey).toBe(WorkspaceRole.ANALYST);
       expect(result.data[0].id).toBe(testWorkspaceId);
     });
 
@@ -418,7 +537,7 @@ describe('WorkspacesService', () => {
       // Assert
       expect(result).toBeDefined();
       expect(result.data).toHaveLength(1);
-      expect(result.data[0].role).toBe(WorkspaceRole.SECURITY_ADMIN);
+      expect(result.data[0].roleKey).toBe(WorkspaceRole.SECURITY_ADMIN);
     });
 
     // Test case 4: Kiểm tra pagination hoạt động đúng với workspace_members join

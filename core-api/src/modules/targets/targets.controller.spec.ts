@@ -1,6 +1,7 @@
 import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
 import type { WorkspacePolicyService } from '@/common/authorization/workspace-policy.service';
 import type { UserContextPayload } from '@/common/interfaces/app.interface';
+import { Role } from '@/common/enums/enum';
 import type { TargetsService } from './targets.service';
 import { TargetsController } from './targets.controller';
 
@@ -8,6 +9,7 @@ describe('TargetsController', () => {
   const workspaceId = '93db9a95-c409-4db4-8ce4-10070eced20c';
   const userContext = {
     id: '3ba38483-a2e5-4902-9adc-4cd9ad9c103c',
+    role: Role.USER,
   } as UserContextPayload;
   const result = {
     created: [],
@@ -45,7 +47,7 @@ describe('TargetsController', () => {
     );
 
     expect(policyService.assertAllowed).toHaveBeenCalledWith(
-      userContext.id,
+      { id: userContext.id, role: userContext.role },
       workspaceId,
       WorkspaceAction.SCAN_EXECUTE,
     );

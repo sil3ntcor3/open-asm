@@ -1,8 +1,12 @@
-import { WorkspaceRole } from '@/common/enums/enum';
+import { Role, WorkspaceRole } from '@/common/enums/enum';
 import type { Repository } from 'typeorm';
 import type { WorkspaceMembers } from '@/modules/workspaces/entities/workspace-members.entity';
+import type { WorkspaceAccessRole } from '@/modules/workspaces/entities/workspace-access-role.entity';
 import { WorkspaceAction } from './workspace-action.enum';
-import { WorkspacePolicyService } from './workspace-policy.service';
+import {
+  WORKSPACE_ROLE_PERMISSIONS,
+  WorkspacePolicyService,
+} from './workspace-policy.service';
 
 describe('WorkspacePolicyService', () => {
   const workspaceId = '93db9a95-c409-4db4-8ce4-10070eced20c';
@@ -13,7 +17,12 @@ describe('WorkspacePolicyService', () => {
       findOne: jest.fn().mockResolvedValue(
         role
           ? {
-              role,
+              accessRole: {
+                key: role,
+                permissionEntries: WORKSPACE_ROLE_PERMISSIONS[role].map(
+                  (action) => ({ action }),
+                ),
+              },
               workspace: { id: workspaceId },
               user: { id: userId },
             }
@@ -38,19 +47,23 @@ describe('WorkspacePolicyService', () => {
     [WorkspaceRole.VIEWER, WorkspaceAction.WORKER_READ, true],
     [WorkspaceRole.OWNER, WorkspaceAction.WORKER_READ, true],
     [WorkspaceRole.SECURITY_ADMIN, WorkspaceAction.WORKER_MANAGE, true],
-    [WorkspaceRole.OWNER, WorkspaceAction.WORKER_MANAGE, false],
+    [WorkspaceRole.OWNER, WorkspaceAction.WORKER_MANAGE, true],
     [WorkspaceRole.SECURITY_ADMIN, WorkspaceAction.SECRET_MANAGE, true],
-    [WorkspaceRole.OWNER, WorkspaceAction.SECRET_MANAGE, false],
+    [WorkspaceRole.OWNER, WorkspaceAction.SECRET_MANAGE, true],
     [WorkspaceRole.OWNER, WorkspaceAction.MEMBER_MANAGE, true],
     [WorkspaceRole.SECURITY_ADMIN, WorkspaceAction.MEMBER_MANAGE, false],
     [WorkspaceRole.OWNER, WorkspaceAction.WORKSPACE_MANAGE, true],
     [WorkspaceRole.OWNER, WorkspaceAction.TARGET_CREATE, true],
     [WorkspaceRole.OWNER, WorkspaceAction.TARGET_MANAGE, true],
-    [WorkspaceRole.OWNER, WorkspaceAction.SCAN_EXECUTE, false],
+    [WorkspaceRole.OWNER, WorkspaceAction.SCAN_EXECUTE, true],
   ])('enforces %s permission for %s', async (role, action, shouldAllow) => {
     const { service } = createService(role);
 
-    const assertion = service.assertAllowed(userId, workspaceId, action);
+    const assertion = service.assertAllowed(
+      { id: userId, role: Role.USER },
+      workspaceId,
+      action,
+    );
 
     if (shouldAllow) {
       await expect(assertion).resolves.toBeUndefined();
@@ -64,18 +77,83 @@ describe('WorkspacePolicyService', () => {
 
     await expect(
       service.assertAllowed(
-        userId,
+        { id: userId, role: Role.USER },
         workspaceId,
         WorkspaceAction.WORKSPACE_READ,
       ),
     ).rejects.toThrow('Workspace action denied');
-    expect(repository.findOne).toHaveBeenCalledWith({
-      where: {
+    expect(repository.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          workspace: { id: workspaceId },
+          user: { id: userId },
+        },
+      }),
+    );
+  });
+
+  it.each(Object.values(WorkspaceAction))(
+    'allows a platform admin to perform %s without a workspace membership',
+    async (action) => {
+      const { service, repository } = createService();
+
+      await expect(
+        service.assertAllowed(
+          { id: userId, role: Role.ADMIN },
+          workspaceId,
+          action,
+        ),
+      ).resolves.toBeUndefined();
+      expect(repository.findOne).not.toHaveBeenCalled();
+    },
+  );
+
+  it('enforces permissions stored on a workspace custom role', async () => {
+    const accessRole = {
+      id: '5a86d19b-dcfe-4b9e-acb4-0475b00933e5',
+      key: null,
+      protected: false,
+      permissionEntries: [{ action: WorkspaceAction.SCAN_EXECUTE }],
+    } as WorkspaceAccessRole;
+    const repository = {
+      findOne: jest.fn().mockResolvedValue({
+        accessRole,
         workspace: { id: workspaceId },
         user: { id: userId },
-      },
-    });
+      }),
+    } as unknown as Repository<WorkspaceMembers>;
+    const service = new WorkspacePolicyService(repository);
+
+    await expect(
+      service.assertAllowed(
+        { id: userId, role: Role.USER },
+        workspaceId,
+        WorkspaceAction.SCAN_EXECUTE,
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      service.assertAllowed(
+        { id: userId, role: Role.USER },
+        workspaceId,
+        WorkspaceAction.SECRET_MANAGE,
+      ),
+    ).rejects.toThrow('Workspace action denied');
   });
+
+  it.each(Object.values(WorkspaceAction))(
+    'allows a workspace owner to perform %s',
+    async (action) => {
+      const { service } = createService(WorkspaceRole.OWNER);
+
+      await expect(
+        service.assertAllowed(
+          { id: userId, role: Role.USER },
+          workspaceId,
+          action,
+        ),
+      ).resolves.toBeUndefined();
+    },
+  );
 
   it('publishes the same five-role permission catalog used for enforcement', () => {
     const { service } = createService();
@@ -108,9 +186,6 @@ describe('WorkspacePolicyService', () => {
     );
     expect(
       catalog.find(({ role }) => role === WorkspaceRole.OWNER)?.permissions,
-    ).not.toContain(WorkspaceAction.SCAN_EXECUTE);
-    expect(
-      catalog.find(({ role }) => role === WorkspaceRole.OWNER)?.permissions,
-    ).not.toContain(WorkspaceAction.SECRET_MANAGE);
+    ).toEqual(expect.arrayContaining(Object.values(WorkspaceAction)));
   });
 });

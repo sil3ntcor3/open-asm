@@ -1,4 +1,5 @@
 import { WORKSPACE_HEADER_NAME } from '@/common/constants/app.constants';
+import { Role } from '@/common/enums/enum';
 import type { ExecutionContext } from '@nestjs/common';
 import type { Reflector } from '@nestjs/core';
 import { WorkspaceAction } from './workspace-action.enum';
@@ -35,7 +36,7 @@ describe('WorkspacePolicyGuard', () => {
       action: WorkspaceAction.SCAN_EXECUTE,
     });
     const context = createContext({
-      user: { id: userId },
+      user: { id: userId, role: Role.USER },
       headers: { [WORKSPACE_HEADER_NAME]: workspaceId },
       cookies: {},
       params: {},
@@ -44,7 +45,7 @@ describe('WorkspacePolicyGuard', () => {
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
     expect(policyService.assertAllowed).toHaveBeenCalledWith(
-      userId,
+      { id: userId, role: Role.USER },
       workspaceId,
       WorkspaceAction.SCAN_EXECUTE,
     );

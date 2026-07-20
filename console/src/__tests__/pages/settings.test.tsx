@@ -42,6 +42,14 @@ vi.mock('@/pages/settings/components/workspace-members', () => ({
   default: () => <div data-testid="workspace-members">WorkspaceMembers</div>,
 }));
 
+vi.mock('@/pages/settings/components/workspace-role-permissions', () => ({
+  default: () => (
+    <div data-testid="workspace-role-permissions">
+      WorkspaceRolePermissions
+    </div>
+  ),
+}));
+
 vi.mock('@/pages/settings/components/preferences', () => ({
   default: () => <div data-testid="preferences">Preferences</div>,
 }));
@@ -113,7 +121,7 @@ describe('Settings Page', () => {
     });
   });
 
-  it('renders the server-enforced role and permission matrix', async () => {
+  it('opens workspace role and permission management', async () => {
     vi.mocked(useParams).mockReturnValue({ tab: 'permissions' });
 
     renderWithProviders(<Settings />);
@@ -121,11 +129,9 @@ describe('Settings Page', () => {
     expect(
       await screen.findByRole('heading', { name: 'Roles and permissions' }),
     ).toBeInTheDocument();
-    expect(await screen.findByText('Platform roles')).toBeInTheDocument();
-    expect(await screen.findByText('Workspace roles')).toBeInTheDocument();
-    expect(screen.getByText('Security Administrator')).toBeInTheDocument();
-    expect(screen.getByText('Create targets')).toBeInTheDocument();
-    expect(screen.getByText('Run scans')).toBeInTheDocument();
+    expect(
+      await screen.findByTestId('workspace-role-permissions'),
+    ).toBeInTheDocument();
   });
 
   it('filters tabs based on user role', async () => {

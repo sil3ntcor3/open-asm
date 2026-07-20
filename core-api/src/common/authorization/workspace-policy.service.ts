@@ -1,4 +1,4 @@
-import { WorkspaceRole } from '@/common/enums/enum';
+import { Role, WorkspaceRole } from '@/common/enums/enum';
 import { WorkspaceMembers } from '@/modules/workspaces/entities/workspace-members.entity';
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -19,6 +19,11 @@ export type WorkspaceRoleDefinition = {
   permissions: readonly WorkspaceAction[];
 };
 
+export type WorkspaceActor = {
+  id: string;
+  role: Role;
+};
+
 export const WORKSPACE_ACTION_DEFINITIONS: readonly WorkspaceActionDefinition[] =
   [
     {
@@ -37,6 +42,12 @@ export const WORKSPACE_ACTION_DEFINITIONS: readonly WorkspaceActionDefinition[] 
       action: WorkspaceAction.MEMBER_MANAGE,
       label: 'Manage members',
       description: 'Add, remove, and assign roles to workspace members.',
+      category: 'Workspace',
+    },
+    {
+      action: WorkspaceAction.ROLE_MANAGE,
+      label: 'Manage roles',
+      description: 'Create, update, and remove custom workspace roles.',
       category: 'Workspace',
     },
     {
@@ -152,18 +163,7 @@ export const WORKSPACE_ROLE_PERMISSIONS: Readonly<
     WorkspaceAction.TOOL_MANAGE,
     WorkspaceAction.TEMPLATE_MANAGE,
   ],
-  [WorkspaceRole.OWNER]: [
-    WorkspaceAction.WORKSPACE_READ,
-    WorkspaceAction.WORKSPACE_MANAGE,
-    WorkspaceAction.MEMBER_MANAGE,
-    WorkspaceAction.TARGET_CREATE,
-    WorkspaceAction.TARGET_MANAGE,
-    WorkspaceAction.FINDING_TRIAGE,
-    WorkspaceAction.REPORT_MANAGE,
-    WorkspaceAction.AGENT_USE,
-    WorkspaceAction.AGENT_MANAGE,
-    WorkspaceAction.WORKER_READ,
-  ],
+  [WorkspaceRole.OWNER]: [...Object.values(WorkspaceAction)],
 };
 
 export const WORKSPACE_ROLE_DEFINITIONS: readonly WorkspaceRoleDefinition[] = [
@@ -194,8 +194,7 @@ export const WORKSPACE_ROLE_DEFINITIONS: readonly WorkspaceRoleDefinition[] = [
   {
     role: WorkspaceRole.OWNER,
     label: 'Owner',
-    description:
-      'Owns workspace lifecycle and membership and can maintain target scope, but does not implicitly receive scan or worker-control permission.',
+    description: 'Has every permission within the workspace.',
     permissions: WORKSPACE_ROLE_PERMISSIONS[WorkspaceRole.OWNER],
   },
 ] as const;
@@ -211,20 +210,28 @@ export class WorkspacePolicyService {
    * Enforces one workspace action against the actor's persisted membership.
    */
   async assertAllowed(
-    userId: string,
+    actor: WorkspaceActor,
     workspaceId: string,
     action: WorkspaceAction,
   ): Promise<void> {
+    if (actor.role === Role.ADMIN) return;
+
     const membership = await this.workspaceMembersRepository.findOne({
       where: {
         workspace: { id: workspaceId },
-        user: { id: userId },
+        user: { id: actor.id },
       },
+      relations: ['accessRole', 'accessRole.permissionEntries'],
     });
 
+    if (!membership?.accessRole) {
+      throw new ForbiddenException('Workspace action denied');
+    }
+    if (membership.accessRole.key === WorkspaceRole.OWNER) return;
     if (
-      !membership ||
-      !WORKSPACE_ROLE_PERMISSIONS[membership.role].includes(action)
+      !membership.accessRole.permissionEntries.some(
+        (permissionEntry) => permissionEntry.action === action,
+      )
     ) {
       throw new ForbiddenException('Workspace action denied');
     }
