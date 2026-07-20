@@ -2,7 +2,7 @@ import { DefaultMessageResponseDto } from '@/common/dtos/default-message-respons
 import { Role } from '@/common/enums/enum';
 import { ReleaseVersion } from '@/common/interfaces/app.interface';
 import { RedisService } from '@/services/redis/redis.service';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SystemConfigsService } from '../system-configs/system-configs.service';
 import { UsersService } from '../users/users.service';
@@ -87,28 +87,61 @@ export class RootService {
    */
   public async getLatestVersion(): Promise<GetVersionDto> {
     const VERSION_KEY = 'version:latest';
-    const isDeveloperMode =
-      this.configService.get<string>('NODE_ENV') === 'development';
-    const data = await this.redisService.get(VERSION_KEY);
-
-    if (!data) {
-      throw new NotFoundException('Version data not found');
-    }
-
-    const parsed = JSON.parse(data) as ReleaseVersion;
-
-    const latestVersion = parsed.tag_name.replace('v', '') || null;
-
-    const currentVersion = isDeveloperMode
-      ? latestVersion
-      : this.configService.get<string>('APP_VERSION')?.replace('v', '') || null;
+    const LAST_CHECK_KEY = 'version:last_check';
+    const [data, lastCheckedAt] = await Promise.all([
+      this.redisService.get(VERSION_KEY),
+      this.redisService.get(LAST_CHECK_KEY),
+    ]);
+    const parsed = data ? (JSON.parse(data) as ReleaseVersion) : null;
+    const latestVersion = this.normalizeVersion(parsed?.tag_name);
+    const currentVersion = this.normalizeVersion(
+      this.configService.get<string>('APP_VERSION'),
+    );
 
     return {
       currentVersion,
+      currentCommit: this.configService.get<string>('APP_COMMIT') || null,
+      channel: this.configService.get<string>('APP_CHANNEL') || null,
       latestVersion,
-      isLatest: currentVersion === latestVersion,
-      notes: parsed.body,
-      releaseDate: parsed.published_at,
+      isLatest: this.isCurrentVersionAtLeast(currentVersion, latestVersion),
+      notes: parsed?.body || null,
+      releaseDate: parsed?.published_at || null,
+      releaseUrl: parsed?.html_url || null,
+      lastCheckedAt: lastCheckedAt || null,
     };
+  }
+
+  public async checkForUpdates(): Promise<GetVersionDto> {
+    await this.systemConfigsService.checkForUpdates(true);
+    return this.getLatestVersion();
+  }
+
+  private normalizeVersion(version?: string | null): string | null {
+    const normalized = version?.trim().replace(/^v/, '');
+    return normalized || null;
+  }
+
+  private isCurrentVersionAtLeast(
+    currentVersion: string | null,
+    latestVersion: string | null,
+  ): boolean | null {
+    const current = this.getCoreSemver(currentVersion);
+    const latest = this.getCoreSemver(latestVersion);
+
+    if (!current || !latest) {
+      return null;
+    }
+
+    for (let index = 0; index < current.length; index += 1) {
+      if (current[index] > latest[index]) return true;
+      if (current[index] < latest[index]) return false;
+    }
+
+    return true;
+  }
+
+  private getCoreSemver(version: string | null): number[] | null {
+    const match = version?.match(/^(\d+)\.(\d+)\.(\d+)/);
+    return match ? match.slice(1).map(Number) : null;
   }
 }

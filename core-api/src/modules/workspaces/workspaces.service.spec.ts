@@ -11,6 +11,7 @@ import { ApiKeysService } from '../apikeys/apikeys.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { WorkspaceTarget } from '../targets/entities/workspace-target.entity';
 import { WorkflowsService } from '../workflows/workflows.service';
+import { User } from '../auth/entities/user.entity';
 import { WorkspaceMembers } from './entities/workspace-members.entity';
 import { Workspace } from './entities/workspace.entity';
 import { WorkspacesService } from './workspaces.service';
@@ -20,6 +21,7 @@ describe('WorkspacesService', () => {
   let mockWorkspaceRepository: Partial<Repository<Workspace>>;
   let mockWorkspaceMembersRepository: Partial<Repository<WorkspaceMembers>>;
   let mockWorkspaceTargetRepository: Partial<Repository<WorkspaceTarget>>;
+  let mockUserRepository: Partial<Repository<User>>;
   let mockApiKeysService: Partial<ApiKeysService>;
   let mockNotificationsService: Partial<NotificationsService>;
   let mockDataSource: Partial<DataSource>;
@@ -152,6 +154,11 @@ describe('WorkspacesService', () => {
       save: jest.fn(),
       findOne: jest.fn(),
       find: jest.fn(),
+      remove: jest.fn(),
+    };
+
+    mockUserRepository = {
+      findOne: jest.fn(),
     };
 
     mockWorkspaceTargetRepository = {
@@ -187,6 +194,10 @@ describe('WorkspacesService', () => {
         {
           provide: getRepositoryToken(WorkspaceTarget),
           useValue: mockWorkspaceTargetRepository,
+        },
+        {
+          provide: getRepositoryToken(User),
+          useValue: mockUserRepository,
         },
         {
           provide: ApiKeysService,
@@ -233,6 +244,86 @@ describe('WorkspacesService', () => {
       workspace,
       user: { id: testUserId },
       role: WorkspaceRole.OWNER,
+    });
+  });
+
+  describe('workspace member roles', () => {
+    const memberId = '499f52b4-3e69-4d4d-bc84-02948e6fc76f';
+
+    it('lists sanitized members with their workspace roles', async () => {
+      jest.spyOn(mockWorkspaceMembersRepository, 'find').mockResolvedValue([
+        {
+          id: randomUUID(),
+          role: WorkspaceRole.ANALYST,
+          user: {
+            id: memberId,
+            name: 'Analyst User',
+            image: 'https://example.com/analyst.png',
+            email: 'private@example.com',
+          },
+        } as WorkspaceMembers,
+      ]);
+
+      await expect(
+        service.getWorkspaceMembers(testWorkspaceId),
+      ).resolves.toEqual([
+        {
+          id: memberId,
+          name: 'Analyst User',
+          image: 'https://example.com/analyst.png',
+          role: WorkspaceRole.ANALYST,
+        },
+      ]);
+    });
+
+    it('adds an existing user with one of the assignable workspace roles', async () => {
+      const user = {
+        id: memberId,
+        name: 'Operator User',
+        email: 'operator@example.com',
+        image: null,
+      } as unknown as User;
+      jest.spyOn(mockUserRepository, 'findOne').mockResolvedValue(user);
+      jest
+        .spyOn(mockWorkspaceMembersRepository, 'findOne')
+        .mockResolvedValue(null);
+      jest
+        .spyOn(mockWorkspaceMembersRepository, 'save')
+        .mockResolvedValue({
+          id: randomUUID(),
+          user,
+          workspace: { id: testWorkspaceId },
+          role: WorkspaceRole.OPERATOR,
+        } as WorkspaceMembers);
+
+      await expect(
+        service.addWorkspaceMember(testWorkspaceId, {
+          email: user.email,
+          role: WorkspaceRole.OPERATOR,
+        }),
+      ).resolves.toEqual({
+        id: memberId,
+        name: 'Operator User',
+        image: null,
+        role: WorkspaceRole.OPERATOR,
+      });
+    });
+
+    it('does not allow the owner membership to be reassigned', async () => {
+      jest
+        .spyOn(mockWorkspaceMembersRepository, 'findOne')
+        .mockResolvedValue({
+          id: randomUUID(),
+          user: { id: testUserId },
+          workspace: { id: testWorkspaceId },
+          role: WorkspaceRole.OWNER,
+        } as WorkspaceMembers);
+
+      await expect(
+        service.updateWorkspaceMemberRole(testWorkspaceId, testUserId, {
+          role: WorkspaceRole.VIEWER,
+        }),
+      ).rejects.toThrow('Workspace owner role cannot be changed');
     });
   });
 

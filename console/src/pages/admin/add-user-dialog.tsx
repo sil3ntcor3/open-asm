@@ -25,6 +25,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { authClient } from '@/utils/authClient';
+import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
+import { workspacesControllerAddWorkspaceMember } from '@/services/apis/gen/queries';
+import {
+  workspaceRoleOptions,
+  type AssignableWorkspaceRole,
+} from '@/utils/workspace-roles';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2Icon, UserPlus } from 'lucide-react';
@@ -37,7 +43,8 @@ const formSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   email: z.string().min(1, 'Email is required').email('Invalid email address'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
-  role: z.enum(['user', 'admin']),
+  platformRole: z.enum(['user', 'admin']),
+  workspaceRole: z.enum(['viewer', 'analyst', 'operator', 'security_admin']),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -45,6 +52,11 @@ type FormValues = z.infer<typeof formSchema>;
 export function AddUserDialog() {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
+  const { selectedWorkspace, workspaces } = useWorkspaceSelector();
+  const currentWorkspace = workspaces.find(
+    (workspace) => workspace.id === selectedWorkspace,
+  );
+  const canAssignWorkspaceRole = currentWorkspace?.role === 'owner';
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -52,23 +64,41 @@ export function AddUserDialog() {
       name: '',
       email: '',
       password: '',
-      role: 'user',
+      platformRole: 'user',
+      workspaceRole: 'viewer',
     },
   });
 
   const { mutate: createUser, isPending } = useMutation({
-    mutationFn: (values: FormValues) =>
-      authClient.admin.createUser({
+    mutationFn: async (values: FormValues) => {
+      const result = await authClient.admin.createUser({
         name: values.name,
         email: values.email,
         password: values.password,
-        role: values.role,
-      }),
+        role: values.platformRole,
+      });
+
+      if (result.error) {
+        throw result.error;
+      }
+
+      if (selectedWorkspace && canAssignWorkspaceRole) {
+        await workspacesControllerAddWorkspaceMember(selectedWorkspace, {
+          email: values.email,
+          role: values.workspaceRole as AssignableWorkspaceRole,
+        });
+      }
+
+      return result;
+    },
     onSuccess: () => {
       toast.success('User created successfully.');
       setOpen(false);
       form.reset();
-      return queryClient.invalidateQueries({ queryKey: ['users'] });
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
+      return queryClient.invalidateQueries({
+        queryKey: [`/api/workspaces/${selectedWorkspace}/members`],
+      });
     },
     onError: () => {
       toast.error('Failed to create user.');
@@ -162,10 +192,10 @@ export function AddUserDialog() {
             />
             <FormField
               control={form.control}
-              name="role"
+              name="platformRole"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Role</FormLabel>
+                  <FormLabel>Platform role</FormLabel>
                   <Select
                     onValueChange={field.onChange}
                     defaultValue={field.value}
@@ -181,6 +211,40 @@ export function AddUserDialog() {
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>
                   </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="workspaceRole"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Workspace role</FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                    disabled={isPending || !canAssignWorkspaceRole}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a workspace role" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {workspaceRoleOptions.map((role) => (
+                        <SelectItem key={role.value} value={role.value}>
+                          {role.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {!canAssignWorkspaceRole && (
+                    <p className="text-xs text-muted-foreground">
+                      Only the workspace owner can assign workspace roles. The
+                      account will be created without workspace access.
+                    </p>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}

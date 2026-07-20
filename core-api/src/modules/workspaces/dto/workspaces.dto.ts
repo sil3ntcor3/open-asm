@@ -2,7 +2,7 @@ import { GetManyBaseQueryParams } from '@/common/dtos/get-many-base.dto';
 import { WorkspaceRole } from '@/common/enums/enum';
 import { ApiProperty, PartialType, PickType } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsOptional } from 'class-validator';
+import { IsBoolean, IsEmail, IsIn, IsOptional, IsUUID } from 'class-validator';
 import { Workspace } from '../entities/workspace.entity';
 
 export class CreateWorkspaceDto extends PickType(Workspace, [
@@ -107,4 +107,60 @@ export class GetManyWorkspacesDto extends GetManyBaseQueryParams {
   @IsOptional()
   @Transform(({ value }) => value === 'true' || value === true)
   isArchived?: boolean;
+}
+
+export const ASSIGNABLE_WORKSPACE_ROLES = [
+  WorkspaceRole.VIEWER,
+  WorkspaceRole.ANALYST,
+  WorkspaceRole.OPERATOR,
+  WorkspaceRole.SECURITY_ADMIN,
+] as const;
+
+export type AssignableWorkspaceRole =
+  (typeof ASSIGNABLE_WORKSPACE_ROLES)[number];
+
+export class AddWorkspaceMemberDto {
+  @ApiProperty({ description: 'Existing user email address' })
+  @IsEmail()
+  email: string;
+
+  @ApiProperty({
+    description: 'Role to grant in this workspace',
+    enum: ASSIGNABLE_WORKSPACE_ROLES,
+  })
+  @IsIn(ASSIGNABLE_WORKSPACE_ROLES)
+  role: AssignableWorkspaceRole;
+}
+
+export class UpdateWorkspaceMemberRoleDto {
+  @ApiProperty({
+    description: 'New role in this workspace',
+    enum: ASSIGNABLE_WORKSPACE_ROLES,
+  })
+  @IsIn(ASSIGNABLE_WORKSPACE_ROLES)
+  role: AssignableWorkspaceRole;
+}
+
+export class WorkspaceMemberParamsDto {
+  @ApiProperty({ description: 'Workspace ID' })
+  @IsUUID()
+  id: string;
+
+  @ApiProperty({ description: 'User ID' })
+  @IsUUID()
+  userId: string;
+}
+
+export class WorkspaceMemberResponseDto {
+  @ApiProperty({ description: 'User ID' })
+  id: string;
+
+  @ApiProperty({ description: 'Display name' })
+  name: string;
+
+  @ApiProperty({ description: 'Profile image', type: String, nullable: true })
+  image: string | null;
+
+  @ApiProperty({ enum: WorkspaceRole })
+  role: WorkspaceRole;
 }

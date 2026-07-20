@@ -4,8 +4,12 @@ RUN apk add --no-cache curl
 # Build stage
 FROM base AS builder
 
-ARG APP_VERSION
+ARG APP_VERSION=development
+ARG APP_CHANNEL=development
+ARG APP_COMMIT=local
 ENV APP_VERSION=$APP_VERSION
+ENV APP_CHANNEL=$APP_CHANNEL
+ENV APP_COMMIT=$APP_COMMIT
 
 WORKDIR /app
 
@@ -19,8 +23,12 @@ RUN rm -rf src test node_modules/.cache
 # Production stage
 FROM base
 
-ARG APP_VERSION
+ARG APP_VERSION=development
+ARG APP_CHANNEL=development
+ARG APP_COMMIT=local
 ENV APP_VERSION=$APP_VERSION
+ENV APP_CHANNEL=$APP_CHANNEL
+ENV APP_COMMIT=$APP_COMMIT
 
 WORKDIR /app
 

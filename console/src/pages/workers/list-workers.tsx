@@ -8,7 +8,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import WorkerSettingsControl from '@/components/ui/worker-settings-control';
 import { useNavigateWithParams } from '@/hooks/useNavigateWithParams';
-import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
+import {
+  useWorkspaceSelector,
+  useWorkspaceState,
+} from '@/hooks/useWorkspaceSelector';
 import { useWorkersControllerGetWorkers } from '@/services/apis/gen/queries';
 import type { WorkersControllerGetWorkersParams } from '@/services/apis/gen/queries';
 import { useNavigate, useSearch } from '@tanstack/react-router';
@@ -36,6 +39,11 @@ const ListWorkers = () => {
     state: { selectedWorkspaceId },
   } = useWorkspaceState();
   const navigateWithParams = useNavigateWithParams();
+  const { workspaces } = useWorkspaceSelector();
+  const selectedWorkspace = workspaces.find(
+    (workspace) => workspace.id === selectedWorkspaceId,
+  );
+  const canManageWorkers = selectedWorkspace?.role === 'security_admin';
   const search = useSearch({ strict: false }) as Record<string, string | undefined>;
   const activeTab: TabValue = VALID_TABS.includes(search.tab as TabValue)
     ? (search.tab as TabValue)
@@ -235,9 +243,15 @@ const ListWorkers = () => {
                 </div>
               </div>
               <div className="flex items-center justify-between border-t pt-2">
-                <div onClick={(e) => e.stopPropagation()}>
-                  <WorkerSettingsControl worker={worker} />
-                </div>
+                {canManageWorkers ? (
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <WorkerSettingsControl worker={worker} />
+                  </div>
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    Read only
+                  </span>
+                )}
                 <span className="text-sm text-muted-foreground">
                   Created {dayjs(worker.createdAt).fromNow()}
                 </span>

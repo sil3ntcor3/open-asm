@@ -28,6 +28,10 @@ services:
     build:
       context: ./core-api
       dockerfile: Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-development}
+        APP_CHANNEL: ${APP_CHANNEL:-development}
+        APP_COMMIT: ${APP_COMMIT:-local}
     networks:
       - oasm
     env_file:

@@ -35,7 +35,12 @@ describe('WorkspacePolicyService', () => {
     [WorkspaceRole.SECURITY_ADMIN, WorkspaceAction.AGENT_MANAGE, true],
     [WorkspaceRole.OPERATOR, WorkspaceAction.AGENT_MANAGE, false],
     [WorkspaceRole.OPERATOR, WorkspaceAction.SCAN_EXECUTE, true],
+    [WorkspaceRole.VIEWER, WorkspaceAction.WORKER_READ, true],
+    [WorkspaceRole.OWNER, WorkspaceAction.WORKER_READ, true],
     [WorkspaceRole.SECURITY_ADMIN, WorkspaceAction.WORKER_MANAGE, true],
+    [WorkspaceRole.OWNER, WorkspaceAction.WORKER_MANAGE, false],
+    [WorkspaceRole.OWNER, WorkspaceAction.MEMBER_MANAGE, true],
+    [WorkspaceRole.SECURITY_ADMIN, WorkspaceAction.MEMBER_MANAGE, false],
     [WorkspaceRole.OWNER, WorkspaceAction.WORKSPACE_MANAGE, true],
     [WorkspaceRole.OWNER, WorkspaceAction.SCAN_EXECUTE, false],
   ])(
