@@ -22,6 +22,13 @@ export const workspaceRolePermissionsFixture: WorkspaceRolePermissionsResponseDt
         category: 'Workspace',
       },
       {
+        action: 'role.manage',
+        label: 'Manage roles',
+        description:
+          'Create, update, and delete custom workspace roles. This permission cannot be delegated.',
+        category: 'Workspace',
+      },
+      {
         action: 'target.create',
         label: 'Create targets',
         description: 'Register domains, IP addresses, and CIDR targets.',
@@ -153,19 +160,24 @@ export const workspaceRolePermissionsFixture: WorkspaceRolePermissionsResponseDt
       {
         role: 'owner',
         label: 'Owner',
-        description:
-          'Owns workspace lifecycle and membership and can maintain target scope, but does not implicitly receive scan or worker-control permission.',
+        description: 'Has every permission within the workspace.',
         permissions: [
           'workspace.read',
           'workspace.manage',
           'member.manage',
+          'role.manage',
           'target.create',
           'target.manage',
+          'scan.execute',
           'finding.triage',
           'report.manage',
+          'secret.manage',
           'agent.use',
           'agent.manage',
           'worker.read',
+          'worker.manage',
+          'tool.manage',
+          'template.manage',
         ],
       },
     ],

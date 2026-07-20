@@ -3,7 +3,17 @@ import { WorkspaceRole } from '@/common/enums/enum';
 import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
 import { ApiProperty, PartialType, PickType } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsEmail, IsIn, IsOptional, IsUUID } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsEmail,
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { Workspace } from '../entities/workspace.entity';
 
 export class CreateWorkspaceDto extends PickType(Workspace, [
@@ -68,12 +78,17 @@ export class WorkspaceResponseDto {
   })
   memberCount: number;
 
-  @ApiProperty({
-    description: 'Role of the current user in the workspace',
-    enum: WorkspaceRole,
-    example: 'owner',
-  })
-  role: WorkspaceRole;
+  @ApiProperty({ type: String, nullable: true })
+  roleId: string | null;
+
+  @ApiProperty({ enum: WorkspaceRole, nullable: true })
+  roleKey: WorkspaceRole | null;
+
+  @ApiProperty()
+  roleName: string;
+
+  @ApiProperty({ enum: ['membership', 'platform_admin'] })
+  accessSource: 'membership' | 'platform_admin';
 }
 
 export class WorkspaceStatisticsResponseDto {
@@ -110,36 +125,24 @@ export class GetManyWorkspacesDto extends GetManyBaseQueryParams {
   isArchived?: boolean;
 }
 
-export const ASSIGNABLE_WORKSPACE_ROLES = [
-  WorkspaceRole.VIEWER,
-  WorkspaceRole.ANALYST,
-  WorkspaceRole.OPERATOR,
-  WorkspaceRole.SECURITY_ADMIN,
-] as const;
-
-export type AssignableWorkspaceRole =
-  (typeof ASSIGNABLE_WORKSPACE_ROLES)[number];
-
 export class AddWorkspaceMemberDto {
   @ApiProperty({ description: 'Existing user email address' })
   @IsEmail()
   email: string;
 
   @ApiProperty({
-    description: 'Role to grant in this workspace',
-    enum: ASSIGNABLE_WORKSPACE_ROLES,
+    description: 'Protected or workspace-local custom role ID',
   })
-  @IsIn(ASSIGNABLE_WORKSPACE_ROLES)
-  role: AssignableWorkspaceRole;
+  @IsUUID()
+  roleId: string;
 }
 
 export class UpdateWorkspaceMemberRoleDto {
   @ApiProperty({
-    description: 'New role in this workspace',
-    enum: ASSIGNABLE_WORKSPACE_ROLES,
+    description: 'Protected or workspace-local custom role ID',
   })
-  @IsIn(ASSIGNABLE_WORKSPACE_ROLES)
-  role: AssignableWorkspaceRole;
+  @IsUUID()
+  roleId: string;
 }
 
 export class WorkspaceMemberParamsDto {
@@ -152,6 +155,16 @@ export class WorkspaceMemberParamsDto {
   userId: string;
 }
 
+export class WorkspaceRoleParamsDto {
+  @ApiProperty({ description: 'Workspace ID' })
+  @IsUUID()
+  id: string;
+
+  @ApiProperty({ description: 'Workspace role ID' })
+  @IsUUID()
+  roleId: string;
+}
+
 export class WorkspaceMemberResponseDto {
   @ApiProperty({ description: 'User ID' })
   id: string;
@@ -162,8 +175,17 @@ export class WorkspaceMemberResponseDto {
   @ApiProperty({ description: 'Profile image', type: String, nullable: true })
   image: string | null;
 
-  @ApiProperty({ enum: WorkspaceRole })
-  role: WorkspaceRole;
+  @ApiProperty()
+  roleId: string;
+
+  @ApiProperty({ enum: WorkspaceRole, nullable: true })
+  roleKey: WorkspaceRole | null;
+
+  @ApiProperty()
+  roleName: string;
+
+  @ApiProperty()
+  roleProtected: boolean;
 }
 
 export class WorkspaceActionDefinitionDto {
@@ -200,4 +222,47 @@ export class WorkspaceRolePermissionsResponseDto {
 
   @ApiProperty({ type: [WorkspaceActionDefinitionDto] })
   actions: WorkspaceActionDefinitionDto[];
+}
+
+export class CreateWorkspaceRoleDto {
+  @ApiProperty({ minLength: 2, maxLength: 50 })
+  @IsString()
+  @MinLength(2)
+  @MaxLength(50)
+  name: string;
+
+  @ApiProperty({ required: false, default: '' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  description?: string;
+
+  @ApiProperty({ enum: WorkspaceAction, isArray: true })
+  @IsArray()
+  @IsEnum(WorkspaceAction, { each: true })
+  permissions: WorkspaceAction[];
+}
+
+export class UpdateWorkspaceRoleDto extends PartialType(
+  CreateWorkspaceRoleDto,
+) {}
+
+export class WorkspaceRoleResponseDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ enum: WorkspaceRole, nullable: true })
+  key: WorkspaceRole | null;
+
+  @ApiProperty()
+  name: string;
+
+  @ApiProperty()
+  description: string;
+
+  @ApiProperty()
+  protected: boolean;
+
+  @ApiProperty({ enum: WorkspaceAction, isArray: true })
+  permissions: WorkspaceAction[];
 }

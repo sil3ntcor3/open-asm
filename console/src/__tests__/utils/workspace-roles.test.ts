@@ -34,7 +34,7 @@ describe('workspace role permissions', () => {
         'owner',
         'scan.execute',
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       hasWorkspacePermission(
         workspaceRolePermissionsFixture.roles,

@@ -57,7 +57,11 @@ export class WorkspacePolicyGuard implements CanActivate {
       throw new BadRequestException('Workspace id null or invalid');
     }
 
-    await this.policyService.assertAllowed(userId, workspaceId, policy.action);
+    await this.policyService.assertAllowed(
+      { id: userId, role: request.user.role },
+      workspaceId,
+      policy.action,
+    );
     return true;
   }
 

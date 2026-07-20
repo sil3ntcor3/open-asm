@@ -81,7 +81,10 @@ export const mockWorkspaces = [
     id: 'workspace-1',
     name: 'Test Workspace',
     slug: 'test-workspace',
-    role: 'operator',
+    roleId: '00000000-0000-4000-8000-000000000003',
+    roleKey: 'operator',
+    roleName: 'Operator',
+    accessSource: 'membership',
     createdAt: '2026-01-01T00:00:00Z',
   },
 ];

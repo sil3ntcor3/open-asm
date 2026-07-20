@@ -10,6 +10,11 @@ import { WorkspacesService } from './workspaces.service';
 import { WorkspacePolicyService } from '@/common/authorization/workspace-policy.service';
 import { WorkspacePolicyGuard } from '@/common/authorization/workspace-policy.guard';
 import { User } from '../auth/entities/user.entity';
+import {
+  WorkspaceAccessRole,
+  WorkspaceRolePermission,
+} from './entities/workspace-access-role.entity';
+import { WorkspaceRolesService } from './workspace-roles.service';
 @Global()
 @Module({
   imports: [
@@ -18,12 +23,24 @@ import { User } from '../auth/entities/user.entity';
       WorkspaceMembers,
       WorkspaceTarget,
       User,
+      WorkspaceAccessRole,
+      WorkspaceRolePermission,
     ]),
     ApiKeysModule,
     forwardRef(() => WorkflowsModule),
   ],
   controllers: [WorkspacesController],
-  providers: [WorkspacesService, WorkspacePolicyService, WorkspacePolicyGuard],
-  exports: [WorkspacesService, WorkspacePolicyService, WorkspacePolicyGuard],
+  providers: [
+    WorkspacesService,
+    WorkspaceRolesService,
+    WorkspacePolicyService,
+    WorkspacePolicyGuard,
+  ],
+  exports: [
+    WorkspacesService,
+    WorkspaceRolesService,
+    WorkspacePolicyService,
+    WorkspacePolicyGuard,
+  ],
 })
 export class WorkspacesModule {}

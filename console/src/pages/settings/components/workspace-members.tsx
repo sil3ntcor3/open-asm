@@ -29,25 +29,21 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useWorkspacePermissions } from '@/hooks/useWorkspacePermissions';
 import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import {
-  getWorkspacesControllerGetWorkspaceMembersQueryKey,
-  type WorkspaceMemberResponseDto,
-  useWorkspacesControllerAddWorkspaceMember,
-  useWorkspacesControllerGetWorkspaceMembers,
-  useWorkspacesControllerRemoveWorkspaceMember,
-  useWorkspacesControllerUpdateWorkspaceMemberRole,
-} from '@/services/apis/gen/queries';
-import {
-  workspaceRoleLabels,
-  workspaceRoleOptions,
-  type AssignableWorkspaceRole,
-} from '@/utils/workspace-roles';
-import { useQueryClient } from '@tanstack/react-query';
+  addWorkspaceMember,
+  getWorkspaceMembers,
+  getWorkspaceRoles,
+  rbacKeys,
+  removeWorkspaceMember,
+  updateWorkspaceMemberRole,
+  type WorkspaceMember,
+} from '@/services/apis/rbac';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2Icon, Trash2, UserPlus } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { useWorkspacePermissions } from '@/hooks/useWorkspacePermissions';
 
 const initials = (name: string) =>
   name
@@ -57,6 +53,7 @@ const initials = (name: string) =>
     .map((part) => part[0]?.toUpperCase())
     .join('');
 
+/** Manages relational workspace memberships with one role per member. */
 export default function WorkspaceMembers() {
   const queryClient = useQueryClient();
   const { selectedWorkspace, workspaces } = useWorkspaceSelector();
@@ -67,65 +64,69 @@ export default function WorkspaceMembers() {
   const canManage = can('member.manage');
   const [addOpen, setAddOpen] = useState(false);
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<AssignableWorkspaceRole>('viewer');
+  const [roleId, setRoleId] = useState('');
   const [memberToRemove, setMemberToRemove] =
-    useState<WorkspaceMemberResponseDto | null>(null);
+    useState<WorkspaceMember | null>(null);
 
-  const membersQueryKey =
-    getWorkspacesControllerGetWorkspaceMembersQueryKey(selectedWorkspace);
+  const { data: members = [], isLoading } = useQuery({
+    queryKey: rbacKeys.members(selectedWorkspace),
+    queryFn: () => getWorkspaceMembers(selectedWorkspace),
+    enabled: Boolean(selectedWorkspace),
+  });
+  const { data: roles = [], isLoading: rolesLoading } = useQuery({
+    queryKey: rbacKeys.roles(selectedWorkspace),
+    queryFn: () => getWorkspaceRoles(selectedWorkspace),
+    enabled: Boolean(selectedWorkspace),
+  });
+  const assignableRoles = roles.filter((role) => role.key !== 'owner');
+
+  useEffect(() => {
+    if (!roleId && assignableRoles[0]) setRoleId(assignableRoles[0].id);
+  }, [assignableRoles, roleId]);
+
   const refreshMembers = () =>
-    queryClient.invalidateQueries({ queryKey: membersQueryKey });
-
-  const { data: members, isLoading } =
-    useWorkspacesControllerGetWorkspaceMembers(selectedWorkspace, {
-      query: { enabled: Boolean(selectedWorkspace) },
+    queryClient.invalidateQueries({
+      queryKey: rbacKeys.members(selectedWorkspace),
     });
 
-  const { mutate: addMember, isPending: isAdding } =
-    useWorkspacesControllerAddWorkspaceMember({
-      mutation: {
-        onSuccess: () => {
-          toast.success('Workspace member added.');
-          setEmail('');
-          setRole('viewer');
-          setAddOpen(false);
-          void refreshMembers();
-        },
-        onError: () => toast.error('Unable to add workspace member.'),
-      },
-    });
+  const { mutate: addMember, isPending: isAdding } = useMutation({
+    mutationFn: () =>
+      addWorkspaceMember(selectedWorkspace, {
+        email: email.trim().toLowerCase(),
+        roleId,
+      }),
+    onSuccess: () => {
+      toast.success('Workspace member added.');
+      setEmail('');
+      setAddOpen(false);
+      void refreshMembers();
+    },
+    onError: (error: Error) =>
+      toast.error(error.message || 'Unable to add workspace member.'),
+  });
 
-  const { mutate: updateRole, isPending: isUpdating } =
-    useWorkspacesControllerUpdateWorkspaceMemberRole({
-      mutation: {
-        onSuccess: () => {
-          toast.success('Workspace role updated.');
-          void refreshMembers();
-        },
-        onError: () => toast.error('Unable to update workspace role.'),
-      },
-    });
+  const { mutate: updateRole, isPending: isUpdating } = useMutation({
+    mutationFn: ({ userId, nextRoleId }: { userId: string; nextRoleId: string }) =>
+      updateWorkspaceMemberRole(selectedWorkspace, userId, nextRoleId),
+    onSuccess: () => {
+      toast.success('Workspace role updated.');
+      void refreshMembers();
+    },
+    onError: (error: Error) =>
+      toast.error(error.message || 'Unable to update workspace role.'),
+  });
 
-  const { mutate: removeMember, isPending: isRemoving } =
-    useWorkspacesControllerRemoveWorkspaceMember({
-      mutation: {
-        onSuccess: () => {
-          toast.success('Workspace member removed.');
-          setMemberToRemove(null);
-          void refreshMembers();
-        },
-        onError: () => toast.error('Unable to remove workspace member.'),
-      },
-    });
-
-  const submitMember = () => {
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail || !selectedWorkspace) return;
-    addMember({
-      id: selectedWorkspace,
-      data: { email: normalizedEmail, role },
-    });
-  };
+  const { mutate: removeMember, isPending: isRemoving } = useMutation({
+    mutationFn: (userId: string) =>
+      removeWorkspaceMember(selectedWorkspace, userId),
+    onSuccess: () => {
+      toast.success('Workspace member removed.');
+      setMemberToRemove(null);
+      void refreshMembers();
+    },
+    onError: (error: Error) =>
+      toast.error(error.message || 'Unable to remove workspace member.'),
+  });
 
   if (!selectedWorkspace) {
     return (
@@ -141,8 +142,8 @@ export default function WorkspaceMembers() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4">
         <p className="text-sm text-muted-foreground">
-          Workspace roles control access independently of the Admin and User
-          platform roles.
+          Platform accounts and workspace access are managed separately. Each
+          member has one role in this workspace.
         </p>
         {canManage && (
           <Dialog open={addOpen} onOpenChange={setAddOpen}>
@@ -156,12 +157,12 @@ export default function WorkspaceMembers() {
               <DialogHeader>
                 <DialogTitle>Add workspace member</DialogTitle>
                 <DialogDescription>
-                  Add an existing platform account to {selected?.name}.
+                  Give an existing platform account access to {selected?.name}.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-2">
                 <div className="space-y-2">
-                  <Label htmlFor="member-email">Email</Label>
+                  <Label htmlFor="member-email">Account email</Label>
                   <Input
                     id="member-email"
                     type="email"
@@ -174,19 +175,17 @@ export default function WorkspaceMembers() {
                 <div className="space-y-2">
                   <Label htmlFor="member-role">Workspace role</Label>
                   <Select
-                    value={role}
-                    onValueChange={(value) =>
-                      setRole(value as AssignableWorkspaceRole)
-                    }
-                    disabled={isAdding}
+                    value={roleId}
+                    onValueChange={setRoleId}
+                    disabled={isAdding || rolesLoading}
                   >
                     <SelectTrigger id="member-role">
-                      <SelectValue />
+                      <SelectValue placeholder="Select role" />
                     </SelectTrigger>
                     <SelectContent>
-                      {workspaceRoleOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
+                      {assignableRoles.map((role) => (
+                        <SelectItem key={role.id} value={role.id}>
+                          {role.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -202,8 +201,8 @@ export default function WorkspaceMembers() {
                   Cancel
                 </Button>
                 <Button
-                  onClick={submitMember}
-                  disabled={isAdding || email.trim().length === 0}
+                  onClick={() => addMember()}
+                  disabled={isAdding || !email.trim() || !roleId}
                 >
                   {isAdding && (
                     <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
@@ -223,7 +222,7 @@ export default function WorkspaceMembers() {
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
             </div>
-          ) : members?.length ? (
+          ) : members.length ? (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -233,75 +232,61 @@ export default function WorkspaceMembers() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {members.map((member) => {
-                  const image =
-                    typeof member.image === 'string' ? member.image : undefined;
-                  return (
-                    <TableRow key={member.id}>
-                      <TableCell className="pl-6">
-                        <div className="flex items-center gap-3">
-                          <Avatar>
-                            <AvatarImage src={image} alt={member.name} />
-                            <AvatarFallback>
-                              {initials(member.name)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="font-medium">{member.name}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {member.role === 'owner' || !canManage ? (
-                          <Badge variant="secondary">
-                            {workspaceRoleLabels[member.role] ?? member.role}
-                          </Badge>
-                        ) : (
-                          <Select
-                            value={member.role}
-                            onValueChange={(nextRole) =>
-                              updateRole({
-                                id: selectedWorkspace,
-                                userId: member.id,
-                                data: {
-                                  role: nextRole as AssignableWorkspaceRole,
-                                },
-                              })
-                            }
+                {members.map((member) => (
+                  <TableRow key={member.id}>
+                    <TableCell className="pl-6">
+                      <div className="flex items-center gap-3">
+                        <Avatar>
+                          <AvatarImage
+                            src={member.image ?? undefined}
+                            alt={member.name}
+                          />
+                          <AvatarFallback>{initials(member.name)}</AvatarFallback>
+                        </Avatar>
+                        <span className="font-medium">{member.name}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {member.roleKey === 'owner' || !canManage ? (
+                        <Badge variant="secondary">{member.roleName}</Badge>
+                      ) : (
+                        <Select
+                          value={member.roleId}
+                          onValueChange={(nextRoleId) =>
+                            updateRole({ userId: member.id, nextRoleId })
+                          }
+                          disabled={isUpdating || isRemoving}
+                        >
+                          <SelectTrigger className="w-56">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {assignableRoles.map((role) => (
+                              <SelectItem key={role.id} value={role.id}>
+                                {role.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </TableCell>
+                    {canManage && (
+                      <TableCell className="pr-6 text-right">
+                        {member.roleKey !== 'owner' && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title={`Remove ${member.name}`}
+                            onClick={() => setMemberToRemove(member)}
                             disabled={isUpdating || isRemoving}
                           >
-                            <SelectTrigger className="w-48">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {workspaceRoleOptions.map((option) => (
-                                <SelectItem
-                                  key={option.value}
-                                  value={option.value}
-                                >
-                                  {option.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
                         )}
                       </TableCell>
-                      {canManage && (
-                        <TableCell className="pr-6 text-right">
-                          {member.role !== 'owner' && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title={`Remove ${member.name}`}
-                              onClick={() => setMemberToRemove(member)}
-                              disabled={isUpdating || isRemoving}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          )}
-                        </TableCell>
-                      )}
-                    </TableRow>
-                  );
-                })}
+                    )}
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           ) : (
@@ -314,14 +299,14 @@ export default function WorkspaceMembers() {
 
       <Dialog
         open={memberToRemove !== null}
-        onOpenChange={(open) => !open && setMemberToRemove(null)}
+        onOpenChange={(nextOpen) => !nextOpen && setMemberToRemove(null)}
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Remove workspace member?</DialogTitle>
+            <DialogTitle>Remove workspace access?</DialogTitle>
             <DialogDescription>
               {memberToRemove?.name} will lose access to {selected?.name}. Their
-              platform account will not be deleted.
+              platform account will remain active.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -335,19 +320,12 @@ export default function WorkspaceMembers() {
             <Button
               variant="destructive"
               disabled={isRemoving || !memberToRemove}
-              onClick={() => {
-                if (memberToRemove) {
-                  removeMember({
-                    id: selectedWorkspace,
-                    userId: memberToRemove.id,
-                  });
-                }
-              }}
+              onClick={() => memberToRemove && removeMember(memberToRemove.id)}
             >
               {isRemoving && (
                 <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
               )}
-              Remove member
+              Remove access
             </Button>
           </DialogFooter>
         </DialogContent>

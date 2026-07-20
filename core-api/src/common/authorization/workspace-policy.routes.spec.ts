@@ -127,6 +127,26 @@ describe('workspace policy route inventory', () => {
       'removeWorkspaceMember',
       WorkspaceAction.MEMBER_MANAGE,
     ],
+    [
+      WorkspacesController.prototype,
+      'getWorkspaceRoles',
+      WorkspaceAction.WORKSPACE_READ,
+    ],
+    [
+      WorkspacesController.prototype,
+      'createWorkspaceRole',
+      WorkspaceAction.ROLE_MANAGE,
+    ],
+    [
+      WorkspacesController.prototype,
+      'updateWorkspaceRole',
+      WorkspaceAction.ROLE_MANAGE,
+    ],
+    [
+      WorkspacesController.prototype,
+      'deleteWorkspaceRole',
+      WorkspaceAction.ROLE_MANAGE,
+    ],
     [VulnerabilitiesController.prototype, 'scan', WorkspaceAction.SCAN_EXECUTE],
     [
       VulnerabilitiesController.prototype,

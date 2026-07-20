@@ -68,7 +68,7 @@ describe('WorkersController settings authorization', () => {
     await update(user);
 
     expect(policyService.assertAllowed).toHaveBeenCalledWith(
-      user.id,
+      { id: user.id, role: user.role },
       workspaceId,
       WorkspaceAction.WORKER_MANAGE,
     );

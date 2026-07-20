@@ -59,7 +59,7 @@ export class TargetsController {
   ): Promise<BulkTargetResultDto> {
     if (dto.startDiscovery !== false) {
       await this.workspacePolicyService.assertAllowed(
-        userContext.id,
+        { id: userContext.id, role: userContext.role },
         workspaceId,
         WorkspaceAction.SCAN_EXECUTE,
       );

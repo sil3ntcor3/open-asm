@@ -30,6 +30,7 @@ import { UpdateWorkspaceConfigsDto } from './dto/update-workspace-configs.dto';
 import {
   AddWorkspaceMemberDto,
   ArchiveWorkspaceDto,
+  CreateWorkspaceRoleDto,
   CreateWorkspaceDto,
   GetApiKeyResponseDto,
   GetManyWorkspacesDto,
@@ -38,10 +39,14 @@ import {
   WorkspaceMemberParamsDto,
   WorkspaceMemberResponseDto,
   WorkspaceRolePermissionsResponseDto,
+  WorkspaceRoleParamsDto,
+  WorkspaceRoleResponseDto,
+  UpdateWorkspaceRoleDto,
   WorkspaceResponseDto,
 } from './dto/workspaces.dto';
 import { Workspace } from './entities/workspace.entity';
 import { WorkspacesService } from './workspaces.service';
+import { WorkspaceRolesService } from './workspace-roles.service';
 
 @ApiTags('Workspaces')
 @Controller('workspaces')
@@ -49,6 +54,7 @@ export class WorkspacesController {
   constructor(
     private readonly workspacesService: WorkspacesService,
     private readonly workspacePolicyService: WorkspacePolicyService,
+    private readonly workspaceRolesService: WorkspaceRolesService,
   ) {}
 
   @Doc({
@@ -231,6 +237,60 @@ export class WorkspacesController {
   @WorkspacePolicy(WorkspaceAction.MEMBER_MANAGE, { workspaceParam: 'id' })
   removeWorkspaceMember(@Param() { id, userId }: WorkspaceMemberParamsDto) {
     return this.workspacesService.removeWorkspaceMember(id, userId);
+  }
+
+  @Doc({
+    summary: 'Get workspace roles',
+    description:
+      'Lists protected defaults and custom roles available in a workspace.',
+    response: { serialization: WorkspaceRoleResponseDto, isArray: true },
+  })
+  @Get(':id/roles')
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ, { workspaceParam: 'id' })
+  getWorkspaceRoles(@Param() { id }: IdQueryParamDto) {
+    return this.workspaceRolesService.getRoles(id);
+  }
+
+  @Doc({
+    summary: 'Create workspace role',
+    description: 'Creates a custom role scoped to one workspace.',
+    response: { serialization: WorkspaceRoleResponseDto },
+  })
+  @Post(':id/roles')
+  @WorkspacePolicy(WorkspaceAction.ROLE_MANAGE, { workspaceParam: 'id' })
+  createWorkspaceRole(
+    @Param() { id }: IdQueryParamDto,
+    @Body() dto: CreateWorkspaceRoleDto,
+  ) {
+    return this.workspaceRolesService.createRole(id, dto);
+  }
+
+  @Doc({
+    summary: 'Update workspace role',
+    description: 'Updates a custom workspace role.',
+    response: { serialization: WorkspaceRoleResponseDto },
+  })
+  @Patch(':id/roles/:roleId')
+  @WorkspacePolicy(WorkspaceAction.ROLE_MANAGE, { workspaceParam: 'id' })
+  updateWorkspaceRole(
+    @Param() { id, roleId }: WorkspaceRoleParamsDto,
+    @Body() dto: UpdateWorkspaceRoleDto,
+  ) {
+    return this.workspaceRolesService.updateRole(id, roleId, dto);
+  }
+
+  @Doc({
+    summary: 'Delete workspace role',
+    description: 'Deletes an unassigned custom workspace role.',
+    response: { serialization: DefaultMessageResponseDto },
+  })
+  @Delete(':id/roles/:roleId')
+  @WorkspacePolicy(WorkspaceAction.ROLE_MANAGE, { workspaceParam: 'id' })
+  async deleteWorkspaceRole(
+    @Param() { id, roleId }: WorkspaceRoleParamsDto,
+  ): Promise<DefaultMessageResponseDto> {
+    await this.workspaceRolesService.deleteRole(id, roleId);
+    return { message: 'Workspace role deleted successfully' };
   }
 
   @Doc({

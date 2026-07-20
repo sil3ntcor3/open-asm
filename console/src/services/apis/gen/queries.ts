@@ -276,17 +276,26 @@ export type WorkspaceResponseDtoDescription = { [key: string]: unknown } | null;
 export type WorkspaceResponseDtoArchivedAt = { [key: string]: unknown } | null;
 
 /**
- * Role of the current user in the workspace
+ * @nullable
  */
-export type WorkspaceResponseDtoRole =
-  (typeof WorkspaceResponseDtoRole)[keyof typeof WorkspaceResponseDtoRole];
+export type WorkspaceResponseDtoRoleKey =
+  | (typeof WorkspaceResponseDtoRoleKey)[keyof typeof WorkspaceResponseDtoRoleKey]
+  | null;
 
-export const WorkspaceResponseDtoRole = {
+export const WorkspaceResponseDtoRoleKey = {
   viewer: 'viewer',
   analyst: 'analyst',
   operator: 'operator',
   security_admin: 'security_admin',
   owner: 'owner',
+} as const;
+
+export type WorkspaceResponseDtoAccessSource =
+  (typeof WorkspaceResponseDtoAccessSource)[keyof typeof WorkspaceResponseDtoAccessSource];
+
+export const WorkspaceResponseDtoAccessSource = {
+  membership: 'membership',
+  platform_admin: 'platform_admin',
 } as const;
 
 export type WorkspaceResponseDto = {
@@ -318,8 +327,12 @@ export type WorkspaceResponseDto = {
   targetCount: number;
   /** Number of members in the workspace */
   memberCount: number;
-  /** Role of the current user in the workspace */
-  role: WorkspaceResponseDtoRole;
+  /** @nullable */
+  roleId: string | null;
+  /** @nullable */
+  roleKey: WorkspaceResponseDtoRoleKey;
+  roleName: string;
+  accessSource: WorkspaceResponseDtoAccessSource;
 };
 
 export type GetManyWorkspaceResponseDtoDto = {
@@ -357,6 +370,7 @@ export const WorkspaceRoleDefinitionDtoPermissionsItem = {
   agentuse: 'agent.use',
   agentmanage: 'agent.manage',
   membermanage: 'member.manage',
+  rolemanage: 'role.manage',
   workerread: 'worker.read',
   workermanage: 'worker.manage',
   toolmanage: 'tool.manage',
@@ -385,6 +399,7 @@ export const WorkspaceActionDefinitionDtoAction = {
   agentuse: 'agent.use',
   agentmanage: 'agent.manage',
   membermanage: 'member.manage',
+  rolemanage: 'role.manage',
   workerread: 'worker.read',
   workermanage: 'worker.manage',
   toolmanage: 'tool.manage',
@@ -403,10 +418,14 @@ export type WorkspaceRolePermissionsResponseDto = {
   actions: WorkspaceActionDefinitionDto[];
 };
 
-export type WorkspaceMemberResponseDtoRole =
-  (typeof WorkspaceMemberResponseDtoRole)[keyof typeof WorkspaceMemberResponseDtoRole];
+/**
+ * @nullable
+ */
+export type WorkspaceMemberResponseDtoRoleKey =
+  | (typeof WorkspaceMemberResponseDtoRoleKey)[keyof typeof WorkspaceMemberResponseDtoRoleKey]
+  | null;
 
-export const WorkspaceMemberResponseDtoRole = {
+export const WorkspaceMemberResponseDtoRoleKey = {
   viewer: 'viewer',
   analyst: 'analyst',
   operator: 'operator',
@@ -424,45 +443,134 @@ export type WorkspaceMemberResponseDto = {
    * @nullable
    */
   image: string | null;
-  role: WorkspaceMemberResponseDtoRole;
+  roleId: string;
+  /** @nullable */
+  roleKey: WorkspaceMemberResponseDtoRoleKey;
+  roleName: string;
+  roleProtected: boolean;
 };
-
-/**
- * Role to grant in this workspace
- */
-export type AddWorkspaceMemberDtoRole =
-  (typeof AddWorkspaceMemberDtoRole)[keyof typeof AddWorkspaceMemberDtoRole];
-
-export const AddWorkspaceMemberDtoRole = {
-  viewer: 'viewer',
-  analyst: 'analyst',
-  operator: 'operator',
-  security_admin: 'security_admin',
-} as const;
 
 export type AddWorkspaceMemberDto = {
   /** Existing user email address */
   email: string;
-  /** Role to grant in this workspace */
-  role: AddWorkspaceMemberDtoRole;
+  /** Protected or workspace-local custom role ID */
+  roleId: string;
+};
+
+export type UpdateWorkspaceMemberRoleDto = {
+  /** Protected or workspace-local custom role ID */
+  roleId: string;
 };
 
 /**
- * New role in this workspace
+ * @nullable
  */
-export type UpdateWorkspaceMemberRoleDtoRole =
-  (typeof UpdateWorkspaceMemberRoleDtoRole)[keyof typeof UpdateWorkspaceMemberRoleDtoRole];
+export type WorkspaceRoleResponseDtoKey =
+  | (typeof WorkspaceRoleResponseDtoKey)[keyof typeof WorkspaceRoleResponseDtoKey]
+  | null;
 
-export const UpdateWorkspaceMemberRoleDtoRole = {
+export const WorkspaceRoleResponseDtoKey = {
   viewer: 'viewer',
   analyst: 'analyst',
   operator: 'operator',
   security_admin: 'security_admin',
+  owner: 'owner',
 } as const;
 
-export type UpdateWorkspaceMemberRoleDto = {
-  /** New role in this workspace */
-  role: UpdateWorkspaceMemberRoleDtoRole;
+export type WorkspaceRoleResponseDtoPermissionsItem =
+  (typeof WorkspaceRoleResponseDtoPermissionsItem)[keyof typeof WorkspaceRoleResponseDtoPermissionsItem];
+
+export const WorkspaceRoleResponseDtoPermissionsItem = {
+  workspaceread: 'workspace.read',
+  workspacemanage: 'workspace.manage',
+  secretmanage: 'secret.manage',
+  targetcreate: 'target.create',
+  targetmanage: 'target.manage',
+  scanexecute: 'scan.execute',
+  findingtriage: 'finding.triage',
+  reportmanage: 'report.manage',
+  agentuse: 'agent.use',
+  agentmanage: 'agent.manage',
+  membermanage: 'member.manage',
+  rolemanage: 'role.manage',
+  workerread: 'worker.read',
+  workermanage: 'worker.manage',
+  toolmanage: 'tool.manage',
+  templatemanage: 'template.manage',
+} as const;
+
+export type WorkspaceRoleResponseDto = {
+  id: string;
+  /** @nullable */
+  key: WorkspaceRoleResponseDtoKey;
+  name: string;
+  description: string;
+  protected: boolean;
+  permissions: WorkspaceRoleResponseDtoPermissionsItem[];
+};
+
+export type CreateWorkspaceRoleDtoPermissionsItem =
+  (typeof CreateWorkspaceRoleDtoPermissionsItem)[keyof typeof CreateWorkspaceRoleDtoPermissionsItem];
+
+export const CreateWorkspaceRoleDtoPermissionsItem = {
+  workspaceread: 'workspace.read',
+  workspacemanage: 'workspace.manage',
+  secretmanage: 'secret.manage',
+  targetcreate: 'target.create',
+  targetmanage: 'target.manage',
+  scanexecute: 'scan.execute',
+  findingtriage: 'finding.triage',
+  reportmanage: 'report.manage',
+  agentuse: 'agent.use',
+  agentmanage: 'agent.manage',
+  membermanage: 'member.manage',
+  rolemanage: 'role.manage',
+  workerread: 'worker.read',
+  workermanage: 'worker.manage',
+  toolmanage: 'tool.manage',
+  templatemanage: 'template.manage',
+} as const;
+
+export type CreateWorkspaceRoleDto = {
+  /**
+   * @minLength 2
+   * @maxLength 50
+   */
+  name: string;
+  description?: string;
+  permissions: CreateWorkspaceRoleDtoPermissionsItem[];
+};
+
+export type UpdateWorkspaceRoleDtoPermissionsItem =
+  (typeof UpdateWorkspaceRoleDtoPermissionsItem)[keyof typeof UpdateWorkspaceRoleDtoPermissionsItem];
+
+export const UpdateWorkspaceRoleDtoPermissionsItem = {
+  workspaceread: 'workspace.read',
+  workspacemanage: 'workspace.manage',
+  secretmanage: 'secret.manage',
+  targetcreate: 'target.create',
+  targetmanage: 'target.manage',
+  scanexecute: 'scan.execute',
+  findingtriage: 'finding.triage',
+  reportmanage: 'report.manage',
+  agentuse: 'agent.use',
+  agentmanage: 'agent.manage',
+  membermanage: 'member.manage',
+  rolemanage: 'role.manage',
+  workerread: 'worker.read',
+  workermanage: 'worker.manage',
+  toolmanage: 'tool.manage',
+  templatemanage: 'template.manage',
+} as const;
+
+export type UpdateWorkspaceRoleDto = {
+  /**
+   * @minLength 2
+   * @maxLength 50
+   */
+  name?: string;
+  description?: string;
+  permissions?: UpdateWorkspaceRoleDtoPermissionsItem[];
 };
 
 export type UpdateWorkspaceDtoArchivedAt = { [key: string]: unknown };
@@ -586,6 +694,91 @@ export type UpdateWorkflowDto = {
   content?: WorkflowContent;
   /** File path for the workflow */
   filePath?: string;
+};
+
+export type ProvisionPlatformUserResponseDto = {
+  id: string;
+  workspaceAssignments: number;
+};
+
+export type WorkspaceAssignmentDto = {
+  workspaceId: string;
+  roleId: string;
+};
+
+export type ProvisionPlatformUserDtoPlatformRole =
+  (typeof ProvisionPlatformUserDtoPlatformRole)[keyof typeof ProvisionPlatformUserDtoPlatformRole];
+
+export const ProvisionPlatformUserDtoPlatformRole = {
+  user: 'user',
+  admin: 'admin',
+} as const;
+
+export type ProvisionPlatformUserDto = {
+  name: string;
+  email: string;
+  /** @minLength 8 */
+  password: string;
+  platformRole: ProvisionPlatformUserDtoPlatformRole;
+  workspaceAssignments: WorkspaceAssignmentDto[];
+};
+
+/**
+ * @nullable
+ */
+export type UserWorkspaceAccessResponseDtoRoleId = {
+  [key: string]: unknown;
+} | null;
+
+/**
+ * @nullable
+ */
+export type UserWorkspaceAccessResponseDtoRoleKey =
+  | (typeof UserWorkspaceAccessResponseDtoRoleKey)[keyof typeof UserWorkspaceAccessResponseDtoRoleKey]
+  | null;
+
+export const UserWorkspaceAccessResponseDtoRoleKey = {
+  viewer: 'viewer',
+  analyst: 'analyst',
+  operator: 'operator',
+  security_admin: 'security_admin',
+  owner: 'owner',
+} as const;
+
+export type UserWorkspaceAccessResponseDtoAccessSource =
+  (typeof UserWorkspaceAccessResponseDtoAccessSource)[keyof typeof UserWorkspaceAccessResponseDtoAccessSource];
+
+export const UserWorkspaceAccessResponseDtoAccessSource = {
+  membership: 'membership',
+  platform_admin: 'platform_admin',
+} as const;
+
+export type UserWorkspaceAccessResponseDto = {
+  workspaceId: string;
+  workspaceName: string;
+  /** @nullable */
+  roleId: UserWorkspaceAccessResponseDtoRoleId;
+  /** @nullable */
+  roleKey: UserWorkspaceAccessResponseDtoRoleKey;
+  roleName: string;
+  roleProtected: boolean;
+  accessSource: UserWorkspaceAccessResponseDtoAccessSource;
+};
+
+export type SetPlatformRoleDtoRole =
+  (typeof SetPlatformRoleDtoRole)[keyof typeof SetPlatformRoleDtoRole];
+
+export const SetPlatformRoleDtoRole = {
+  user: 'user',
+  admin: 'admin',
+} as const;
+
+export type SetPlatformRoleDto = {
+  role: SetPlatformRoleDtoRole;
+};
+
+export type SetUserBannedDto = {
+  banned: boolean;
 };
 
 export type CreateFirstAdminDto = {
@@ -5811,6 +6004,467 @@ export const useWorkspacesControllerRemoveWorkspaceMember = <
 };
 
 /**
+ * Lists protected defaults and custom roles available in a workspace.
+ * @summary Get workspace roles
+ */
+export const workspacesControllerGetWorkspaceRoles = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<WorkspaceRoleResponseDto[]>(
+    { url: `/api/workspaces/${id}/roles`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getWorkspacesControllerGetWorkspaceRolesQueryKey = (
+  id: string,
+) => {
+  return [`/api/workspaces/${id}/roles`] as const;
+};
+
+export const getWorkspacesControllerGetWorkspaceRolesQueryOptions = <
+  TData = Awaited<ReturnType<typeof workspacesControllerGetWorkspaceRoles>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof workspacesControllerGetWorkspaceRoles>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getWorkspacesControllerGetWorkspaceRolesQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof workspacesControllerGetWorkspaceRoles>>
+  > = ({ signal }) =>
+    workspacesControllerGetWorkspaceRoles(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof workspacesControllerGetWorkspaceRoles>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type WorkspacesControllerGetWorkspaceRolesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof workspacesControllerGetWorkspaceRoles>>
+>;
+export type WorkspacesControllerGetWorkspaceRolesQueryError = unknown;
+
+export function useWorkspacesControllerGetWorkspaceRoles<
+  TData = Awaited<ReturnType<typeof workspacesControllerGetWorkspaceRoles>>,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof workspacesControllerGetWorkspaceRoles>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof workspacesControllerGetWorkspaceRoles>>,
+          TError,
+          Awaited<ReturnType<typeof workspacesControllerGetWorkspaceRoles>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useWorkspacesControllerGetWorkspaceRoles<
+  TData = Awaited<ReturnType<typeof workspacesControllerGetWorkspaceRoles>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof workspacesControllerGetWorkspaceRoles>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof workspacesControllerGetWorkspaceRoles>>,
+          TError,
+          Awaited<ReturnType<typeof workspacesControllerGetWorkspaceRoles>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useWorkspacesControllerGetWorkspaceRoles<
+  TData = Awaited<ReturnType<typeof workspacesControllerGetWorkspaceRoles>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof workspacesControllerGetWorkspaceRoles>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get workspace roles
+ */
+
+export function useWorkspacesControllerGetWorkspaceRoles<
+  TData = Awaited<ReturnType<typeof workspacesControllerGetWorkspaceRoles>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof workspacesControllerGetWorkspaceRoles>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getWorkspacesControllerGetWorkspaceRolesQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Creates a custom role scoped to one workspace.
+ * @summary Create workspace role
+ */
+export const workspacesControllerCreateWorkspaceRole = (
+  id: string,
+  createWorkspaceRoleDto: CreateWorkspaceRoleDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<WorkspaceRoleResponseDto>(
+    {
+      url: `/api/workspaces/${id}/roles`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: createWorkspaceRoleDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getWorkspacesControllerCreateWorkspaceRoleMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof workspacesControllerCreateWorkspaceRole>>,
+    TError,
+    { id: string; data: CreateWorkspaceRoleDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof workspacesControllerCreateWorkspaceRole>>,
+  TError,
+  { id: string; data: CreateWorkspaceRoleDto },
+  TContext
+> => {
+  const mutationKey = ['workspacesControllerCreateWorkspaceRole'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof workspacesControllerCreateWorkspaceRole>>,
+    { id: string; data: CreateWorkspaceRoleDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return workspacesControllerCreateWorkspaceRole(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type WorkspacesControllerCreateWorkspaceRoleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof workspacesControllerCreateWorkspaceRole>>
+>;
+export type WorkspacesControllerCreateWorkspaceRoleMutationBody =
+  CreateWorkspaceRoleDto;
+export type WorkspacesControllerCreateWorkspaceRoleMutationError = unknown;
+
+/**
+ * @summary Create workspace role
+ */
+export const useWorkspacesControllerCreateWorkspaceRole = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof workspacesControllerCreateWorkspaceRole>>,
+      TError,
+      { id: string; data: CreateWorkspaceRoleDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof workspacesControllerCreateWorkspaceRole>>,
+  TError,
+  { id: string; data: CreateWorkspaceRoleDto },
+  TContext
+> => {
+  return useMutation(
+    getWorkspacesControllerCreateWorkspaceRoleMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Updates a custom workspace role.
+ * @summary Update workspace role
+ */
+export const workspacesControllerUpdateWorkspaceRole = (
+  id: string,
+  roleId: string,
+  updateWorkspaceRoleDto: UpdateWorkspaceRoleDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<WorkspaceRoleResponseDto>(
+    {
+      url: `/api/workspaces/${id}/roles/${roleId}`,
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      data: updateWorkspaceRoleDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getWorkspacesControllerUpdateWorkspaceRoleMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof workspacesControllerUpdateWorkspaceRole>>,
+    TError,
+    { id: string; roleId: string; data: UpdateWorkspaceRoleDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof workspacesControllerUpdateWorkspaceRole>>,
+  TError,
+  { id: string; roleId: string; data: UpdateWorkspaceRoleDto },
+  TContext
+> => {
+  const mutationKey = ['workspacesControllerUpdateWorkspaceRole'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof workspacesControllerUpdateWorkspaceRole>>,
+    { id: string; roleId: string; data: UpdateWorkspaceRoleDto }
+  > = (props) => {
+    const { id, roleId, data } = props ?? {};
+
+    return workspacesControllerUpdateWorkspaceRole(
+      id,
+      roleId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type WorkspacesControllerUpdateWorkspaceRoleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof workspacesControllerUpdateWorkspaceRole>>
+>;
+export type WorkspacesControllerUpdateWorkspaceRoleMutationBody =
+  UpdateWorkspaceRoleDto;
+export type WorkspacesControllerUpdateWorkspaceRoleMutationError = unknown;
+
+/**
+ * @summary Update workspace role
+ */
+export const useWorkspacesControllerUpdateWorkspaceRole = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof workspacesControllerUpdateWorkspaceRole>>,
+      TError,
+      { id: string; roleId: string; data: UpdateWorkspaceRoleDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof workspacesControllerUpdateWorkspaceRole>>,
+  TError,
+  { id: string; roleId: string; data: UpdateWorkspaceRoleDto },
+  TContext
+> => {
+  return useMutation(
+    getWorkspacesControllerUpdateWorkspaceRoleMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Deletes an unassigned custom workspace role.
+ * @summary Delete workspace role
+ */
+export const workspacesControllerDeleteWorkspaceRole = (
+  id: string,
+  roleId: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    { url: `/api/workspaces/${id}/roles/${roleId}`, method: 'DELETE', signal },
+    options,
+  );
+};
+
+export const getWorkspacesControllerDeleteWorkspaceRoleMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof workspacesControllerDeleteWorkspaceRole>>,
+    TError,
+    { id: string; roleId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof workspacesControllerDeleteWorkspaceRole>>,
+  TError,
+  { id: string; roleId: string },
+  TContext
+> => {
+  const mutationKey = ['workspacesControllerDeleteWorkspaceRole'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof workspacesControllerDeleteWorkspaceRole>>,
+    { id: string; roleId: string }
+  > = (props) => {
+    const { id, roleId } = props ?? {};
+
+    return workspacesControllerDeleteWorkspaceRole(id, roleId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type WorkspacesControllerDeleteWorkspaceRoleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof workspacesControllerDeleteWorkspaceRole>>
+>;
+
+export type WorkspacesControllerDeleteWorkspaceRoleMutationError = unknown;
+
+/**
+ * @summary Delete workspace role
+ */
+export const useWorkspacesControllerDeleteWorkspaceRole = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof workspacesControllerDeleteWorkspaceRole>>,
+      TError,
+      { id: string; roleId: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof workspacesControllerDeleteWorkspaceRole>>,
+  TError,
+  { id: string; roleId: string },
+  TContext
+> => {
+  return useMutation(
+    getWorkspacesControllerDeleteWorkspaceRoleMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
  * Fetches detailed information about a specific security workspace using its unique identifier, including all associated metadata and configuration.
  * @summary Get Workspace By ID
  */
@@ -7307,6 +7961,549 @@ export const useWorkflowsControllerDeleteWorkflow = <
 > => {
   return useMutation(
     getWorkflowsControllerDeleteWorkflowMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Creates a platform account with optional immediate workspace access.
+ * @summary Create platform user
+ */
+export const usersControllerProvisionUser = (
+  provisionPlatformUserDto: ProvisionPlatformUserDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProvisionPlatformUserResponseDto>(
+    {
+      url: `/api/users`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: provisionPlatformUserDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getUsersControllerProvisionUserMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersControllerProvisionUser>>,
+    TError,
+    { data: ProvisionPlatformUserDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof usersControllerProvisionUser>>,
+  TError,
+  { data: ProvisionPlatformUserDto },
+  TContext
+> => {
+  const mutationKey = ['usersControllerProvisionUser'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof usersControllerProvisionUser>>,
+    { data: ProvisionPlatformUserDto }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return usersControllerProvisionUser(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UsersControllerProvisionUserMutationResult = NonNullable<
+  Awaited<ReturnType<typeof usersControllerProvisionUser>>
+>;
+export type UsersControllerProvisionUserMutationBody = ProvisionPlatformUserDto;
+export type UsersControllerProvisionUserMutationError = unknown;
+
+/**
+ * @summary Create platform user
+ */
+export const useUsersControllerProvisionUser = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof usersControllerProvisionUser>>,
+      TError,
+      { data: ProvisionPlatformUserDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof usersControllerProvisionUser>>,
+  TError,
+  { data: ProvisionPlatformUserDto },
+  TContext
+> => {
+  return useMutation(
+    getUsersControllerProvisionUserMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Lists explicit workspace memberships or inherited platform administrator access.
+ * @summary Get user workspace access
+ */
+export const usersControllerGetWorkspaceAccess = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<UserWorkspaceAccessResponseDto[]>(
+    { url: `/api/users/${id}/workspace-access`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getUsersControllerGetWorkspaceAccessQueryKey = (id: string) => {
+  return [`/api/users/${id}/workspace-access`] as const;
+};
+
+export const getUsersControllerGetWorkspaceAccessQueryOptions = <
+  TData = Awaited<ReturnType<typeof usersControllerGetWorkspaceAccess>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof usersControllerGetWorkspaceAccess>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getUsersControllerGetWorkspaceAccessQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof usersControllerGetWorkspaceAccess>>
+  > = ({ signal }) =>
+    usersControllerGetWorkspaceAccess(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof usersControllerGetWorkspaceAccess>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type UsersControllerGetWorkspaceAccessQueryResult = NonNullable<
+  Awaited<ReturnType<typeof usersControllerGetWorkspaceAccess>>
+>;
+export type UsersControllerGetWorkspaceAccessQueryError = unknown;
+
+export function useUsersControllerGetWorkspaceAccess<
+  TData = Awaited<ReturnType<typeof usersControllerGetWorkspaceAccess>>,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof usersControllerGetWorkspaceAccess>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof usersControllerGetWorkspaceAccess>>,
+          TError,
+          Awaited<ReturnType<typeof usersControllerGetWorkspaceAccess>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useUsersControllerGetWorkspaceAccess<
+  TData = Awaited<ReturnType<typeof usersControllerGetWorkspaceAccess>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof usersControllerGetWorkspaceAccess>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof usersControllerGetWorkspaceAccess>>,
+          TError,
+          Awaited<ReturnType<typeof usersControllerGetWorkspaceAccess>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useUsersControllerGetWorkspaceAccess<
+  TData = Awaited<ReturnType<typeof usersControllerGetWorkspaceAccess>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof usersControllerGetWorkspaceAccess>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get user workspace access
+ */
+
+export function useUsersControllerGetWorkspaceAccess<
+  TData = Awaited<ReturnType<typeof usersControllerGetWorkspaceAccess>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof usersControllerGetWorkspaceAccess>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getUsersControllerGetWorkspaceAccessQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Promotes or demotes a platform account while retaining an active administrator.
+ * @summary Set platform role
+ */
+export const usersControllerSetPlatformRole = (
+  id: string,
+  setPlatformRoleDto: SetPlatformRoleDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    {
+      url: `/api/users/${id}/platform-role`,
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      data: setPlatformRoleDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getUsersControllerSetPlatformRoleMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersControllerSetPlatformRole>>,
+    TError,
+    { id: string; data: SetPlatformRoleDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof usersControllerSetPlatformRole>>,
+  TError,
+  { id: string; data: SetPlatformRoleDto },
+  TContext
+> => {
+  const mutationKey = ['usersControllerSetPlatformRole'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof usersControllerSetPlatformRole>>,
+    { id: string; data: SetPlatformRoleDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return usersControllerSetPlatformRole(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UsersControllerSetPlatformRoleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof usersControllerSetPlatformRole>>
+>;
+export type UsersControllerSetPlatformRoleMutationBody = SetPlatformRoleDto;
+export type UsersControllerSetPlatformRoleMutationError = unknown;
+
+/**
+ * @summary Set platform role
+ */
+export const useUsersControllerSetPlatformRole = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof usersControllerSetPlatformRole>>,
+      TError,
+      { id: string; data: SetPlatformRoleDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof usersControllerSetPlatformRole>>,
+  TError,
+  { id: string; data: SetPlatformRoleDto },
+  TContext
+> => {
+  return useMutation(
+    getUsersControllerSetPlatformRoleMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Changes account availability while retaining an active administrator.
+ * @summary Ban or restore platform user
+ */
+export const usersControllerSetBanned = (
+  id: string,
+  setUserBannedDto: SetUserBannedDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    {
+      url: `/api/users/${id}/banned`,
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      data: setUserBannedDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getUsersControllerSetBannedMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersControllerSetBanned>>,
+    TError,
+    { id: string; data: SetUserBannedDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof usersControllerSetBanned>>,
+  TError,
+  { id: string; data: SetUserBannedDto },
+  TContext
+> => {
+  const mutationKey = ['usersControllerSetBanned'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof usersControllerSetBanned>>,
+    { id: string; data: SetUserBannedDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return usersControllerSetBanned(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UsersControllerSetBannedMutationResult = NonNullable<
+  Awaited<ReturnType<typeof usersControllerSetBanned>>
+>;
+export type UsersControllerSetBannedMutationBody = SetUserBannedDto;
+export type UsersControllerSetBannedMutationError = unknown;
+
+/**
+ * @summary Ban or restore platform user
+ */
+export const useUsersControllerSetBanned = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof usersControllerSetBanned>>,
+      TError,
+      { id: string; data: SetUserBannedDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof usersControllerSetBanned>>,
+  TError,
+  { id: string; data: SetUserBannedDto },
+  TContext
+> => {
+  return useMutation(
+    getUsersControllerSetBannedMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Deletes a platform account while retaining an active administrator.
+ * @summary Delete platform user
+ */
+export const usersControllerRemoveUser = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    { url: `/api/users/${id}`, method: 'DELETE', signal },
+    options,
+  );
+};
+
+export const getUsersControllerRemoveUserMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof usersControllerRemoveUser>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof usersControllerRemoveUser>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ['usersControllerRemoveUser'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof usersControllerRemoveUser>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return usersControllerRemoveUser(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UsersControllerRemoveUserMutationResult = NonNullable<
+  Awaited<ReturnType<typeof usersControllerRemoveUser>>
+>;
+
+export type UsersControllerRemoveUserMutationError = unknown;
+
+/**
+ * @summary Delete platform user
+ */
+export const useUsersControllerRemoveUser = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof usersControllerRemoveUser>>,
+      TError,
+      { id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof usersControllerRemoveUser>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getUsersControllerRemoveUserMutationOptions(options),
     queryClient,
   );
 };
