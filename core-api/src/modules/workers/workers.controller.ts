@@ -20,12 +20,18 @@ import {
   Patch,
   Query,
   UseGuards,
+  UsePipes,
+  ValidationPipe,
 } from '@nestjs/common';
 import { GrpcMethod, RpcException } from '@nestjs/microservices';
 import { ApiTags } from '@nestjs/swagger';
 import { createReadStream } from 'fs';
 import { Observable } from 'rxjs';
-import { GetManyWorkersDto, UpdateWorkerSettingsDto } from './dto/workers.dto';
+import {
+  GetManyWorkersDto,
+  ScannerStatusReportDto,
+  UpdateWorkerSettingsDto,
+} from './dto/workers.dto';
 import { WorkerInstance } from './entities/worker.entity';
 import { AliveStreamManager } from './alive-stream-manager.service';
 import { ToolArtifactService } from './tool-artifact.service';
@@ -272,5 +278,18 @@ export class WorkersController {
         request.arch,
       ),
     };
+  }
+
+  @GrpcMethod('WorkersService', 'ReportScannerStatus')
+  @UseGuards(GrpcWorkerTokenGuard)
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  grpcReportScannerStatus(
+    request: ScannerStatusReportDto,
+    metadata: Metadata,
+  ): Promise<{ message: string }> {
+    return this.workersService.reportScannerStatus(
+      this.authenticatedWorkerId(metadata),
+      request,
+    );
   }
 }

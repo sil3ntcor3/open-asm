@@ -16,7 +16,6 @@ import {
   WorkerType,
 } from '@/common/enums/enum';
 import { RedisService } from '@/services/redis/redis.service';
-import bindingCommand from '@/utils/bindingCommand';
 import { getManyResponse } from '@/utils/getManyResponse';
 import { resolveSortColumn } from '@/utils/resolveSortColumn';
 import { WORKER_TIMEOUT } from '@/common/constants/app.constants';
@@ -55,6 +54,7 @@ import {
   JobTimelineResponseDto,
   UpdateResultDto,
   WorkerControlResponseDto,
+  ToolExecutionDto,
 } from './dto/jobs-registry.dto';
 import { JobErrorLog } from './entities/job-error-log.entity';
 import { JobHistory } from './entities/job-history.entity';
@@ -88,6 +88,21 @@ const ISO_WEEKDAY_BY_SHORT_NAME: Record<string, number> = {
   Sat: 6,
   Sun: 7,
 };
+
+const BUILT_IN_EXECUTION_TOOLS = new Set(builtInTools.map((tool) => tool.name));
+
+export function createToolExecutionPlan(job: Job): ToolExecutionDto | null {
+  const toolName = job.tool?.name;
+  const target = job.assetService?.value ?? job.asset?.value;
+  if (!toolName || !BUILT_IN_EXECUTION_TOOLS.has(toolName) || !target) {
+    return null;
+  }
+  return {
+    toolName,
+    target,
+    port: job.assetService?.port,
+  };
+}
 
 @Injectable()
 export class JobsRegistryService {
@@ -249,11 +264,9 @@ export class JobsRegistryService {
           tool,
           priority: priority ?? 4,
           jobHistory,
-          command: bindingCommand(defaultCommand ?? '', {
-            // Use the default command template for HTTP_PROBE
-            value: assetService.value,
-            port: assetService.port.toString(),
-          }),
+          // Command is display-only. Workers receive a typed execution plan
+          // and never evaluate this string in a shell.
+          command: defaultCommand ?? tool.name,
           isSaveRawResult: isSaveRawResult ?? false,
           isPublishEvent,
         } as DeepPartial<Job>);
@@ -289,9 +302,9 @@ export class JobsRegistryService {
           tool,
           priority: priority ?? 4,
           jobHistory,
-          command: bindingCommand(defaultCommand ?? '', {
-            value: asset.value,
-          }),
+          // Command is display-only. Workers receive a typed execution plan
+          // and never evaluate this string in a shell.
+          command: defaultCommand ?? tool.name,
           isSaveRawResult: isSaveRawResult ?? false,
           isPublishEvent,
         } as DeepPartial<Job>);
@@ -488,7 +501,7 @@ export class JobsRegistryService {
         .createQueryBuilder(Job, 'jobs')
         .innerJoinAndSelect('jobs.asset', 'asset')
         .innerJoin('asset.target', 'target')
-        .leftJoin('jobs.tool', 'tool')
+        .leftJoinAndSelect('jobs.tool', 'tool')
         .where('jobs.status = :status', { status: JobStatus.PENDING })
         // Scheduling window: a job is only dispatchable while its target's
         // scan window (evaluated in the target's timezone) is open. Targets
@@ -539,6 +552,17 @@ export class JobsRegistryService {
             workspaceId: worker.workspace.id,
           });
         }
+
+        // A Nuclei bootstrap/upstream outage must not block unrelated tools.
+        // Stale means a validated last-known-good set is still available.
+        if (
+          worker.nucleiTemplateStatus !== 'ready' &&
+          worker.nucleiTemplateStatus !== 'stale'
+        ) {
+          queryBuilder.andWhere('tool.name != :unreadyNucleiTool', {
+            unreadyNucleiTool: 'nuclei',
+          });
+        }
       } else {
         queryBuilder.andWhere('tool.id = :toolId', { toolId: worker.tool.id });
       }
@@ -575,7 +599,8 @@ export class JobsRegistryService {
         return null;
       }
 
-      if (isBuiltInTools && !job.command) {
+      const execution = createToolExecutionPlan(job);
+      if (!execution) {
         await queryRunner.rollbackTransaction();
         return null;
       }
@@ -597,6 +622,7 @@ export class JobsRegistryService {
         priority: job.priority,
         command: job.command,
         asset: job.asset,
+        execution,
       };
     } catch (error) {
       Logger.error(

@@ -34,6 +34,7 @@ import { Workspace } from '../workspaces/entities/workspace.entity';
 import { AliveStreamManager } from './alive-stream-manager.service';
 import {
   GetManyWorkersDto,
+  ScannerStatusReportDto,
   UpdateWorkerSettingsDto,
   WorkerAliveDto,
   WorkerJoinDto,
@@ -92,6 +93,85 @@ export class WorkersService {
     await this.repo.update({ token: dto.token }, { lastSeenAt: new Date() });
 
     return this.repo.findOne({ where: { token: dto.token } });
+  }
+
+  /** Persists bounded scanner health reported by an authenticated worker. */
+  public async reportScannerStatus(
+    workerId: string,
+    status: ScannerStatusReportDto,
+  ): Promise<{ message: string }> {
+    const allowedStates = new Set(['ready', 'refreshing', 'stale', 'error']);
+    if (!allowedStates.has(status.state)) {
+      throw new RpcException('Unknown scanner status');
+    }
+
+    const engineVersion = this.scannerVersion(
+      'Nuclei engine version',
+      status.engineVersion,
+    );
+    const templateVersion = this.scannerVersion(
+      'Nuclei template version',
+      status.templateVersion,
+    );
+    if (status.templateSource !== 'projectdiscovery/nuclei-templates') {
+      throw new RpcException('Invalid Nuclei template source');
+    }
+    if (status.lastError && status.lastError.length > 2048) {
+      throw new RpcException('Nuclei scanner error exceeds 2048 characters');
+    }
+
+    const result = await this.repo.update(
+      { id: workerId },
+      {
+        nucleiEngineVersion: engineVersion,
+        nucleiTemplateVersion: templateVersion,
+        nucleiTemplateSource: status.templateSource,
+        nucleiTemplateStatus: status.state,
+        nucleiTemplateLastAttemptAt: this.scannerTimestamp(
+          status.lastUpdateAttemptAt,
+        ),
+        nucleiTemplateLastSuccessAt: this.scannerTimestamp(
+          status.lastUpdateSuccessAt,
+        ),
+        nucleiTemplateValidatedAt: this.scannerTimestamp(
+          status.lastValidatedAt,
+        ),
+        nucleiTemplateLastError: status.lastError || null,
+        scannerStatusUpdatedAt: new Date(),
+      },
+    );
+    if (!result.affected) {
+      throw new RpcException('Worker not found');
+    }
+    return { message: 'Scanner status recorded' };
+  }
+
+  private scannerVersion(field: string, value: string): string | null {
+    if (!value) {
+      return null;
+    }
+    if (
+      value.length > 64 ||
+      !/^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(value)
+    ) {
+      throw new RpcException(`Invalid ${field}`);
+    }
+    return value;
+  }
+
+  /** Parses an optional worker timestamp and rejects malformed status data. */
+  private scannerTimestamp(value?: string): Date | null {
+    if (!value) {
+      return null;
+    }
+    if (value.length > 64) {
+      throw new RpcException('Invalid scanner status timestamp');
+    }
+    const timestamp = new Date(value);
+    if (Number.isNaN(timestamp.getTime())) {
+      throw new RpcException('Invalid scanner status timestamp');
+    }
+    return timestamp;
   }
 
   /**

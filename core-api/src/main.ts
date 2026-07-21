@@ -120,8 +120,7 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   validateWorkerEnrollmentConfiguration(configService);
   const grpcPort = configService.get<string>('GRPC_PORT') ?? DEFAULT_GRPC_PORT;
-  const grpcBindHost =
-    configService.get<string>('GRPC_BIND_HOST') ?? '0.0.0.0';
+  const grpcBindHost = configService.get<string>('GRPC_BIND_HOST') ?? '0.0.0.0';
   const grpcCredentials = getGrpcServerCredentials(configService);
   const reflectionEnabled = isGrpcReflectionEnabled(configService);
   app.connectMicroservice<MicroserviceOptions>({

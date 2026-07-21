@@ -3,6 +3,8 @@
 import type { Severity } from '@/common/enums/enum';
 import { JobPriority, ToolCategory } from '@/common/enums/enum';
 import { randomUUID } from 'crypto';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { Asset } from '../../assets/entities/assets.entity';
 import type {
   Vulnerability,
@@ -11,6 +13,13 @@ import type {
 import { Tool } from '../entities/tools.entity';
 
 type NucleiFinding = Record<string, unknown>;
+
+const nucleiVersion = JSON.parse(
+  readFileSync(
+    join(process.cwd(), 'public/archived/nuclei-manifest.json'),
+    'utf8',
+  ),
+)['version'] as string;
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -149,7 +158,7 @@ export const builtInTools: Tool[] = [
     description:
       'Nuclei is a fast, customizable vulnerability scanner powered by the global security community and built on a simple YAML-based DSL, enabling collaboration to tackle trending vulnerabilities on the internet. It helps you find vulnerabilities in your applications, APIs, networks, DNS, and cloud configurations.',
     logoUrl: '/static/images/nuclei.png',
-    command: 'nuclei -duc -u {{value}} -j --silent',
+    command: 'nuclei -duc -t nuclei-templates -u {{value}} -j --silent',
     parser: (result: string) => {
       const initialVulnerabilities = result
         .split('\n')
@@ -232,7 +241,7 @@ export const builtInTools: Tool[] = [
       return data;
     },
 
-    version: '3.4.7',
+    version: nucleiVersion,
     priority: JobPriority.LOW,
   },
 ];

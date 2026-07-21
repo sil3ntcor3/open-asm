@@ -25,6 +25,7 @@ const (
 	WorkersService_Storage_FullMethodName                = "/workers.WorkersService/Storage"
 	WorkersService_ConnectInternalNetwork_FullMethodName = "/workers.WorkersService/ConnectInternalNetwork"
 	WorkersService_BuiltinToolRegistry_FullMethodName    = "/workers.WorkersService/BuiltinToolRegistry"
+	WorkersService_ReportScannerStatus_FullMethodName    = "/workers.WorkersService/ReportScannerStatus"
 )
 
 // WorkersServiceClient is the client API for WorkersService service.
@@ -37,6 +38,7 @@ type WorkersServiceClient interface {
 	Storage(ctx context.Context, in *StorageRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StorageResponse], error)
 	ConnectInternalNetwork(ctx context.Context, in *ConnectInternalNetworkRequest, opts ...grpc.CallOption) (*ConnectInternalNetworkResponse, error)
 	BuiltinToolRegistry(ctx context.Context, in *BuiltinToolRegistryRequest, opts ...grpc.CallOption) (*BuiltinToolRegistryResponse, error)
+	ReportScannerStatus(ctx context.Context, in *ScannerStatusReportRequest, opts ...grpc.CallOption) (*ScannerStatusReportResponse, error)
 }
 
 type workersServiceClient struct {
@@ -125,6 +127,16 @@ func (c *workersServiceClient) BuiltinToolRegistry(ctx context.Context, in *Buil
 	return out, nil
 }
 
+func (c *workersServiceClient) ReportScannerStatus(ctx context.Context, in *ScannerStatusReportRequest, opts ...grpc.CallOption) (*ScannerStatusReportResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ScannerStatusReportResponse)
+	err := c.cc.Invoke(ctx, WorkersService_ReportScannerStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WorkersServiceServer is the server API for WorkersService service.
 // All implementations must embed UnimplementedWorkersServiceServer
 // for forward compatibility.
@@ -135,6 +147,7 @@ type WorkersServiceServer interface {
 	Storage(*StorageRequest, grpc.ServerStreamingServer[StorageResponse]) error
 	ConnectInternalNetwork(context.Context, *ConnectInternalNetworkRequest) (*ConnectInternalNetworkResponse, error)
 	BuiltinToolRegistry(context.Context, *BuiltinToolRegistryRequest) (*BuiltinToolRegistryResponse, error)
+	ReportScannerStatus(context.Context, *ScannerStatusReportRequest) (*ScannerStatusReportResponse, error)
 	mustEmbedUnimplementedWorkersServiceServer()
 }
 
@@ -162,6 +175,9 @@ func (UnimplementedWorkersServiceServer) ConnectInternalNetwork(context.Context,
 }
 func (UnimplementedWorkersServiceServer) BuiltinToolRegistry(context.Context, *BuiltinToolRegistryRequest) (*BuiltinToolRegistryResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method BuiltinToolRegistry not implemented")
+}
+func (UnimplementedWorkersServiceServer) ReportScannerStatus(context.Context, *ScannerStatusReportRequest) (*ScannerStatusReportResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportScannerStatus not implemented")
 }
 func (UnimplementedWorkersServiceServer) mustEmbedUnimplementedWorkersServiceServer() {}
 func (UnimplementedWorkersServiceServer) testEmbeddedByValue()                        {}
@@ -278,6 +294,24 @@ func _WorkersService_BuiltinToolRegistry_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkersService_ReportScannerStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ScannerStatusReportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkersServiceServer).ReportScannerStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkersService_ReportScannerStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkersServiceServer).ReportScannerStatus(ctx, req.(*ScannerStatusReportRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WorkersService_ServiceDesc is the grpc.ServiceDesc for WorkersService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -300,6 +334,10 @@ var WorkersService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BuiltinToolRegistry",
 			Handler:    _WorkersService_BuiltinToolRegistry_Handler,
+		},
+		{
+			MethodName: "ReportScannerStatus",
+			Handler:    _WorkersService_ReportScannerStatus_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

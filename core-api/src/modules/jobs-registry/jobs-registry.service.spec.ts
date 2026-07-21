@@ -15,7 +15,10 @@ import { JobErrorLog } from './entities/job-error-log.entity';
 import { JobHistory } from './entities/job-history.entity';
 import { Job } from './entities/job.entity';
 import { JobControlAction } from './dto/jobs-registry.dto';
-import { JobsRegistryService } from './jobs-registry.service';
+import {
+  createToolExecutionPlan,
+  JobsRegistryService,
+} from './jobs-registry.service';
 
 describe('JobsRegistryService', () => {
   let service: JobsRegistryService;
@@ -163,6 +166,31 @@ describe('JobsRegistryService', () => {
     mockJobHistoryRepository.createQueryBuilder.mockReturnValue(qb);
     return qb;
   };
+
+  describe('typed worker execution plan', () => {
+    it('keeps a hostile-looking target as data instead of interpolating a command', () => {
+      const target = 'https://example.com/?x=1;touch /tmp/pwn&y=$(id)';
+      const plan = createToolExecutionPlan({
+        tool: { name: 'nuclei' },
+        asset: { value: target },
+      } as Job);
+
+      expect(plan).toEqual({
+        toolName: 'nuclei',
+        target,
+        port: undefined,
+      });
+    });
+
+    it('refuses tools outside the built-in worker allowlist', () => {
+      const plan = createToolExecutionPlan({
+        tool: { name: 'custom-shell' },
+        asset: { value: 'example.com' },
+      } as Job);
+
+      expect(plan).toBeNull();
+    });
+  });
 
   describe('reRunJob', () => {
     const mockWorkspaceId = 'workspace-uuid';

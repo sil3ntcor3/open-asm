@@ -16,6 +16,7 @@ describe('WorkersController gRPC policy', () => {
     'grpcAlive',
     'grpcConnectInternalNetwork',
     'grpcBuiltinToolRegistry',
+    'grpcReportScannerStatus',
   ] as const)('guards %s with the issued worker identity', (methodName) => {
     const guards = Reflect.getMetadata(
       GUARDS_METADATA,
@@ -67,5 +68,40 @@ describe('WorkersController gRPC policy', () => {
       networkId: 'network-1',
       networkInterfaces: [],
     });
+  });
+
+  it('binds scanner status reports to the token-authenticated worker', async () => {
+    const workersService = {
+      reportScannerStatus: jest
+        .fn()
+        .mockResolvedValue({ message: 'Status recorded' }),
+    } as unknown as WorkersService;
+    const grpcWorkerContext = {
+      getWorker: jest.fn().mockReturnValue({ id: 'authenticated-worker' }),
+    } as unknown as GrpcWorkerContext;
+    const controller = new WorkersController(
+      workersService,
+      {} as AliveStreamManager,
+      {} as ToolArtifactService,
+      grpcWorkerContext,
+      {} as WorkspacePolicyService,
+    );
+    const metadata = new Metadata();
+    metadata.set(WORKER_TOKEN_HEADER, 'issued-token');
+
+    await controller.grpcReportScannerStatus(
+      {
+        engineVersion: 'v3.11.0',
+        templateVersion: 'v10.4.6',
+        templateSource: 'projectdiscovery/nuclei-templates',
+        state: 'ready',
+      },
+      metadata,
+    );
+
+    expect(workersService.reportScannerStatus).toHaveBeenCalledWith(
+      'authenticated-worker',
+      expect.objectContaining({ state: 'ready' }),
+    );
   });
 });

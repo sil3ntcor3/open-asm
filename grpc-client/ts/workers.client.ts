@@ -4,6 +4,8 @@
 import type { RpcTransport } from "@protobuf-ts/runtime-rpc";
 import type { ServiceInfo } from "@protobuf-ts/runtime-rpc";
 import { WorkersService } from "./workers";
+import type { ScannerStatusReportResponse } from "./workers";
+import type { ScannerStatusReportRequest } from "./workers";
 import type { BuiltinToolRegistryResponse } from "./workers";
 import type { BuiltinToolRegistryRequest } from "./workers";
 import type { ConnectInternalNetworkResponse } from "./workers";
@@ -48,6 +50,10 @@ export interface IWorkersServiceClient {
      * @generated from protobuf rpc: BuiltinToolRegistry
      */
     builtinToolRegistry(input: BuiltinToolRegistryRequest, options?: RpcOptions): UnaryCall<BuiltinToolRegistryRequest, BuiltinToolRegistryResponse>;
+    /**
+     * @generated from protobuf rpc: ReportScannerStatus
+     */
+    reportScannerStatus(input: ScannerStatusReportRequest, options?: RpcOptions): UnaryCall<ScannerStatusReportRequest, ScannerStatusReportResponse>;
 }
 /**
  * @generated from protobuf service workers.WorkersService
@@ -99,5 +105,12 @@ export class WorkersServiceClient implements IWorkersServiceClient, ServiceInfo 
     builtinToolRegistry(input: BuiltinToolRegistryRequest, options?: RpcOptions): UnaryCall<BuiltinToolRegistryRequest, BuiltinToolRegistryResponse> {
         const method = this.methods[5], opt = this._transport.mergeOptions(options);
         return stackIntercept<BuiltinToolRegistryRequest, BuiltinToolRegistryResponse>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * @generated from protobuf rpc: ReportScannerStatus
+     */
+    reportScannerStatus(input: ScannerStatusReportRequest, options?: RpcOptions): UnaryCall<ScannerStatusReportRequest, ScannerStatusReportResponse> {
+        const method = this.methods[6], opt = this._transport.mergeOptions(options);
+        return stackIntercept<ScannerStatusReportRequest, ScannerStatusReportResponse>("unary", this._transport, method, opt, input);
     }
 }

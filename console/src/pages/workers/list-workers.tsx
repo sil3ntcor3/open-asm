@@ -18,6 +18,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { Loader2Icon, Server } from 'lucide-react';
+import { NucleiScannerStatus } from './components/nuclei-scanner-status';
 dayjs.extend(relativeTime);
 
 const COMMON_PARAMS = {
@@ -34,6 +35,7 @@ const QueryOptions = {
 const VALID_TABS = ['global', 'workspace'] as const;
 type TabValue = (typeof VALID_TABS)[number];
 
+/** Renders global and workspace workers with runtime and scanner health. */
 const ListWorkers = () => {
   const {
     state: { selectedWorkspaceId },
@@ -256,6 +258,7 @@ const ListWorkers = () => {
                   )}
                 </div>
               </div>
+              <NucleiScannerStatus worker={worker} />
               <div className="flex items-center justify-between border-t pt-2">
                 {canManageWorkers ? (
                   <div onClick={(e) => e.stopPropagation()}>

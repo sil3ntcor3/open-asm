@@ -2,6 +2,13 @@ import type { Vulnerability } from '@/modules/vulnerabilities/entities/vulnerabi
 import { builtInTools } from './built-in-tools';
 
 describe('builtInTools nuclei parser', () => {
+  it('uses the worker-managed persistent template directory', () => {
+    const nuclei = builtInTools.find((tool) => tool.name === 'nuclei');
+
+    expect(nuclei?.command).toContain('-t nuclei-templates');
+    expect(nuclei?.version).toBe('3.11.0');
+  });
+
   it('captures structured and raw evidence for grouped nuclei findings', () => {
     const nuclei = builtInTools.find((tool) => tool.name === 'nuclei');
     expect(nuclei?.parser).toBeDefined();

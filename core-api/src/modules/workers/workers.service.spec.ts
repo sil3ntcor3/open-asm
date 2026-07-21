@@ -332,6 +332,88 @@ describe('WorkersService', () => {
     });
   });
 
+  describe('reportScannerStatus', () => {
+    it('persists normalized Nuclei engine and template health for the authenticated worker', async () => {
+      (mockWorkerInstanceRepository.update as jest.Mock).mockResolvedValue({
+        affected: 1,
+      });
+
+      await service.reportScannerStatus('worker-1', {
+        engineVersion: 'v3.11.0',
+        templateVersion: 'v10.4.6',
+        templateSource: 'projectdiscovery/nuclei-templates',
+        state: 'ready',
+        lastUpdateAttemptAt: '2026-07-20T12:00:00.000Z',
+        lastUpdateSuccessAt: '2026-07-20T12:00:01.000Z',
+        lastValidatedAt: '2026-07-20T12:00:02.000Z',
+        lastError: '',
+      });
+
+      expect(mockWorkerInstanceRepository.update).toHaveBeenCalledWith(
+        { id: 'worker-1' },
+        {
+          nucleiEngineVersion: 'v3.11.0',
+          nucleiTemplateVersion: 'v10.4.6',
+          nucleiTemplateSource: 'projectdiscovery/nuclei-templates',
+          nucleiTemplateStatus: 'ready',
+          nucleiTemplateLastAttemptAt: new Date('2026-07-20T12:00:00.000Z'),
+          nucleiTemplateLastSuccessAt: new Date('2026-07-20T12:00:01.000Z'),
+          nucleiTemplateValidatedAt: new Date('2026-07-20T12:00:02.000Z'),
+          nucleiTemplateLastError: null,
+          scannerStatusUpdatedAt: expect.any(Date),
+        },
+      );
+    });
+
+    it('rejects an unknown scanner state', async () => {
+      await expect(
+        service.reportScannerStatus('worker-1', {
+          engineVersion: 'v3.11.0',
+          templateVersion: 'v10.4.6',
+          templateSource: 'projectdiscovery/nuclei-templates',
+          state: 'compromised',
+        }),
+      ).rejects.toThrow('Unknown scanner status');
+
+      expect(mockWorkerInstanceRepository.update).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      {
+        name: 'oversized engine version',
+        patch: { engineVersion: `v${'1'.repeat(65)}` },
+        message: 'Invalid Nuclei engine version',
+      },
+      {
+        name: 'invalid template version',
+        patch: { templateVersion: 'latest;drop table workers' },
+        message: 'Invalid Nuclei template version',
+      },
+      {
+        name: 'untrusted template source',
+        patch: { templateSource: 'https://attacker.invalid/templates' },
+        message: 'Invalid Nuclei template source',
+      },
+      {
+        name: 'oversized error',
+        patch: { lastError: 'x'.repeat(2049) },
+        message: 'exceeds 2048 characters',
+      },
+    ])('rejects $name', async ({ patch, message }) => {
+      await expect(
+        service.reportScannerStatus('worker-1', {
+          engineVersion: 'v3.11.0',
+          templateVersion: 'v10.4.6',
+          templateSource: 'projectdiscovery/nuclei-templates',
+          state: 'ready',
+          ...patch,
+        }),
+      ).rejects.toThrow(message);
+
+      expect(mockWorkerInstanceRepository.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getWorkerManagementScope', () => {
     it('returns the scope of a global worker', async () => {
       (mockWorkerInstanceRepository.findOne as jest.Mock).mockResolvedValue({
