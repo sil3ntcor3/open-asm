@@ -3,6 +3,12 @@ import { renderWithProviders, screen, waitFor } from '@/test/utils';
 import Assets from '@/pages/assets/assets';
 
 const mockWorkspaces = [{ id: 'ws-1', name: 'Test Workspace' }];
+// The Assets page defaults to the Hosts tab, which lists every discovered host
+// (including subdomains with no live service yet).
+const mockHostAssets = [
+  { host: 'example.com', assetCount: 2 },
+  { host: 'api.example.com', assetCount: 0 },
+];
 const mockAssets = [
   {
     id: 'asset-1',
@@ -70,6 +76,11 @@ vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
       isFetchingNextPage: false,
       isFetching: false,
     }),
+    useAssetsControllerGetHostAssets: () => ({
+      data: { data: mockHostAssets, total: mockHostAssets.length },
+      isLoading: false,
+      refetch: vi.fn(),
+    }),
     useAssetsControllerGetTechnologyAssetsInfinite: () => ({
       data: [],
       fetchNextPage: vi.fn(),
@@ -95,13 +106,15 @@ vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
 });
 
 describe('Assets Page', () => {
-  it('renders assets table', async () => {
+  it('renders discovered hosts on the default Hosts tab', async () => {
     renderWithProviders(<Assets />);
 
     await waitFor(() => {
       expect(screen.getByText('Assets')).toBeInTheDocument();
-      expect(screen.getByText('https://example.com')).toBeInTheDocument();
-      expect(screen.getByText('https://api.example.com')).toBeInTheDocument();
+      // api.example.com has assetCount 0 (no live service) yet must still be
+      // listed — that visibility is the core of the discovery fix.
+      expect(screen.getByText('example.com')).toBeInTheDocument();
+      expect(screen.getByText('api.example.com')).toBeInTheDocument();
     });
   });
 });

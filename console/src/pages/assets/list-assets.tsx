@@ -28,7 +28,11 @@ const tabList: { value: string; text: string; tab: ComponentType }[] = [
 export function ListAssets() {
   const { workspaces } = useWorkspaceSelector();
   const search = useSearch({ strict: false });
-  const tab = (search as Record<string, string>).tab || 'service';
+  // Default to the Hosts tab: it lists every discovered asset (including
+  // subdomains with no open service yet), so a completed discovery run is
+  // visible immediately. The Services tab only shows hosts with a live probed
+  // service and can look empty right after discovery.
+  const tab = (search as Record<string, string>).tab || 'host';
   const navigate = useNavigate();
 
   const handleTabChange = (value: string) => {
