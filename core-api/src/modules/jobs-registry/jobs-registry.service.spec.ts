@@ -17,6 +17,7 @@ import { Job } from './entities/job.entity';
 import { JobControlAction } from './dto/jobs-registry.dto';
 import {
   createToolExecutionPlan,
+  deriveJobHistoryStatus,
   JobsRegistryService,
 } from './jobs-registry.service';
 
@@ -867,7 +868,7 @@ describe('JobsRegistryService', () => {
       return qb;
     };
 
-    it('treats completed plus cancelled job histories as completed unless every job is cancelled', async () => {
+    it('selects the per-status counts needed to derive the aggregate status in TS', async () => {
       const historyQb = createJobHistoryQueryBuilder();
       const countQb = {
         innerJoin: jest.fn().mockReturnThis(),
@@ -885,19 +886,27 @@ describe('JobsRegistryService', () => {
         sortOrder: SortOrder.DESC,
       });
 
+      // Every job status must be counted so deriveJobHistoryStatus can decide
+      // whether the run is still active before calling it terminal.
+      for (const status of [
+        JobStatus.PENDING,
+        JobStatus.IN_PROGRESS,
+        JobStatus.PAUSED,
+        JobStatus.COMPLETED,
+        JobStatus.FAILED,
+        JobStatus.CANCELLED,
+      ]) {
+        const selection = historyQb.selectedFields.find((field) =>
+          field.includes(`AND status = '${status}'`),
+        );
+        expect(selection).toBeDefined();
+      }
+
+      // The aggregate status is no longer computed in SQL.
       const statusSelection = historyQb.selectedFields.find((field) =>
         field.includes(') as "status"'),
       );
-
-      expect(statusSelection).toContain(
-        `COUNT(*) FILTER (WHERE status = '${JobStatus.CANCELLED}') = COUNT(*)`,
-      );
-      expect(statusSelection).toContain(
-        `COUNT(*) FILTER (WHERE status IN ('${JobStatus.COMPLETED}', '${JobStatus.CANCELLED}')) = COUNT(*)`,
-      );
-      expect(statusSelection).toContain(
-        `COUNT(*) FILTER (WHERE status = '${JobStatus.COMPLETED}') > 0`,
-      );
+      expect(statusSelection).toBeUndefined();
 
       const endedAtSelection = historyQb.selectedFields.find((field) =>
         field.includes(') as "updatedAt"'),
@@ -905,6 +914,91 @@ describe('JobsRegistryService', () => {
       expect(endedAtSelection).toContain(
         'MAX(COALESCE("completedAt", "updatedAt"))',
       );
+    });
+  });
+
+  describe('deriveJobHistoryStatus', () => {
+    const counts = (overrides: Partial<Parameters<typeof deriveJobHistoryStatus>[0]>) => {
+      const base = {
+        total: 0,
+        pending: 0,
+        inProgress: 0,
+        paused: 0,
+        completed: 0,
+        failed: 0,
+        cancelled: 0,
+      };
+      const merged = { ...base, ...overrides };
+      merged.total =
+        overrides.total ??
+        merged.pending +
+          merged.inProgress +
+          merged.paused +
+          merged.completed +
+          merged.failed +
+          merged.cancelled;
+      return merged;
+    };
+
+    it('reports IN_PROGRESS while jobs are still running even if some have already failed (the frazerlanier.com regression)', () => {
+      // 19 completed + 4 in_progress + 6 failed => run is NOT finished.
+      expect(
+        deriveJobHistoryStatus(
+          counts({ completed: 19, inProgress: 4, failed: 6 }),
+        ),
+      ).toBe(JobStatus.IN_PROGRESS);
+    });
+
+    it('keeps a history active while pending work remains alongside failures', () => {
+      expect(
+        deriveJobHistoryStatus(counts({ completed: 2, failed: 1, pending: 3 })),
+      ).toBe(JobStatus.IN_PROGRESS);
+    });
+
+    it('reports PENDING when nothing has started yet', () => {
+      expect(deriveJobHistoryStatus(counts({ pending: 5 }))).toBe(
+        JobStatus.PENDING,
+      );
+    });
+
+    it('reports FAILED only once every job is terminal', () => {
+      expect(
+        deriveJobHistoryStatus(counts({ completed: 20, failed: 6 })),
+      ).toBe(JobStatus.FAILED);
+    });
+
+    it('reports COMPLETED when every job succeeded', () => {
+      expect(deriveJobHistoryStatus(counts({ completed: 10 }))).toBe(
+        JobStatus.COMPLETED,
+      );
+    });
+
+    it('treats completed + cancelled (no failures) as COMPLETED', () => {
+      expect(
+        deriveJobHistoryStatus(counts({ completed: 8, cancelled: 2 })),
+      ).toBe(JobStatus.COMPLETED);
+    });
+
+    it('reports CANCELLED when every job was cancelled', () => {
+      expect(deriveJobHistoryStatus(counts({ cancelled: 5 }))).toBe(
+        JobStatus.CANCELLED,
+      );
+    });
+
+    it('reports PAUSED when work is held and nothing is actively running', () => {
+      expect(
+        deriveJobHistoryStatus(counts({ completed: 3, paused: 2 })),
+      ).toBe(JobStatus.PAUSED);
+    });
+
+    it('prefers the active IN_PROGRESS state over a held PAUSED job', () => {
+      expect(
+        deriveJobHistoryStatus(counts({ inProgress: 1, paused: 2 })),
+      ).toBe(JobStatus.IN_PROGRESS);
+    });
+
+    it('defends against an empty history', () => {
+      expect(deriveJobHistoryStatus(counts({}))).toBe(JobStatus.PENDING);
     });
   });
 
