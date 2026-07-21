@@ -335,12 +335,21 @@ func buildToolInvocation(toolPath string, execution *jobs_registry.ToolExecution
 
 	switch execution.GetToolName() {
 	case "httpx":
+		// One asset_service == one (host, port) discovered by naabu, probed here
+		// individually. -follow-redirects is deliberately omitted: with it, httpx
+		// chases the request to a different endpoint (e.g. http://host:80 ->
+		// https://host:443) and reports that endpoint's result under this service.
+		// When the redirect target's TLS is broken the whole probe is flagged
+		// failed=true / status_code=0, discarding the response this port actually
+		// returned. Redirect targets are separate services naabu also finds and
+		// httpx probes on their own, so this probe describes only the endpoint it
+		// was handed. -location still records the redirect target for visibility.
 		return toolInvocation{
 			executable: scannerExecutable(toolPath, "httpx"),
 			args: []string{
 				"-duc", "-u", target, "-status-code", "-favicon", "-asn", "-title",
 				"-web-server", "-irr", "-tech-detect", "-ip", "-cname", "-location",
-				"-tls-grab", "-cdn", "-probe", "-json", "-follow-redirects", "-timeout",
+				"-tls-grab", "-cdn", "-probe", "-json", "-timeout",
 				"10", "-threads", "100", "-silent",
 			},
 		}, nil

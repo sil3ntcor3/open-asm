@@ -11,7 +11,7 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
-import { Brackets, DataSource, Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Target } from '../targets/entities/target.entity';
 
 import { TechnologyForwarderService } from '../technology/technology-forwarder.service';
@@ -135,14 +135,15 @@ export class AssetsService {
       .leftJoin('asset_service.tlsAssets', 'tlsAssets')
       .where('"workspaceTargets"."workspaceId" = :workspaceId', {
         workspaceId,
-      })
-      .andWhere(
-        new Brackets((qb) => {
-          qb.where('"statusCodeAssets"."statusCode" IS NULL').orWhere(
-            '"statusCodeAssets"."statusCode" != 0',
-          );
-        }),
-      );
+      });
+    // NOTE: we intentionally do NOT filter out services whose latest HTTP probe
+    // returned status_code 0 (a failed httpx probe). Each asset_service is an open
+    // port confirmed by naabu, so it is a real, security-relevant part of the
+    // attack surface regardless of whether the HTTP probe succeeded. Excluding
+    // status_code 0 here hid the entire service — and with it the ports, IPs and
+    // service rows the discovery *did* collect — from every service tab. The
+    // Status Code facet still drops 0 locally in getStatusCodeAssets so "0" never
+    // surfaces as a real HTTP status.
 
     for (const [key, value] of Object.entries(whereBuilder)) {
       if (query[key]) {
@@ -778,6 +779,12 @@ export class AssetsService {
         '"statusCodeAssets"."statusCode"',
         'COUNT(DISTINCT asset_service.id) as "assetCount"',
       ])
+      // 0 is httpx's sentinel for a failed probe (and NULL means no probe row at
+      // all); neither is a real HTTP status, so keep both out of this facet. The
+      // shared base query no longer applies this filter, since doing so hid the
+      // underlying services from every other tab.
+      .andWhere('"statusCodeAssets"."statusCode" IS NOT NULL')
+      .andWhere('"statusCodeAssets"."statusCode" != 0')
       .groupBy('"statusCodeAssets"."statusCode"');
 
     if (query.value) {

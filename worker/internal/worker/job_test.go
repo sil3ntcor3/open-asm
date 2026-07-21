@@ -171,6 +171,39 @@ func TestBuildToolInvocationKeepsTargetMetacharactersInOneArgument(t *testing.T)
 	}
 }
 
+func TestBuildHttpxInvocationProbesServiceDirectlyWithoutFollowingRedirects(t *testing.T) {
+	// Each asset_service is a distinct (host, port) discovered by naabu, and httpx
+	// probes it individually. Following redirects makes httpx chase the request to
+	// a *different* endpoint (e.g. http://host:80 -> https://host:443) and report
+	// that other endpoint's outcome under this service. When the redirect target's
+	// TLS is broken the whole probe is flagged failed=true / status_code=0, wiping
+	// the real response for this port even though the port answered. Redirect
+	// targets are separate services that naabu also finds and httpx probes on their
+	// own, so this probe must describe only the endpoint it was given.
+	invocation, err := buildToolInvocation("/scanner-tools", &jobs_registry.ToolExecution{
+		ToolName: "httpx",
+		Target:   "fralan.com:80",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if hasArgument(invocation.args, "-follow-redirects") {
+		t.Fatalf("httpx args = %q, want no -follow-redirects (per-service probe must not chase cross-endpoint redirects)", invocation.args)
+	}
+
+	if got := argumentValue(t, invocation.args, "-u"); got != "fralan.com:80" {
+		t.Fatalf("httpx target = %q, want %q", got, "fralan.com:80")
+	}
+
+	// The probe must still capture the signals the Assets page renders.
+	for _, required := range []string{"-probe", "-json", "-status-code", "-tech-detect", "-tls-grab", "-web-server", "-ip"} {
+		if !hasArgument(invocation.args, required) {
+			t.Fatalf("httpx args = %q, missing required flag %q", invocation.args, required)
+		}
+	}
+}
+
 func TestBuildToolInvocationRejectsUnknownTool(t *testing.T) {
 	_, err := buildToolInvocation("/scanner-tools", &jobs_registry.ToolExecution{
 		ToolName: "arbitrary-shell",
