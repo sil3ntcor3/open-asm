@@ -374,13 +374,18 @@ func buildToolInvocation(toolPath string, execution *jobs_registry.ToolExecution
 	case "naabu":
 		return toolInvocation{
 			executable: scannerExecutable(toolPath, "naabu"),
-			// -rate throttles the SYN burst below naabu's default 1000 pps. That
-			// aggressive burst (top-1000 ports across every subdomain) is what
-			// trips target-side scan detection and gets the worker IP blocked,
-			// causing the immediately-following httpx probes to time out. A calmer
-			// rate keeps the scan under common detection thresholds while still
-			// finishing quickly.
-			args: []string{"-host", target, "-silent", "-top-ports", "1000", "-rate", "500"},
+			// -rate throttles the SYN burst well below naabu's default 1000 pps.
+			// That aggressive burst (top-1000 ports across every subdomain, from
+			// several workers at once) is what trips target-side scan detection and
+			// gets the worker IP filtered — which then makes the immediately
+			// following nmap report open ports as "filtered" (losing the web scheme)
+			// and the httpx probes time out. 500 pps still tripped a hardened target
+			// (pentest-ground.com), so hold the rate to 150: top-1000 ports still
+			// finishes in seconds while staying under common detection thresholds.
+			// This only makes blocks rarer; the pipeline's resilience fixes
+			// (filtered-port enrichment, best-effort screenshots, chain skip-forward)
+			// keep discovery correct for blocks that still slip through.
+			args: []string{"-host", target, "-silent", "-top-ports", "1000", "-rate", "150"},
 		}, nil
 	case "nmap":
 		// asset_service targets are "host:port"; nmap needs the host and the

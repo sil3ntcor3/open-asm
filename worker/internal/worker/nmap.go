@@ -66,8 +66,11 @@ func nmapServiceInvocation(host string, ports []int) toolInvocation {
 //	port/state/proto/owner/service/rpc/version/
 //
 // with fields separated by "/" and any literal "/" inside a field escaped as "|"
-// (so an SSL-tunnelled HTTP service shows up as service "ssl|http"). Only ports
-// reported "open" are returned.
+// (so an SSL-tunnelled HTTP service shows up as service "ssl|http"). Open ports
+// are always returned; ports nmap could only see as filtered (target-side scan
+// detection dropping its probes during the naabu storm) are returned only when
+// they still classify as web, so a transiently-blocked web service keeps its
+// scheme; definitively closed ports are skipped.
 func parseNmapServices(greppable string) []NmapService {
 	var services []NmapService
 	for _, line := range strings.Split(greppable, "\n") {
@@ -78,7 +81,8 @@ func parseNmapServices(greppable string) []NmapService {
 		for _, entry := range strings.Split(line[marker+len("Ports:"):], ",") {
 			entry = strings.TrimSpace(entry)
 			fields := strings.Split(entry, "/")
-			if len(fields) < 5 || strings.TrimSpace(fields[1]) != "open" {
+			state := strings.ToLower(strings.TrimSpace(fields[1]))
+			if len(fields) < 5 || state == "" || strings.Contains(state, "closed") {
 				continue
 			}
 			port, err := strconv.Atoi(strings.TrimSpace(fields[0]))
@@ -94,6 +98,19 @@ func parseNmapServices(greppable string) []NmapService {
 			}
 			svc := NmapService{Port: port, Service: service, Product: product}
 			classifyWebService(&svc)
+			// For a port nmap could not actually probe — "filtered"/"open|filtered",
+			// the state target-side scan detection produces during the naabu storm —
+			// the service label is only a port-number guess with no banner behind it.
+			// Trust that guess enough to RECOVER a web service (so its scheme is set
+			// and the screenshot step still fires — a low-risk, best-effort capture)
+			// but NOT enough to record a non-web label, which would wrongly exclude an
+			// odd-port web service (e.g. a filtered 9000 guessed "cslistener") from the
+			// best-effort screenshot gate. Non-web filtered ports are therefore left
+			// unclassified for the gate to treat as best-effort. Fully "open" ports
+			// carry a real banner and are always recorded.
+			if state != "open" && !svc.IsWeb {
+				continue
+			}
 			services = append(services, svc)
 		}
 	}
