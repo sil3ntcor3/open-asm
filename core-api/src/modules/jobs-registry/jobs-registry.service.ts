@@ -105,6 +105,69 @@ export function createToolExecutionPlan(job: Job): ToolExecutionDto | null {
   };
 }
 
+/** Per-status job counts for a single job history. */
+export interface JobHistoryStatusCounts {
+  total: number;
+  pending: number;
+  inProgress: number;
+  paused: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+}
+
+/**
+ * Derives the aggregate status of a job history from its child job counts.
+ *
+ * A discovery run (job history) is only *terminal* once no work remains. Any
+ * `pending` or `in_progress` child keeps the whole history active, so a run is
+ * never reported as `failed`/`completed`/`cancelled` while sibling jobs are
+ * still executing. This ordering — active states before terminal states — is
+ * the fix for histories showing "failed" (with a premature "Ended At") the
+ * moment a single child job failed, even though the run was still in flight.
+ * It mirrors the precedence already used by {@link getJobsTimeline}.
+ */
+export function deriveJobHistoryStatus(
+  counts: JobHistoryStatusCounts,
+): JobStatus {
+  // No jobs at all: nothing has run yet.
+  if (counts.total === 0) {
+    return JobStatus.PENDING;
+  }
+
+  // --- Active states: work is still outstanding, so the run is not terminal.
+  if (counts.inProgress > 0) {
+    return JobStatus.IN_PROGRESS;
+  }
+  if (counts.pending > 0) {
+    // Some jobs already finished but more are queued => the run is underway.
+    // Nothing has started yet (everything pending) => still queued.
+    const finished = counts.completed + counts.failed + counts.cancelled;
+    return finished > 0 ? JobStatus.IN_PROGRESS : JobStatus.PENDING;
+  }
+
+  // No active work left, but held (paused) jobs can still be resumed, so the
+  // run is paused rather than finished.
+  if (counts.paused > 0) {
+    return JobStatus.PAUSED;
+  }
+
+  // --- Terminal states: every job has reached a final status.
+  if (counts.failed > 0) {
+    return JobStatus.FAILED;
+  }
+  if (counts.cancelled === counts.total) {
+    return JobStatus.CANCELLED;
+  }
+  if (counts.completed > 0) {
+    // Completed, possibly mixed with some cancelled jobs.
+    return JobStatus.COMPLETED;
+  }
+
+  // Defensive fallback (should be unreachable given the checks above).
+  return JobStatus.PENDING;
+}
+
 /**
  * Tool categories whose jobs are scoped to the whole target (every enabled
  * host) rather than a single asset. When one of these is the next workflow
@@ -1045,22 +1108,33 @@ export class JobsRegistryService {
       'createdAt',
     );
 
-    // Define interface for raw query result
+    // Define interface for raw query result. Per-status counts are returned
+    // raw and the aggregate status / action-eligibility are derived in TS via
+    // deriveJobHistoryStatus, so the precedence rules live in one testable
+    // place instead of an inline SQL CASE.
     interface RawJobHistoryResult {
       id: string;
       createdAt: Date;
       updatedAt: Date;
       totalJobs: string; // COUNT returns string in some databases
-      pauseEligibleJobs: string;
-      resumeEligibleJobs: string;
-      cancelEligibleJobs: string;
-      status: JobStatus;
+      pendingJobs: string;
+      inProgressJobs: string;
+      pausedJobs: string;
+      completedJobs: string;
+      failedJobs: string;
+      cancelledJobs: string;
       workflowName: string;
       jobHistoryName: string;
       jobRunType: JobRunType;
     }
 
-    // Query job histories with calculated counts and statuses using subqueries
+    // Per-status count for the history's jobs. Correlated subqueries (rather
+    // than aggregating the joined rows) count every job in the history, not
+    // just the workspace-filtered rows produced by the joins above.
+    const statusCount = (status: JobStatus): string =>
+      `(SELECT COUNT(*) FROM jobs WHERE "jobHistoryId" = "jobHistory".id AND status = '${status}')`;
+
+    // Query job histories with calculated counts using subqueries
     const qb = this.jobHistoryRepo
       .createQueryBuilder('jobHistory')
       .innerJoin('jobHistory.jobs', 'job')
@@ -1086,36 +1160,12 @@ export class JobsRegistryService {
         '"jobHistory"."jobRunType" as "jobRunType"',
         // Subquery to count total jobs for this job history
         '(SELECT COUNT(*) FROM jobs WHERE "jobHistoryId" = "jobHistory".id) as "totalJobs"',
-        `(
-          SELECT COUNT(*) FROM jobs
-          WHERE "jobHistoryId" = "jobHistory".id
-          AND status IN ('${JobStatus.PENDING}', '${JobStatus.IN_PROGRESS}')
-        ) as "pauseEligibleJobs"`,
-        `(
-          SELECT COUNT(*) FROM jobs
-          WHERE "jobHistoryId" = "jobHistory".id
-          AND status = '${JobStatus.PAUSED}'
-        ) as "resumeEligibleJobs"`,
-        `(
-          SELECT COUNT(*) FROM jobs
-          WHERE "jobHistoryId" = "jobHistory".id
-          AND status IN ('${JobStatus.PENDING}', '${JobStatus.IN_PROGRESS}', '${JobStatus.PAUSED}')
-        ) as "cancelEligibleJobs"`,
-        // Subquery with CASE to calculate status based on job statuses
-        `(
-          SELECT 
-            CASE 
-              WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.FAILED}') > 0 THEN '${JobStatus.FAILED}'
-              WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.IN_PROGRESS}') > 0 THEN '${JobStatus.IN_PROGRESS}'
-              WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.PAUSED}') > 0 THEN '${JobStatus.PAUSED}'
-              WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.CANCELLED}') = COUNT(*) AND COUNT(*) > 0 THEN '${JobStatus.CANCELLED}'
-              WHEN COUNT(*) FILTER (WHERE status IN ('${JobStatus.COMPLETED}', '${JobStatus.CANCELLED}')) = COUNT(*) 
-                AND COUNT(*) FILTER (WHERE status = '${JobStatus.COMPLETED}') > 0 THEN '${JobStatus.COMPLETED}'
-              ELSE '${JobStatus.PENDING}'
-            END
-          FROM jobs 
-          WHERE "jobHistoryId" = "jobHistory".id
-        ) as "status"`,
+        `${statusCount(JobStatus.PENDING)} as "pendingJobs"`,
+        `${statusCount(JobStatus.IN_PROGRESS)} as "inProgressJobs"`,
+        `${statusCount(JobStatus.PAUSED)} as "pausedJobs"`,
+        `${statusCount(JobStatus.COMPLETED)} as "completedJobs"`,
+        `${statusCount(JobStatus.FAILED)} as "failedJobs"`,
+        `${statusCount(JobStatus.CANCELLED)} as "cancelledJobs"`,
       ])
       .groupBy('jobHistory.id')
       .addGroupBy('workflow.name')
@@ -1134,20 +1184,35 @@ export class JobsRegistryService {
       .where('workspace.id = :workspaceId', { workspaceId })
       .getCount();
 
-    // Transform raw results to match the response DTO structure
-    const transformedData = rawResults.map((raw) => ({
-      id: raw.id,
-      createdAt: raw.createdAt,
-      updatedAt: raw.updatedAt,
-      totalJobs: parseInt(raw.totalJobs),
-      pauseEligibleJobs: parseInt(raw.pauseEligibleJobs),
-      resumeEligibleJobs: parseInt(raw.resumeEligibleJobs),
-      cancelEligibleJobs: parseInt(raw.cancelEligibleJobs),
-      status: raw.status,
-      workflowName: raw.workflowName,
-      jobHistoryName: raw.jobHistoryName,
-      jobRunType: raw.jobRunType,
-    }));
+    // Transform raw results to match the response DTO structure. Aggregate
+    // status and action-eligibility counts are derived from the same per-status
+    // counts, so they can never disagree.
+    const transformedData = rawResults.map((raw) => {
+      const counts: JobHistoryStatusCounts = {
+        total: parseInt(raw.totalJobs, 10),
+        pending: parseInt(raw.pendingJobs, 10),
+        inProgress: parseInt(raw.inProgressJobs, 10),
+        paused: parseInt(raw.pausedJobs, 10),
+        completed: parseInt(raw.completedJobs, 10),
+        failed: parseInt(raw.failedJobs, 10),
+        cancelled: parseInt(raw.cancelledJobs, 10),
+      };
+
+      return {
+        id: raw.id,
+        createdAt: raw.createdAt,
+        updatedAt: raw.updatedAt,
+        totalJobs: counts.total,
+        // Pause acts on outstanding work; resume on held work; cancel on both.
+        pauseEligibleJobs: counts.pending + counts.inProgress,
+        resumeEligibleJobs: counts.paused,
+        cancelEligibleJobs: counts.pending + counts.inProgress + counts.paused,
+        status: deriveJobHistoryStatus(counts),
+        workflowName: raw.workflowName,
+        jobHistoryName: raw.jobHistoryName,
+        jobRunType: raw.jobRunType,
+      };
+    });
 
     return getManyResponse({ query, data: transformedData, total });
   }
