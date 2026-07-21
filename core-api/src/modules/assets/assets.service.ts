@@ -517,19 +517,31 @@ export class AssetsService {
       query.sortBy = '"assetCount"';
     }
 
-    const queryBuilder = this.buildBaseQuery(query, workspaceId)
+    // Anchor on the asset table (like getHostAssets) instead of asset_service
+    // so every discovered IP is listed — including IPs of subdomains that
+    // resolve via DNS but have no open ports (hence no asset_service). The
+    // service-anchored buildBaseQuery hid those IPs entirely. The free-text
+    // filter targets the IP below, so strip `value` from the host base query;
+    // otherwise buildHostBaseQuery would match it against asset.value instead.
+    const queryBuilder = this.buildHostBaseQuery(
+      { ...query, value: undefined },
+      workspaceId,
+    );
+
+    // buildHostBaseQuery only joins ipAssets when query.ipAddresses is set;
+    // add the join here when it isn't so the IP can be selected without
+    // creating a duplicate `ipAssets` alias.
+    if (!query.ipAddresses) {
+      queryBuilder.leftJoin('asset.ipAssets', 'ipAssets');
+    }
+
+    queryBuilder
       .select([
         '"ipAssets"."ip"',
         'COUNT(DISTINCT asset_service.id) as "assetCount"',
       ])
       .andWhere('"ipAssets"."ip" IS NOT NULL')
       .groupBy('"ipAssets"."ip"');
-
-    if (query.value) {
-      queryBuilder.andWhere('"ipAssets"."ip"::text ILIKE :value', {
-        value: `%${query.value}%`,
-      });
-    }
 
     if (query.value) {
       queryBuilder.andWhere('"ipAssets"."ip"::text ILIKE :value', {
