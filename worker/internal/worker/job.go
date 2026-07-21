@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -179,6 +180,16 @@ func processJob(
 			limits.stderrLimitBytes,
 			handle,
 		)
+		// nmap emits greppable text; parse it into the service JSON Core expects
+		// so the parsing quirks stay worker-side. A parse/encode error leaves the
+		// raw output in place rather than failing the job.
+		if execution.GetToolName() == "nmap" && result.outcome == executionOutcomeSucceeded {
+			if servicesJSON, encodeErr := nmapServicesJSON(result.stdout); encodeErr == nil {
+				result.stdout = servicesJSON
+			} else {
+				jobLogGlobal.Warning("[%s] Failed to encode nmap services: %v", job.Id, encodeErr)
+			}
+		}
 		payload = executionPayload(result)
 	}
 
@@ -350,14 +361,45 @@ func buildToolInvocation(toolPath string, execution *jobs_registry.ToolExecution
 				"-duc", "-u", target, "-status-code", "-favicon", "-asn", "-title",
 				"-web-server", "-irr", "-tech-detect", "-ip", "-cname", "-location",
 				"-tls-grab", "-cdn", "-probe", "-json", "-timeout",
-				"10", "-threads", "100", "-silent",
+				"10",
+				// Reliability: the port-scan burst that precedes httpx can trip a
+				// target's IPS/rate-limiter, which then drops the worker's packets
+				// for a short window — long enough that a single httpx attempt times
+				// out and marks even a real web service failed. Retrying extends the
+				// probe window past that transient block so a later attempt lands.
+				"-retries", "2",
+				"-threads", "100", "-silent",
 			},
 		}, nil
 	case "naabu":
 		return toolInvocation{
 			executable: scannerExecutable(toolPath, "naabu"),
-			args:       []string{"-host", target, "-silent", "-top-ports", "1000"},
+			// -rate throttles the SYN burst below naabu's default 1000 pps. That
+			// aggressive burst (top-1000 ports across every subdomain) is what
+			// trips target-side scan detection and gets the worker IP blocked,
+			// causing the immediately-following httpx probes to time out. A calmer
+			// rate keeps the scan under common detection thresholds while still
+			// finishing quickly.
+			args: []string{"-host", target, "-silent", "-top-ports", "1000", "-rate", "500"},
 		}, nil
+	case "nmap":
+		// asset_service targets are "host:port"; nmap needs the host and the
+		// single discovered port separately. Prefer the typed port from the
+		// execution plan, falling back to the suffix of the target.
+		host := target
+		port := int(execution.GetPort())
+		if idx := strings.LastIndex(target, ":"); idx >= 0 {
+			host = target[:idx]
+			if port == 0 {
+				if parsed, convErr := strconv.Atoi(target[idx+1:]); convErr == nil {
+					port = parsed
+				}
+			}
+		}
+		if host == "" || port <= 0 {
+			return toolInvocation{}, errors.New("nmap service discovery requires host:port")
+		}
+		return nmapServiceInvocation(host, []int{port}), nil
 	case "nuclei":
 		absToolPath, err := filepath.Abs(toolPath)
 		if err != nil {

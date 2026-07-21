@@ -204,6 +204,59 @@ func TestBuildHttpxInvocationProbesServiceDirectlyWithoutFollowingRedirects(t *t
 	}
 }
 
+func TestBuildNmapInvocationSplitsHostAndPort(t *testing.T) {
+	port := int32(443)
+	inv, err := buildToolInvocation("/scanner-tools", &jobs_registry.ToolExecution{
+		ToolName: "nmap",
+		Target:   "frazerlanier.com:443",
+		Port:     &port,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inv.executable != "nmap" {
+		t.Fatalf("executable = %q, want nmap (system package, not oasm-tools)", inv.executable)
+	}
+	joined := strings.Join(inv.args, " ")
+	for _, want := range []string{"-sV", "-p 443"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("nmap args %q missing %q", joined, want)
+		}
+	}
+	if last := inv.args[len(inv.args)-1]; last != "frazerlanier.com" {
+		t.Fatalf("nmap host = %q, want frazerlanier.com (port stripped from target)", last)
+	}
+}
+
+func TestBuildNmapInvocationFallsBackToTargetPort(t *testing.T) {
+	// No typed Port on the execution: the port must be recovered from the
+	// "host:port" target so odd-port web services are still probed correctly.
+	inv, err := buildToolInvocation("/scanner-tools", &jobs_registry.ToolExecution{
+		ToolName: "nmap",
+		Target:   "example.com:8443",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(inv.args, " ")
+	if !strings.Contains(joined, "-p 8443") {
+		t.Fatalf("nmap args %q want -p 8443 recovered from target", joined)
+	}
+	if last := inv.args[len(inv.args)-1]; last != "example.com" {
+		t.Fatalf("nmap host = %q, want example.com", last)
+	}
+}
+
+func TestBuildNmapInvocationRequiresPort(t *testing.T) {
+	_, err := buildToolInvocation("/scanner-tools", &jobs_registry.ToolExecution{
+		ToolName: "nmap",
+		Target:   "example.com",
+	})
+	if err == nil {
+		t.Fatal("nmap service discovery must error without a port")
+	}
+}
+
 func TestBuildToolInvocationRejectsUnknownTool(t *testing.T) {
 	_, err := buildToolInvocation("/scanner-tools", &jobs_registry.ToolExecution{
 		ToolName: "arbitrary-shell",

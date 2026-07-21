@@ -324,7 +324,8 @@ export class JobsRegistryService {
     // Step 2: find appropriate data source based on tool category
     if (
       tool.category === ToolCategory.HTTP_PROBE ||
-      tool.category === ToolCategory.SCREENSHOT
+      tool.category === ToolCategory.SCREENSHOT ||
+      tool.category === ToolCategory.SERVICE_DISCOVERY
     ) {
       // For HTTP_PROBE, use asset services
       const assetServices = await this.findAssetServicesForJob(
@@ -498,7 +499,8 @@ export class JobsRegistryService {
 
     if (
       category === ToolCategory.HTTP_PROBE ||
-      category === ToolCategory.SCREENSHOT
+      category === ToolCategory.SCREENSHOT ||
+      category === ToolCategory.SERVICE_DISCOVERY
     ) {
       assetServicesQueryBuilder.andWhere(
         'asset.dnsResolutionStatus != :unresolvedDnsStatus',
@@ -506,26 +508,17 @@ export class JobsRegistryService {
       );
     }
 
-    // Web-service gate for screenshots. naabu opens an asset_service for every
-    // live port, so without this filter the screenshot browser is pointed at
-    // non-web services (FTP:21, SMTP:465/587, IMAP:143/993, POP3:995, ...),
-    // wasting work and producing spurious job failures. httpx runs immediately
-    // before screenshot in the workflow and records an http_responses row per
-    // service; failed=false means it obtained a real HTTP response. Requiring
-    // such a row limits screenshots to genuine web endpoints while relying on
-    // httpx's protocol detection rather than a port allow-list — so web
-    // services on non-standard ports (e.g. :9000) are still captured and
-    // legitimate web services are never excluded. Services not yet probed (no
-    // row) are skipped now and picked up when their own httpx probe completes
-    // and re-triggers this fan-out; the idempotency guard below dedupes it.
+    // Web-service gate for screenshots. The nmap service-discovery step runs
+    // before screenshot in the workflow and sets asset_services.scheme only for
+    // endpoints it identified as http/https (on ANY port — nmap does not use a
+    // port allow-list, so odd-port web services are still captured). Requiring a
+    // scheme therefore limits screenshots to genuine web services without
+    // depending on httpx, whose failed flag is unreliable under scan load. A
+    // service nmap has not yet classified (scheme NULL) is skipped now and picked
+    // up once its nmap job completes and re-triggers this fan-out; the
+    // idempotency guard below dedupes it.
     if (category === ToolCategory.SCREENSHOT) {
-      assetServicesQueryBuilder.andWhere(
-        `EXISTS (
-          SELECT 1 FROM "http_responses" "webProbe"
-          WHERE "webProbe"."assetServiceId" = "assetServices"."id"
-            AND "webProbe"."failed" = false
-        )`,
-      );
+      assetServicesQueryBuilder.andWhere('assetServices.scheme IS NOT NULL');
     }
 
     // Idempotency guard: skip asset services that already have an open (pending

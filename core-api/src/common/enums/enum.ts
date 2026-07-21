@@ -27,6 +27,7 @@ export enum ToolCategory {
   PORTS_SCANNER = 'ports_scanner',
   VULNERABILITIES = 'vulnerabilities',
   SCREENSHOT = 'screenshot',
+  SERVICE_DISCOVERY = 'service_discovery',
   CLASSIFIER = 'classifier',
   ASSISTANT = 'assistant',
 }
@@ -218,6 +219,7 @@ export const CATEGORY_DATA_SOURCE_MAP: Record<ToolCategory, DataSource> = {
   [ToolCategory.PORTS_SCANNER]: DataSource.ASSET,
   [ToolCategory.VULNERABILITIES]: DataSource.ASSET,
   [ToolCategory.SCREENSHOT]: DataSource.ASSET_SERVICE,
+  [ToolCategory.SERVICE_DISCOVERY]: DataSource.ASSET_SERVICE,
   [ToolCategory.CLASSIFIER]: DataSource.ASSET,
   [ToolCategory.ASSISTANT]: DataSource.ASSET,
 };

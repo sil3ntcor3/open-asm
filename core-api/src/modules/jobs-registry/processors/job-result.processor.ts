@@ -1,4 +1,9 @@
-import { BullMQName, JobStatus, WorkerType } from '@/common/enums/enum';
+import {
+  BullMQName,
+  JobStatus,
+  ToolCategory,
+  WorkerType,
+} from '@/common/enums/enum';
 import { JobDataResultType } from '@/common/types/app.types';
 import { DataAdapterService } from '@/modules/data-adapter/data-adapter.service';
 import { StorageService } from '@/modules/storage/storage.service';
@@ -55,7 +60,17 @@ export class JobResultProcessor extends WorkerHost {
         bucket,
       );
 
-      if (data.error) {
+      // Screenshots are best-effort enrichment: a capture failure (the target is
+      // not a web service, is unreachable, or timed out) must not fail the job or
+      // the whole discovery run. The headless browser is the ground-truth web
+      // detector, so "no screenshot" is the normal outcome for a non-web service
+      // (surfaced as "No screenshot" in the UI). Treat such a failure as a
+      // completed, no-data step so the pipeline still advances to the next tool
+      // (e.g. nuclei) instead of stalling and reporting the run as failed.
+      const isScreenshotBestEffortFailure =
+        !!data.error && job.tool.category === ToolCategory.SCREENSHOT;
+
+      if (data.error && !isScreenshotBestEffortFailure) {
         const failureMessage =
           data.failureMessage?.trim() || 'Job reported error';
         const stderr = data.stderr?.trim();
@@ -66,32 +81,44 @@ export class JobResultProcessor extends WorkerHost {
         );
       }
 
-      const isBuiltInTools = job.tool.type === WorkerType.BUILT_IN;
-
-      let dataForSync: JobDataResultType;
-
-      if (isBuiltInTools) {
-        const builtInStep = builtInTools.find(
-          (tool) => tool.name === job.tool.name,
+      if (isScreenshotBestEffortFailure) {
+        this.logger.warn(
+          `No screenshot captured for ${
+            job.assetService?.value ?? job.asset?.value ?? job.id
+          }: ${data.failureMessage?.trim() || 'no web response'}`,
         );
-
-        if (!builtInStep) {
-          throw new Error(`Worker step not found for worker: ${job.tool.name}`);
-        }
-
-        if (!data.raw && !builtInStep) {
-          throw new BadGatewayException('Raw data is required');
-        }
-        dataForSync = builtInStep?.parser?.(data.raw ?? undefined);
-      } else {
-        dataForSync = data.payload;
       }
 
-      if (job.isSaveData) {
-        await this.dataAdapterService.syncData({
-          data: dataForSync,
-          job,
-        });
+      if (!isScreenshotBestEffortFailure) {
+        const isBuiltInTools = job.tool.type === WorkerType.BUILT_IN;
+
+        let dataForSync: JobDataResultType;
+
+        if (isBuiltInTools) {
+          const builtInStep = builtInTools.find(
+            (tool) => tool.name === job.tool.name,
+          );
+
+          if (!builtInStep) {
+            throw new Error(
+              `Worker step not found for worker: ${job.tool.name}`,
+            );
+          }
+
+          if (!data.raw && !builtInStep) {
+            throw new BadGatewayException('Raw data is required');
+          }
+          dataForSync = builtInStep?.parser?.(data.raw ?? undefined);
+        } else {
+          dataForSync = data.payload;
+        }
+
+        if (job.isSaveData) {
+          await this.dataAdapterService.syncData({
+            data: dataForSync,
+            job,
+          });
+        }
       }
       const completedJob = await this.jobRepo.save({
         ...job,

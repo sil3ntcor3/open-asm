@@ -227,7 +227,7 @@ describe('JobsRegistryService', () => {
     });
 
     const makeAssetServiceQb = () => {
-      const queryBuilder = {
+      const qb = {
         innerJoinAndSelect: jest.fn().mockReturnThis(),
         innerJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
@@ -235,12 +235,12 @@ describe('JobsRegistryService', () => {
         getMany: jest.fn().mockResolvedValue([]),
       };
       mockDataSource.getRepository.mockReturnValue({
-        createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+        createQueryBuilder: jest.fn().mockReturnValue(qb),
       });
-      return queryBuilder;
+      return qb;
     };
 
-    const callFindAssetServices = (category: ToolCategory) =>
+    const findAssetServices = (category: ToolCategory) =>
       (
         service as unknown as {
           findAssetServicesForJob(
@@ -252,36 +252,29 @@ describe('JobsRegistryService', () => {
         }
       ).findAssetServicesForJob(undefined, undefined, undefined, category);
 
-    // A screenshot is only meaningful for an endpoint that actually speaks HTTP.
-    // naabu opens an asset_service for every live port (FTP/SMTP/IMAP/...), so
-    // screenshot job creation must be gated to services httpx confirmed as web
-    // (an http_responses row with failed=false). This uses httpx's own HTTP
-    // detection rather than a port allow-list, so web services on non-standard
-    // ports are still screenshotted — legitimate web services are not excluded.
-    it('only creates screenshot jobs for services httpx confirmed as web', async () => {
-      const queryBuilder = makeAssetServiceQb();
-
-      await callFindAssetServices(ToolCategory.SCREENSHOT);
-
-      const gatedByWebProbe = queryBuilder.andWhere.mock.calls.some(
-        ([clause]) =>
-          typeof clause === 'string' &&
-          clause.includes('http_responses') &&
-          clause.includes('failed'),
+    // Screenshots only run against endpoints nmap identified as web (scheme set).
+    // This is the reliable, port-agnostic "web service" gate that replaces the
+    // fragile httpx signal.
+    it('gates screenshot creation on the nmap web scheme', async () => {
+      const qb = makeAssetServiceQb();
+      await findAssetServices(ToolCategory.SCREENSHOT);
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        'assetServices.scheme IS NOT NULL',
       );
-      expect(gatedByWebProbe).toBe(true);
     });
 
-    it('does not gate the http probe itself on a prior web response', async () => {
-      const queryBuilder = makeAssetServiceQb();
-
-      await callFindAssetServices(ToolCategory.HTTP_PROBE);
-
-      const gatedByWebProbe = queryBuilder.andWhere.mock.calls.some(
-        ([clause]) =>
-          typeof clause === 'string' && clause.includes('http_responses'),
-      );
-      expect(gatedByWebProbe).toBe(false);
+    it('does not scheme-gate http probe or service discovery', async () => {
+      for (const category of [
+        ToolCategory.HTTP_PROBE,
+        ToolCategory.SERVICE_DISCOVERY,
+      ]) {
+        const qb = makeAssetServiceQb();
+        await findAssetServices(category);
+        const schemeGated = qb.andWhere.mock.calls.some(
+          ([clause]) => typeof clause === 'string' && clause.includes('scheme'),
+        );
+        expect(schemeGated).toBe(false);
+      }
     });
   });
 
