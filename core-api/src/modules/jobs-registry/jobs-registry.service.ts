@@ -153,15 +153,25 @@ export function deriveJobHistoryStatus(
   }
 
   // --- Terminal states: every job has reached a final status.
+  // A run is only branded FAILED when it produced *no* successful work. A
+  // single (or several) failed child tasks must not fail the whole run: a
+  // discovery job that screenshotted 20 services and had 6 tool failures still
+  // delivered results, so it is COMPLETED. Checking `completed` before `failed`
+  // is what prevents one failed task from turning the whole registry entry red;
+  // the per-status counts (failedJobs, etc.) still surface the failures on the
+  // run-detail view.
+  if (counts.completed > 0) {
+    // At least one success => the run delivered results, regardless of any
+    // sibling failures or cancellations.
+    return JobStatus.COMPLETED;
+  }
   if (counts.failed > 0) {
+    // No successes at all, but something failed => the run genuinely failed
+    // (any cancellations alongside the failures do not soften that).
     return JobStatus.FAILED;
   }
   if (counts.cancelled === counts.total) {
     return JobStatus.CANCELLED;
-  }
-  if (counts.completed > 0) {
-    // Completed, possibly mixed with some cancelled jobs.
-    return JobStatus.COMPLETED;
   }
 
   // Defensive fallback (should be unreachable given the checks above).
@@ -493,6 +503,28 @@ export class JobsRegistryService {
       assetServicesQueryBuilder.andWhere(
         'asset.dnsResolutionStatus != :unresolvedDnsStatus',
         { unresolvedDnsStatus: DnsResolutionStatus.UNRESOLVED },
+      );
+    }
+
+    // Web-service gate for screenshots. naabu opens an asset_service for every
+    // live port, so without this filter the screenshot browser is pointed at
+    // non-web services (FTP:21, SMTP:465/587, IMAP:143/993, POP3:995, ...),
+    // wasting work and producing spurious job failures. httpx runs immediately
+    // before screenshot in the workflow and records an http_responses row per
+    // service; failed=false means it obtained a real HTTP response. Requiring
+    // such a row limits screenshots to genuine web endpoints while relying on
+    // httpx's protocol detection rather than a port allow-list — so web
+    // services on non-standard ports (e.g. :9000) are still captured and
+    // legitimate web services are never excluded. Services not yet probed (no
+    // row) are skipped now and picked up when their own httpx probe completes
+    // and re-triggers this fan-out; the idempotency guard below dedupes it.
+    if (category === ToolCategory.SCREENSHOT) {
+      assetServicesQueryBuilder.andWhere(
+        `EXISTS (
+          SELECT 1 FROM "http_responses" "webProbe"
+          WHERE "webProbe"."assetServiceId" = "assetServices"."id"
+            AND "webProbe"."failed" = false
+        )`,
       );
     }
 
