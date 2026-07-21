@@ -1,4 +1,5 @@
 import { BaseEntity } from '@/common/entities/base.entity';
+import { DnsResolutionStatus } from '@/common/enums/enum';
 import { AssetGroupAsset } from '@/modules/asset-group/entities/asset-groups-assets.entity';
 import { Job } from '@/modules/jobs-registry/entities/job.entity';
 import { Target } from '@/modules/targets/entities/target.entity';
@@ -12,6 +13,11 @@ import { IpAssetsView } from './ip-assets.entity';
 @Unique(['value', 'target'])
 @Index('IDX_assets_targetId', ['targetId'])
 @Index('IDX_assets_targetId_isEnabled', ['targetId', 'isEnabled'])
+@Index('IDX_assets_targetId_isEnabled_dnsResolutionStatus', [
+  'targetId',
+  'isEnabled',
+  'dnsResolutionStatus',
+])
 export class Asset extends BaseEntity {
   @ApiProperty()
   @Column()
@@ -39,6 +45,14 @@ export class Asset extends BaseEntity {
   @ApiProperty()
   @Column({ type: 'json', nullable: true })
   dnsRecords?: object;
+
+  @ApiProperty({ enum: DnsResolutionStatus })
+  @Column({
+    type: 'enum',
+    enum: DnsResolutionStatus,
+    default: DnsResolutionStatus.UNKNOWN,
+  })
+  dnsResolutionStatus: DnsResolutionStatus;
 
   @OneToMany(() => AssetService, (assetService) => assetService.asset, {
     onDelete: 'CASCADE',

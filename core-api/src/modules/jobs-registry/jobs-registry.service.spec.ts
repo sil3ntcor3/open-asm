@@ -1,4 +1,4 @@
-import { BullMQName, JobStatus } from '@/common/enums/enum';
+import { BullMQName, JobStatus, ToolCategory } from '@/common/enums/enum';
 import { SortOrder } from '@/common/dtos/get-many-base.dto';
 import { RedisService } from '@/services/redis/redis.service';
 import { getQueueToken } from '@nestjs/bullmq';
@@ -45,6 +45,8 @@ describe('JobsRegistryService', () => {
 
   const mockJobErrorLogRepository = {
     createQueryBuilder: jest.fn(),
+    findOne: jest.fn(),
+    save: jest.fn(),
   };
 
   const mockDataSource = {
@@ -92,6 +94,8 @@ describe('JobsRegistryService', () => {
     mockJobHistoryRepository.findOne.mockReset();
     mockJobHistoryRepository.update.mockReset();
     mockJobErrorLogRepository.createQueryBuilder.mockReset();
+    mockJobErrorLogRepository.findOne.mockReset();
+    mockJobErrorLogRepository.save.mockReset();
     mockDataSource.createQueryRunner.mockReset();
     mockDataSource.getRepository.mockReset();
     mockDataAdapterService.syncData.mockReset();
@@ -192,6 +196,79 @@ describe('JobsRegistryService', () => {
     });
   });
 
+  describe('scanner eligibility', () => {
+    it('excludes explicitly unresolved assets from port scanning', async () => {
+      const queryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        innerJoin: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      };
+      mockDataSource.getRepository.mockReturnValue({
+        createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+      });
+
+      await (
+        service as unknown as {
+          findAssetsForJob(
+            targetIds?: string[],
+            assetIds?: string[],
+            workspaceId?: string,
+            category?: ToolCategory,
+          ): Promise<unknown[]>;
+        }
+      ).findAssetsForJob(undefined, undefined, undefined, ToolCategory.PORTS_SCANNER);
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'assets.dnsResolutionStatus != :unresolvedDnsStatus',
+        { unresolvedDnsStatus: 'unresolved' },
+      );
+    });
+  });
+
+  describe('handleJobError', () => {
+    it('records a terminal completion time and bounded worker diagnostics', async () => {
+      const job = {
+        id: 'job-uuid',
+        retryCount: 0,
+        status: JobStatus.IN_PROGRESS,
+      } as Job;
+      mockJobRepository.save.mockResolvedValue(undefined);
+      mockJobErrorLogRepository.findOne.mockResolvedValue(null);
+      mockJobErrorLogRepository.save.mockResolvedValue(undefined);
+
+      await service.handleJobError(
+        {
+          jobId: job.id,
+          data: {
+            error: true,
+            payload: undefined,
+            outcome: 'failed',
+            exitCode: 1,
+            failureMessage: 'command exited with code 1',
+            stderr: '[FTL] no valid ipv4 or ipv6 targets were found',
+          },
+        },
+        job,
+        new Error(
+          'command exited with code 1: [FTL] no valid ipv4 or ipv6 targets were found',
+        ),
+      );
+
+      expect(mockJobRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: JobStatus.FAILED,
+          completedAt: expect.any(Date),
+        }),
+      );
+      expect(mockJobErrorLogRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: expect.stringContaining('no valid ipv4 or ipv6 targets'),
+        }),
+      );
+    });
+  });
+
   describe('reRunJob', () => {
     const mockWorkspaceId = 'workspace-uuid';
     const mockJobId = 'job-uuid';
@@ -239,7 +316,9 @@ describe('JobsRegistryService', () => {
       expect(mockQueryRunner.manager.save).toHaveBeenCalledWith({
         ...mockJob,
         status: JobStatus.PENDING,
-        workerId: undefined,
+        workerId: null,
+        pickJobAt: null,
+        completedAt: null,
         retryCount: 1,
       });
     });
@@ -517,6 +596,7 @@ describe('JobsRegistryService', () => {
 
       expect(updateQb.set).toHaveBeenCalledWith({
         status: JobStatus.CANCELLED,
+        completedAt: expect.any(Function),
       });
       expect(updateQb.where).toHaveBeenCalledWith(
         '"jobHistoryId" = :jobHistoryId',
@@ -817,6 +897,13 @@ describe('JobsRegistryService', () => {
       );
       expect(statusSelection).toContain(
         `COUNT(*) FILTER (WHERE status = '${JobStatus.COMPLETED}') > 0`,
+      );
+
+      const endedAtSelection = historyQb.selectedFields.find((field) =>
+        field.includes(') as "updatedAt"'),
+      );
+      expect(endedAtSelection).toContain(
+        'MAX(COALESCE("completedAt", "updatedAt"))',
       );
     });
   });

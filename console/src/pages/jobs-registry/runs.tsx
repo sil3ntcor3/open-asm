@@ -59,15 +59,18 @@ const formatTimestamp = (value?: string | Date | null) => {
 
 const getJobStartedAt = (job: Job) => job.pickJobAt || job.createdAt;
 
-const isJobCompleted = (job: Job) => job.status === JobStatus.completed;
+const isJobTerminal = (job: Job) =>
+  job.status === JobStatus.completed ||
+  job.status === JobStatus.failed ||
+  job.status === JobStatus.cancelled;
 
 const getJobEndedAt = (job: Job) => {
-  if (!isJobCompleted(job)) return null;
+  if (!isJobTerminal(job)) return null;
   return job.completedAt || job.updatedAt;
 };
 
 const getJobDuration = (job: Job) => {
-  if (!isJobCompleted(job)) return null;
+  if (!isJobTerminal(job)) return null;
 
   const startedAt = dayjs(getJobStartedAt(job));
   const endedAt = dayjs(getJobEndedAt(job));

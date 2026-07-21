@@ -47,15 +47,23 @@ export class JobResultProcessor extends WorkerHost {
     // resultRef is in format "bucket/filename"
     const [bucket, ...rest] = resultRef.split('/');
     const fileName = rest.join('/');
+    let data: DataPayloadResult | undefined;
 
     try {
-      const data = await this.storageService.readJsonFile<DataPayloadResult>(
+      data = await this.storageService.readJsonFile<DataPayloadResult>(
         fileName,
         bucket,
       );
 
       if (data.error) {
-        throw new Error(data.failureMessage || 'Job reported error');
+        const failureMessage =
+          data.failureMessage?.trim() || 'Job reported error';
+        const stderr = data.stderr?.trim();
+        throw new Error(
+          stderr && !failureMessage.includes(stderr)
+            ? `${failureMessage}: ${stderr}`
+            : failureMessage,
+        );
       }
 
       const isBuiltInTools = job.tool.type === WorkerType.BUILT_IN;
@@ -115,14 +123,18 @@ export class JobResultProcessor extends WorkerHost {
         );
       }
     } catch (e) {
+      const error = e instanceof Error ? e : new Error(String(e));
       const isLastAttempt =
         bullJob.attemptsMade + 1 >= (bullJob.opts.attempts || 1);
 
       if (isLastAttempt) {
         await this.jobsRegistryService.handleJobError(
-          { jobId, data: {} as DataPayloadResult },
+          {
+            jobId,
+            data: data ?? ({ error: true } as DataPayloadResult),
+          },
           job,
-          e,
+          error,
         );
 
         // Final failure: delete the result file
@@ -137,7 +149,7 @@ export class JobResultProcessor extends WorkerHost {
       }
 
       // Throw error to let BullMQ handle retry logic
-      throw e;
+      throw error;
     }
   }
 }

@@ -1,6 +1,36 @@
 import type { Vulnerability } from '@/modules/vulnerabilities/entities/vulnerability.entity';
 import { builtInTools } from './built-in-tools';
 
+describe('builtInTools subfinder parser', () => {
+  const subfinder = builtInTools.find((tool) => tool.name === 'subfinder');
+
+  it('marks SOA-only DNS output as unresolved', () => {
+    const parsed = subfinder!.parser!(
+      'www.remote.example.com [SOA] [ns-1.example.net]',
+    );
+
+    expect(parsed).toEqual([
+      expect.objectContaining({
+        value: 'www.remote.example.com',
+        dnsResolutionStatus: 'unresolved',
+      }),
+    ]);
+  });
+
+  it('marks DNS output containing an address record as resolved', () => {
+    const parsed = subfinder!.parser!(
+      'remote.example.com [A] [192.0.2.10]',
+    );
+
+    expect(parsed).toEqual([
+      expect.objectContaining({
+        value: 'remote.example.com',
+        dnsResolutionStatus: 'resolved',
+      }),
+    ]);
+  });
+});
+
 describe('builtInTools nuclei parser', () => {
   it('uses the worker-managed persistent template directory', () => {
     const nuclei = builtInTools.find((tool) => tool.name === 'nuclei');

@@ -32,6 +32,17 @@ export enum ToolCategory {
 }
 
 /**
+ * Whether the most recent DNS discovery produced an IP address for an asset.
+ * Unknown preserves compatibility for manually entered IPs and assets that
+ * have not been through DNS discovery yet.
+ */
+export enum DnsResolutionStatus {
+  UNKNOWN = 'unknown',
+  RESOLVED = 'resolved',
+  UNRESOLVED = 'unresolved',
+}
+
+/**
  * Enum representing job statuses
  */
 export enum JobStatus {

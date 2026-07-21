@@ -1,7 +1,11 @@
 /* eslint-disable */
 
 import type { Severity } from '@/common/enums/enum';
-import { JobPriority, ToolCategory } from '@/common/enums/enum';
+import {
+  DnsResolutionStatus,
+  JobPriority,
+  ToolCategory,
+} from '@/common/enums/enum';
 import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -106,6 +110,11 @@ export const builtInTools: Tool[] = [
         id: randomUUID(),
         value: i,
         dnsRecords: parsed[i],
+        dnsResolutionStatus:
+          (parsed[i].A?.length ?? 0) > 0 ||
+          (parsed[i].AAAA?.length ?? 0) > 0
+            ? DnsResolutionStatus.RESOLVED
+            : DnsResolutionStatus.UNRESOLVED,
       })) as Asset[];
     },
     version: '2.8.0',

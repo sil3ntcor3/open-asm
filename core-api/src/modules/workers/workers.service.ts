@@ -681,7 +681,12 @@ export class WorkersService {
           WHEN j.status = '${JobStatus.FAILED}' AND j."retryCount" < 4 THEN '${JobStatus.PENDING}'
           ELSE j.status
         END,
-        "workerId" = NULL
+        "workerId" = NULL,
+        "completedAt" = CASE
+          WHEN j.status = '${JobStatus.IN_PROGRESS}' THEN NULL
+          WHEN j.status = '${JobStatus.FAILED}' AND j."retryCount" < 4 THEN NULL
+          ELSE j."completedAt"
+        END
       WHERE (
           j.status = '${JobStatus.IN_PROGRESS}'
           AND (

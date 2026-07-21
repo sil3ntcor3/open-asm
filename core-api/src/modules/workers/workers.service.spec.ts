@@ -162,6 +162,19 @@ describe('WorkersService', () => {
     expect(service).toBeDefined();
   });
 
+  it('clears the terminal timestamp when a failed job is reset for retry', async () => {
+    const query = jest.fn().mockResolvedValue(undefined);
+    (mockWorkerInstanceRepository.manager as any) = { query };
+
+    await (
+      service as unknown as { resetStuckAndFailedJobs(): Promise<void> }
+    ).resetStuckAndFailedJobs();
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('"completedAt" = CASE'),
+    );
+  });
+
   describe('autoCleanupWorkersAndJobs', () => {
     it('should delete stale workers without active streams', async () => {
       const staleWorker = {
