@@ -56,7 +56,19 @@ message ControlResponse {
 message Job {
   string id = 1;
   Asset asset = 2;
+  // Retained for API/history compatibility. Workers must not execute this
+  // display value as a shell command.
   optional string command = 3;
+  ToolExecution execution = 4;
+}
+
+message ToolExecution {
+  // A worker-side allowlisted tool identifier, never an executable path.
+  string tool_name = 1;
+  // The complete target is transported as one argument, not interpolated
+  // into a command string.
+  string target = 2;
+  optional int32 port = 3;
 }
 
 message JobResponse {

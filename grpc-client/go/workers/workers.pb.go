@@ -749,6 +749,150 @@ func (x *BuiltinToolRegistryResponse) GetToolPaths() []string {
 	return nil
 }
 
+type ScannerStatusReportRequest struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	EngineVersion       string                 `protobuf:"bytes,1,opt,name=engine_version,json=engineVersion,proto3" json:"engine_version,omitempty"`
+	TemplateVersion     string                 `protobuf:"bytes,2,opt,name=template_version,json=templateVersion,proto3" json:"template_version,omitempty"`
+	TemplateSource      string                 `protobuf:"bytes,3,opt,name=template_source,json=templateSource,proto3" json:"template_source,omitempty"`
+	State               string                 `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`
+	LastUpdateAttemptAt *string                `protobuf:"bytes,5,opt,name=last_update_attempt_at,json=lastUpdateAttemptAt,proto3,oneof" json:"last_update_attempt_at,omitempty"`
+	LastUpdateSuccessAt *string                `protobuf:"bytes,6,opt,name=last_update_success_at,json=lastUpdateSuccessAt,proto3,oneof" json:"last_update_success_at,omitempty"`
+	LastValidatedAt     *string                `protobuf:"bytes,7,opt,name=last_validated_at,json=lastValidatedAt,proto3,oneof" json:"last_validated_at,omitempty"`
+	LastError           *string                `protobuf:"bytes,8,opt,name=last_error,json=lastError,proto3,oneof" json:"last_error,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *ScannerStatusReportRequest) Reset() {
+	*x = ScannerStatusReportRequest{}
+	mi := &file_workers_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScannerStatusReportRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScannerStatusReportRequest) ProtoMessage() {}
+
+func (x *ScannerStatusReportRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_workers_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScannerStatusReportRequest.ProtoReflect.Descriptor instead.
+func (*ScannerStatusReportRequest) Descriptor() ([]byte, []int) {
+	return file_workers_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ScannerStatusReportRequest) GetEngineVersion() string {
+	if x != nil {
+		return x.EngineVersion
+	}
+	return ""
+}
+
+func (x *ScannerStatusReportRequest) GetTemplateVersion() string {
+	if x != nil {
+		return x.TemplateVersion
+	}
+	return ""
+}
+
+func (x *ScannerStatusReportRequest) GetTemplateSource() string {
+	if x != nil {
+		return x.TemplateSource
+	}
+	return ""
+}
+
+func (x *ScannerStatusReportRequest) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *ScannerStatusReportRequest) GetLastUpdateAttemptAt() string {
+	if x != nil && x.LastUpdateAttemptAt != nil {
+		return *x.LastUpdateAttemptAt
+	}
+	return ""
+}
+
+func (x *ScannerStatusReportRequest) GetLastUpdateSuccessAt() string {
+	if x != nil && x.LastUpdateSuccessAt != nil {
+		return *x.LastUpdateSuccessAt
+	}
+	return ""
+}
+
+func (x *ScannerStatusReportRequest) GetLastValidatedAt() string {
+	if x != nil && x.LastValidatedAt != nil {
+		return *x.LastValidatedAt
+	}
+	return ""
+}
+
+func (x *ScannerStatusReportRequest) GetLastError() string {
+	if x != nil && x.LastError != nil {
+		return *x.LastError
+	}
+	return ""
+}
+
+type ScannerStatusReportResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Message       string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScannerStatusReportResponse) Reset() {
+	*x = ScannerStatusReportResponse{}
+	mi := &file_workers_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScannerStatusReportResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScannerStatusReportResponse) ProtoMessage() {}
+
+func (x *ScannerStatusReportResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_workers_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScannerStatusReportResponse.ProtoReflect.Descriptor instead.
+func (*ScannerStatusReportResponse) Descriptor() ([]byte, []int) {
+	return file_workers_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ScannerStatusReportResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
 var File_workers_proto protoreflect.FileDescriptor
 
 const file_workers_proto_rawDesc = "" +
@@ -805,14 +949,31 @@ const file_workers_proto_rawDesc = "" +
 	"\x04arch\x18\x02 \x01(\tR\x04arch\"<\n" +
 	"\x1bBuiltinToolRegistryResponse\x12\x1d\n" +
 	"\n" +
-	"tool_paths\x18\x01 \x03(\tR\ttoolPaths2\xd6\x03\n" +
+	"tool_paths\x18\x01 \x03(\tR\ttoolPaths\"\xd1\x03\n" +
+	"\x1aScannerStatusReportRequest\x12%\n" +
+	"\x0eengine_version\x18\x01 \x01(\tR\rengineVersion\x12)\n" +
+	"\x10template_version\x18\x02 \x01(\tR\x0ftemplateVersion\x12'\n" +
+	"\x0ftemplate_source\x18\x03 \x01(\tR\x0etemplateSource\x12\x14\n" +
+	"\x05state\x18\x04 \x01(\tR\x05state\x128\n" +
+	"\x16last_update_attempt_at\x18\x05 \x01(\tH\x00R\x13lastUpdateAttemptAt\x88\x01\x01\x128\n" +
+	"\x16last_update_success_at\x18\x06 \x01(\tH\x01R\x13lastUpdateSuccessAt\x88\x01\x01\x12/\n" +
+	"\x11last_validated_at\x18\a \x01(\tH\x02R\x0flastValidatedAt\x88\x01\x01\x12\"\n" +
+	"\n" +
+	"last_error\x18\b \x01(\tH\x03R\tlastError\x88\x01\x01B\x19\n" +
+	"\x17_last_update_attempt_atB\x19\n" +
+	"\x17_last_update_success_atB\x14\n" +
+	"\x12_last_validated_atB\r\n" +
+	"\v_last_error\"7\n" +
+	"\x1bScannerStatusReportResponse\x12\x18\n" +
+	"\amessage\x18\x01 \x01(\tR\amessage2\xb8\x04\n" +
 	"\x0eWorkersService\x123\n" +
 	"\x04Join\x12\x14.workers.JoinRequest\x1a\x15.workers.JoinResponse\x128\n" +
 	"\x05Alive\x12\x15.workers.AliveRequest\x1a\x16.workers.AliveResponse0\x01\x12H\n" +
 	"\vGetManifest\x12\x1b.workers.GetManifestRequest\x1a\x1c.workers.GetManifestResponse\x12>\n" +
 	"\aStorage\x12\x17.workers.StorageRequest\x1a\x18.workers.StorageResponse0\x01\x12i\n" +
 	"\x16ConnectInternalNetwork\x12&.workers.ConnectInternalNetworkRequest\x1a'.workers.ConnectInternalNetworkResponse\x12`\n" +
-	"\x13BuiltinToolRegistry\x12#.workers.BuiltinToolRegistryRequest\x1a$.workers.BuiltinToolRegistryResponseB\vZ\t./workersb\x06proto3"
+	"\x13BuiltinToolRegistry\x12#.workers.BuiltinToolRegistryRequest\x1a$.workers.BuiltinToolRegistryResponse\x12`\n" +
+	"\x13ReportScannerStatus\x12#.workers.ScannerStatusReportRequest\x1a$.workers.ScannerStatusReportResponseB\vZ\t./workersb\x06proto3"
 
 var (
 	file_workers_proto_rawDescOnce sync.Once
@@ -826,7 +987,7 @@ func file_workers_proto_rawDescGZIP() []byte {
 	return file_workers_proto_rawDescData
 }
 
-var file_workers_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_workers_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_workers_proto_goTypes = []any{
 	(*JoinRequest)(nil),                    // 0: workers.JoinRequest
 	(*WorkerMetadata)(nil),                 // 1: workers.WorkerMetadata
@@ -842,6 +1003,8 @@ var file_workers_proto_goTypes = []any{
 	(*ConnectInternalNetworkResponse)(nil), // 11: workers.ConnectInternalNetworkResponse
 	(*BuiltinToolRegistryRequest)(nil),     // 12: workers.BuiltinToolRegistryRequest
 	(*BuiltinToolRegistryResponse)(nil),    // 13: workers.BuiltinToolRegistryResponse
+	(*ScannerStatusReportRequest)(nil),     // 14: workers.ScannerStatusReportRequest
+	(*ScannerStatusReportResponse)(nil),    // 15: workers.ScannerStatusReportResponse
 }
 var file_workers_proto_depIdxs = []int32{
 	1,  // 0: workers.JoinRequest.metadata:type_name -> workers.WorkerMetadata
@@ -852,14 +1015,16 @@ var file_workers_proto_depIdxs = []int32{
 	7,  // 5: workers.WorkersService.Storage:input_type -> workers.StorageRequest
 	10, // 6: workers.WorkersService.ConnectInternalNetwork:input_type -> workers.ConnectInternalNetworkRequest
 	12, // 7: workers.WorkersService.BuiltinToolRegistry:input_type -> workers.BuiltinToolRegistryRequest
-	2,  // 8: workers.WorkersService.Join:output_type -> workers.JoinResponse
-	4,  // 9: workers.WorkersService.Alive:output_type -> workers.AliveResponse
-	6,  // 10: workers.WorkersService.GetManifest:output_type -> workers.GetManifestResponse
-	8,  // 11: workers.WorkersService.Storage:output_type -> workers.StorageResponse
-	11, // 12: workers.WorkersService.ConnectInternalNetwork:output_type -> workers.ConnectInternalNetworkResponse
-	13, // 13: workers.WorkersService.BuiltinToolRegistry:output_type -> workers.BuiltinToolRegistryResponse
-	8,  // [8:14] is the sub-list for method output_type
-	2,  // [2:8] is the sub-list for method input_type
+	14, // 8: workers.WorkersService.ReportScannerStatus:input_type -> workers.ScannerStatusReportRequest
+	2,  // 9: workers.WorkersService.Join:output_type -> workers.JoinResponse
+	4,  // 10: workers.WorkersService.Alive:output_type -> workers.AliveResponse
+	6,  // 11: workers.WorkersService.GetManifest:output_type -> workers.GetManifestResponse
+	8,  // 12: workers.WorkersService.Storage:output_type -> workers.StorageResponse
+	11, // 13: workers.WorkersService.ConnectInternalNetwork:output_type -> workers.ConnectInternalNetworkResponse
+	13, // 14: workers.WorkersService.BuiltinToolRegistry:output_type -> workers.BuiltinToolRegistryResponse
+	15, // 15: workers.WorkersService.ReportScannerStatus:output_type -> workers.ScannerStatusReportResponse
+	9,  // [9:16] is the sub-list for method output_type
+	2,  // [2:9] is the sub-list for method input_type
 	2,  // [2:2] is the sub-list for extension type_name
 	2,  // [2:2] is the sub-list for extension extendee
 	0,  // [0:2] is the sub-list for field type_name
@@ -872,13 +1037,14 @@ func file_workers_proto_init() {
 	}
 	file_workers_proto_msgTypes[0].OneofWrappers = []any{}
 	file_workers_proto_msgTypes[1].OneofWrappers = []any{}
+	file_workers_proto_msgTypes[14].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_workers_proto_rawDesc), len(file_workers_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

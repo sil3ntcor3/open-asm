@@ -3,11 +3,15 @@ import { ConfigService } from '@nestjs/config';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import type { Stats } from 'node:fs';
-import { lstat, readdir, realpath } from 'node:fs/promises';
+import { lstat, readFile, readdir, realpath } from 'node:fs/promises';
 import { extname, relative, resolve, sep } from 'node:path';
 
 const PLATFORM_PART = /^[a-z0-9_-]+$/;
 const ARTIFACT_ID = /^[a-f0-9]{64}(?:\.zip|\.tgz|\.tar\.gz)$/;
+
+interface NucleiArtifactManifest {
+  artifacts?: Record<string, { file?: string; sha256?: string }>;
+}
 
 @Injectable()
 export class ToolArtifactService {
@@ -70,7 +74,18 @@ export class ToolArtifactService {
         continue;
       }
 
-      const artifactId = `${await this.hashArtifact(realCandidate)}${extension}`;
+      const contentHash = await this.hashArtifact(realCandidate);
+      if (
+        entry.name.toLowerCase().startsWith('nuclei') &&
+        !(await this.isDeclaredNucleiArtifact(
+          `${normalizedOs}_${normalizedArch}`,
+          entry.name,
+          contentHash,
+        ))
+      ) {
+        continue;
+      }
+      const artifactId = `${contentHash}${extension}`;
       for (const [existingId, existingPath] of this.artifacts) {
         if (existingPath === realCandidate && existingId !== artifactId) {
           this.artifacts.delete(existingId);
@@ -81,6 +96,25 @@ export class ToolArtifactService {
     }
 
     return artifactIds.sort();
+  }
+
+  private async isDeclaredNucleiArtifact(
+    platform: string,
+    fileName: string,
+    sha256: string,
+  ): Promise<boolean> {
+    try {
+      const manifest = JSON.parse(
+        await readFile(
+          resolve(this.archiveRoot, 'nuclei-manifest.json'),
+          'utf8',
+        ),
+      ) as NucleiArtifactManifest;
+      const declaration = manifest.artifacts?.[platform];
+      return declaration?.file === fileName && declaration.sha256 === sha256;
+    } catch {
+      return false;
+    }
   }
 
   async resolveArtifact(artifactId: string): Promise<string> {
@@ -127,9 +161,7 @@ export class ToolArtifactService {
       return '.tar.gz';
     }
     const extension = extname(fileName);
-    return extension === '.zip' || extension === '.tgz'
-      ? extension
-      : undefined;
+    return extension === '.zip' || extension === '.tgz' ? extension : undefined;
   }
 
   private hashArtifact(filePath: string): Promise<string> {

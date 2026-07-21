@@ -3,6 +3,8 @@ package worker
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -18,7 +20,7 @@ func TestRunToolCommandClassifiesExecutionOutcomes(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		command         string
+		invocation      toolInvocation
 		timeout         time.Duration
 		outputLimit     int64
 		wantOutcome     executionOutcome
@@ -29,7 +31,7 @@ func TestRunToolCommandClassifiesExecutionOutcomes(t *testing.T) {
 	}{
 		{
 			name:         "successful exit",
-			command:      "printf stdout; printf stderr >&2",
+			invocation:   toolInvocation{executable: "sh", args: []string{"-c", "printf stdout; printf stderr >&2"}},
 			timeout:      time.Second,
 			outputLimit:  1024,
 			wantOutcome:  executionOutcomeSucceeded,
@@ -39,7 +41,7 @@ func TestRunToolCommandClassifiesExecutionOutcomes(t *testing.T) {
 		},
 		{
 			name:         "nonzero exit",
-			command:      "printf partial; printf failure >&2; exit 1",
+			invocation:   toolInvocation{executable: "sh", args: []string{"-c", "printf partial; printf failure >&2; exit 1"}},
 			timeout:      time.Second,
 			outputLimit:  1024,
 			wantOutcome:  executionOutcomeFailed,
@@ -49,22 +51,23 @@ func TestRunToolCommandClassifiesExecutionOutcomes(t *testing.T) {
 		},
 		{
 			name:         "missing binary",
-			command:      "oasm-command-that-does-not-exist",
+			invocation:   toolInvocation{executable: "oasm-command-that-does-not-exist"},
 			timeout:      time.Second,
 			outputLimit:  1024,
-			wantOutcome:  executionOutcomeFailed,
-			wantExitCode: 127,
+			wantOutcome:  executionOutcomeStartFailed,
+			wantExitCode: -1,
 		},
 		{
-			name:        "deadline",
-			command:     "sleep 2",
-			timeout:     10 * time.Millisecond,
-			outputLimit: 1024,
-			wantOutcome: executionOutcomeTimedOut,
+			name:         "deadline",
+			invocation:   toolInvocation{executable: "sleep", args: []string{"2"}},
+			timeout:      10 * time.Millisecond,
+			outputLimit:  1024,
+			wantOutcome:  executionOutcomeTimedOut,
+			wantExitCode: -1,
 		},
 		{
 			name:            "output limit",
-			command:         "printf 123456789",
+			invocation:      toolInvocation{executable: "printf", args: []string{"123456789"}},
 			timeout:         time.Second,
 			outputLimit:     4,
 			wantOutcome:     executionOutcomeOutputLimited,
@@ -75,9 +78,9 @@ func TestRunToolCommandClassifiesExecutionOutcomes(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			result := runToolCommand(
+			result := runDirectCommand(
 				context.Background(),
-				test.command,
+				test.invocation,
 				"",
 				test.timeout,
 				test.outputLimit,
@@ -88,7 +91,7 @@ func TestRunToolCommandClassifiesExecutionOutcomes(t *testing.T) {
 			if result.outcome != test.wantOutcome {
 				t.Fatalf("outcome = %q, want %q", result.outcome, test.wantOutcome)
 			}
-			if test.wantExitCode != 0 && result.exitCode != test.wantExitCode {
+			if result.exitCode != test.wantExitCode {
 				t.Fatalf("exit code = %d, want %d", result.exitCode, test.wantExitCode)
 			}
 			if !strings.Contains(result.stdout, test.wantStdout) {
@@ -112,10 +115,97 @@ func TestRunToolCommandClassifiesCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	result := runToolCommand(ctx, "sleep 1", "", time.Second, 1024, 1024, nil)
+	result := runDirectCommand(
+		ctx,
+		toolInvocation{executable: "sleep", args: []string{"1"}},
+		"",
+		time.Second,
+		1024,
+		1024,
+		nil,
+	)
 
 	if result.outcome != executionOutcomeCanceled {
 		t.Fatalf("outcome = %q, want %q", result.outcome, executionOutcomeCanceled)
+	}
+}
+
+func TestRunToolCommandUsesToolDirectoryAsWorkingDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix command fixtures are exercised by the Linux worker build")
+	}
+
+	toolPath := t.TempDir()
+	result := runDirectCommand(
+		context.Background(),
+		toolInvocation{executable: "pwd"},
+		toolPath,
+		time.Second,
+		1024,
+		1024,
+		nil,
+	)
+
+	if result.outcome != executionOutcomeSucceeded {
+		t.Fatalf("outcome = %q, want %q: %s", result.outcome, executionOutcomeSucceeded, result.stderr)
+	}
+	got := strings.TrimSpace(result.stdout)
+	gotInfo, gotErr := os.Stat(got)
+	wantInfo, wantErr := os.Stat(toolPath)
+	if gotErr != nil || wantErr != nil || !os.SameFile(gotInfo, wantInfo) {
+		t.Fatalf("working directory = %q, want %q", got, toolPath)
+	}
+}
+
+func TestBuildToolInvocationKeepsTargetMetacharactersInOneArgument(t *testing.T) {
+	target := "https://example.com/?x=1;touch /tmp/pwn&y=$(id)"
+	invocation, err := buildToolInvocation("/scanner-tools", &jobs_registry.ToolExecution{
+		ToolName: "naabu",
+		Target:   target,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(invocation.args) < 2 || invocation.args[0] != "-host" || invocation.args[1] != target {
+		t.Fatalf("target argument vector = %q, want target preserved as one argument", invocation.args)
+	}
+}
+
+func TestBuildToolInvocationRejectsUnknownTool(t *testing.T) {
+	_, err := buildToolInvocation("/scanner-tools", &jobs_registry.ToolExecution{
+		ToolName: "arbitrary-shell",
+		Target:   "example.com",
+	})
+	if err == nil || !strings.Contains(err.Error(), "not allowlisted") {
+		t.Fatalf("error = %v, want allowlist rejection", err)
+	}
+}
+
+func TestBuildNucleiInvocationResolvesImmutableTemplateVersion(t *testing.T) {
+	toolPath := t.TempDir()
+	candidatePath := filepath.Join(toolPath, nucleiTemplatesVersionPrefix+"10.4.6-test")
+	if err := os.MkdirAll(filepath.Join(candidatePath, "http"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(candidatePath, "http", "test.yaml"), []byte("id: test"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(candidatePath, nucleiTemplatesReadyFile), []byte("v10.4.6\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := publishNucleiTemplatesPointer(toolPath, candidatePath); err != nil {
+		t.Fatal(err)
+	}
+
+	invocation, err := buildToolInvocation(toolPath, &jobs_registry.ToolExecution{
+		ToolName: "nuclei",
+		Target:   "https://example.com/?x=1;touch /tmp/pwn",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := argumentValue(t, invocation.args, "-t"); got != candidatePath {
+		t.Fatalf("template path = %q, want %q", got, candidatePath)
 	}
 }
 

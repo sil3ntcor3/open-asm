@@ -35,6 +35,7 @@ import { JobHistoryResponseDto } from './dto/job-history.dto';
 import {
   GetNextJobResponseDto,
   JobTimelineResponseDto,
+  ToolExecutionDto,
   UpdateResultDto,
   WorkerControlResponseDto,
   WorkerIdParams,
@@ -378,7 +379,12 @@ export class JobsRegistryController {
   async next(
     _worker: { id: string },
     metadata: Metadata,
-  ): Promise<{ id: string; asset: Asset; command?: string }> {
+  ): Promise<{
+    id: string;
+    asset: Asset;
+    command?: string;
+    execution?: ToolExecutionDto;
+  }> {
     // Use the ID bound to the validated token, not the client-supplied one.
     const workerId = this.authenticatedWorkerId(metadata);
     const job = await this.jobsRegistryService.getNextJob(workerId);
@@ -391,6 +397,7 @@ export class JobsRegistryController {
       id: job.id,
       asset: job.asset,
       command: job.command,
+      execution: job.execution,
     };
   }
 

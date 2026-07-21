@@ -7,6 +7,10 @@ import {
   IsString,
   IsUUID,
   IsObject,
+  IsIn,
+  IsDateString,
+  Matches,
+  MaxLength,
   Max,
   Min,
   ValidateNested,
@@ -61,6 +65,59 @@ export class WorkerAliveDto {
   @ApiProperty()
   @IsString()
   token: string;
+}
+
+export class ScannerStatusReportDto {
+  @ApiProperty()
+  @IsString()
+  @MaxLength(64)
+  @Matches(/^$|^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/)
+  engineVersion: string;
+
+  @ApiProperty()
+  @IsString()
+  @MaxLength(64)
+  @Matches(/^$|^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/)
+  templateVersion: string;
+
+  @ApiProperty()
+  @IsString()
+  @MaxLength(128)
+  @Matches(/^projectdiscovery\/nuclei-templates$/)
+  templateSource: string;
+
+  @ApiProperty({ enum: ['ready', 'refreshing', 'stale', 'error'] })
+  @IsString()
+  @IsIn(['ready', 'refreshing', 'stale', 'error'])
+  @MaxLength(16)
+  state: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsDateString()
+  @MaxLength(64)
+  @IsOptional()
+  lastUpdateAttemptAt?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsDateString()
+  @MaxLength(64)
+  @IsOptional()
+  lastUpdateSuccessAt?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsDateString()
+  @MaxLength(64)
+  @IsOptional()
+  lastValidatedAt?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @MaxLength(2048)
+  @IsOptional()
+  lastError?: string;
 }
 
 export class GetManyWorkersDto extends GetManyBaseQueryParams {

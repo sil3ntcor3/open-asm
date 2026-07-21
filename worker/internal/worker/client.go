@@ -18,7 +18,9 @@ import (
 	"google.golang.org/grpc"
 )
 
-func connectInternalNetwork(client *oasm.Client, network string) error {
+const nucleiTemplateRefreshCheckInterval = 15 * time.Minute
+
+func connectInternalNetwork(ctx context.Context, client *oasm.Client, network string) error {
 	networkInfos, err := GetNetworkInfos()
 	if err != nil {
 		return fmt.Errorf("failed to get network infos: %w", err)
@@ -41,7 +43,7 @@ func connectInternalNetwork(client *oasm.Client, network string) error {
 		NetworkInterfaces: networkInterfaces,
 	}
 
-	_, err = client.Workers().ConnectInternalNetwork(client.WithAuth(context.Background()), req)
+	_, err = client.Workers().ConnectInternalNetwork(client.WithAuth(ctx), req)
 	if err != nil {
 		return fmt.Errorf("error connecting internal network: %w", err)
 	}
@@ -49,6 +51,7 @@ func connectInternalNetwork(client *oasm.Client, network string) error {
 	return nil
 }
 
+// Start connects the worker, validates scanner readiness, and runs the bounded job scheduler.
 func Start(ctx context.Context, cfg *config.Config) {
 	sysLog := oasm.NewLogger("System")
 	jobLog := oasm.NewLogger("Jobs")
@@ -111,7 +114,7 @@ func Start(ctx context.Context, cfg *config.Config) {
 		return
 	}
 
-	ready := make(chan bool, 1)
+	ready := make(chan bool)
 	workerCtx, workerCancel := context.WithCancel(context.Background())
 	defer workerCancel()
 
@@ -120,6 +123,7 @@ func Start(ctx context.Context, cfg *config.Config) {
 		sessionCtx       context.Context
 		sessionCancel    context.CancelFunc
 		schedulerStarted bool
+		refreshStarted   bool
 	)
 
 	// Concurrency limit and worker-level pause are runtime-controllable from
@@ -128,6 +132,42 @@ func Start(ctx context.Context, cfg *config.Config) {
 	var dispatchPaused atomic.Bool
 	scheduler := gocron.NewScheduler(time.UTC)
 	var wg sync.WaitGroup
+	var nucleiRefreshWG sync.WaitGroup
+	nucleiRefreshOptions := nucleiTemplateRefreshOptions{
+		refreshInterval: cfg.NucleiTemplateRefreshInterval,
+		maxStale:        cfg.NucleiTemplateMaxStale,
+		now:             time.Now,
+	}
+
+	refreshNucleiTemplates := func(refreshCtx context.Context, synchronizeTools bool) (nucleiScannerStatus, bool, error) {
+		var status nucleiScannerStatus
+		toolsReady := !synchronizeTools
+		err := withToolCacheLock(
+			refreshCtx,
+			toolPath,
+			defaultToolCacheLockOptions,
+			func() error {
+				if synchronizeTools {
+					if err := client.WorkerDownloadTools(client.WithAuth(refreshCtx)); err != nil {
+						return fmt.Errorf("download tools: %w", err)
+					}
+					toolsReady = true
+				}
+				var reconcileErr error
+				status, reconcileErr = reconcileNucleiTemplates(
+					refreshCtx,
+					toolPath,
+					nucleiRefreshOptions,
+					runCommandOutput,
+				)
+				return reconcileErr
+			},
+		)
+		if err != nil && status.State == "" {
+			status = nucleiStatusForWrapperFailure(toolPath, nucleiRefreshOptions, err)
+		}
+		return status, toolsReady, err
+	}
 
 	currentSession := func() context.Context {
 		stateMu.Lock()
@@ -167,61 +207,114 @@ func Start(ctx context.Context, cfg *config.Config) {
 	// directives may be applied while the worker drains active jobs.
 	go runControlLoop(ctx, client, semaphore, &dispatchPaused, cfg.MaxConcurrency, currentSession)
 
+	connectionLifecycleDone := make(chan struct{})
 	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				stateMu.Lock()
-				if sessionCancel != nil {
-					sessionCancel()
-				}
-				stateMu.Unlock()
-				return
-			case isConnected, ok := <-ready:
-				if !ok {
-					return
-				}
-
-				stateMu.Lock()
-				if sessionCancel != nil {
-					sessionCancel()
-				}
-
-				if isConnected {
+		defer close(connectionLifecycleDone)
+		runWorkerConnectionLifecycle(
+			ctx,
+			ready,
+			workerConnectionLifecycleCallbacks{
+				initialize: func(candidateCtx context.Context) error {
 					sysLog.Success("Worker connected/reconnected. Initializing sub-systems...")
-					sessionCtx, sessionCancel = context.WithCancel(ctx)
 
 					if cfg.Network != "" {
-						if err := connectInternalNetwork(client, cfg.Network); err != nil {
-							netLog.ErrorE("Failed to connect internal network", err)
-							stateMu.Unlock()
-							continue
+						if err := connectInternalNetwork(candidateCtx, client, cfg.Network); err != nil {
+							return fmt.Errorf("connect internal network: %w", err)
 						}
 						netLog.Success("Connected to internal network: %s", cfg.Network)
 					}
 
-					if err := client.WorkerDownloadTools(client.WithAuth(sessionCtx)); err != nil {
-						sysLog.ErrorE("Download tools failed", err)
-						stateMu.Unlock()
-						continue
-					}
+					return waitForWorkerReadiness(
+						candidateCtx,
+						defaultWorkerReadinessOptions,
+						func(attemptCtx context.Context) error {
+							status, toolsReady, refreshErr := refreshNucleiTemplates(attemptCtx, true)
+							if reportErr := reportNucleiScannerStatus(attemptCtx, client, status); reportErr != nil {
+								sysLog.Warning("Unable to report Nuclei scanner status: %v", reportErr)
+							}
+							if refreshErr == nil && status.LastError != "" {
+								sysLog.Warning("Nuclei templates are usable but their refresh is delayed: %s", status.LastError)
+							}
+							if toolsReady {
+								// Core gates only Nuclei while its templates are unavailable;
+								// unrelated scanners can start as soon as their tools are ready.
+								return nil
+							}
+							return refreshErr
+						},
+						func(readinessErr error) {
+							sysLog.ErrorE("Scanner readiness failed; retrying", readinessErr)
+						},
+					)
+				},
+				activate: func(candidateCtx context.Context) {
+					stateMu.Lock()
+					defer stateMu.Unlock()
 
+					sessionCtx, sessionCancel = context.WithCancel(candidateCtx)
 					if !schedulerStarted {
 						scheduler.StartAsync()
 						jobLog.Success("Gocron poller started (Max Concurrency: %d)", cfg.MaxConcurrency)
 						schedulerStarted = true
 					}
-				} else {
-					sysLog.Warning("Worker disconnected from core. Suspending job poller and streams...")
+					if !refreshStarted {
+						refreshStarted = true
+						nucleiRefreshWG.Go(func() {
+							checkInterval := nucleiTemplateRefreshCheckInterval
+							if cfg.NucleiTemplateRefreshInterval < checkInterval {
+								checkInterval = cfg.NucleiTemplateRefreshInterval
+							}
+							runNucleiTemplateRefreshLoop(
+								ctx,
+								checkInterval,
+								func(loopCtx context.Context) (nucleiScannerStatus, error) {
+									attemptCtx, cancelAttempt := context.WithTimeout(loopCtx, defaultWorkerReadinessOptions.attemptTimeout)
+									defer cancelAttempt()
+									status, _, refreshErr := refreshNucleiTemplates(attemptCtx, false)
+									return status, refreshErr
+								},
+								func(status nucleiScannerStatus, refreshErr error) {
+									reportCtx, cancelReport := context.WithTimeout(ctx, 10*time.Second)
+									reportErr := reportNucleiScannerStatus(reportCtx, client, status)
+									cancelReport()
+									if reportErr != nil && ctx.Err() == nil {
+										sysLog.Warning("Unable to report Nuclei scanner status: %v", reportErr)
+									}
+									if refreshErr != nil {
+										sysLog.ErrorE("Nuclei template refresh failed", refreshErr)
+									} else if status.LastError != "" {
+										sysLog.Warning("Nuclei template refresh delayed: %s", status.LastError)
+									}
+								},
+							)
+						})
+					}
+				},
+				deactivate: func() {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					if sessionCancel != nil {
+						sessionCancel()
+					}
 					sessionCtx = nil
 					sessionCancel = nil
-				}
-				stateMu.Unlock()
-			}
-		}
+				},
+				onDisconnected: func() {
+					sysLog.Warning("Worker disconnected from core. Suspending job poller and streams...")
+				},
+				onInitializationError: func(initializationErr error) {
+					sysLog.ErrorE("Worker subsystem initialization stopped", initializationErr)
+				},
+			},
+		)
 	}()
 
-	go connectWorker(workerCtx, client, ready)
+	connectorDone := make(chan struct{})
+	go func() {
+		defer close(connectorDone)
+		connectWorker(workerCtx, client, ready)
+	}()
 
 	ticker := time.NewTicker(time.Second)
 	go func() {
@@ -272,5 +365,8 @@ func Start(ctx context.Context, cfg *config.Config) {
 	shutLog.Success("Browser killed safely")
 
 	workerCancel()
+	<-connectorDone
+	<-connectionLifecycleDone
+	nucleiRefreshWG.Wait()
 	shutLog.Success("Worker shut down safely")
 }

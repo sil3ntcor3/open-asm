@@ -5,7 +5,9 @@ import (
 	"archive/zip"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +19,8 @@ import (
 	pb "github.com/sil3ntcor3/open-asm/grpc-client/go/workers"
 )
 
+const toolCacheLockDirectoryName = ".oasm-tools-sync.lock"
+
 func (c *Client) WorkerDownloadTools(ctx context.Context) error {
 	l := NewLogger("Worker.Sync")
 
@@ -27,22 +31,6 @@ func (c *Client) WorkerDownloadTools(ctx context.Context) error {
 	}
 
 	statePath := filepath.Join(absToolPath, ".tool_versions.json")
-
-	if _, err := os.Stat(statePath); os.IsNotExist(err) {
-		l.Info("Tool cache not found, cleaning up directory contents for fresh download")
-
-		entries, err := os.ReadDir(absToolPath)
-		if err == nil {
-			for _, entry := range entries {
-				removePath := filepath.Join(absToolPath, entry.Name())
-				if err := os.RemoveAll(removePath); err != nil {
-					return fmt.Errorf("failed to remove item %s: %w", removePath, err)
-				}
-			}
-		} else if !os.IsNotExist(err) {
-			return fmt.Errorf("failed to read tool directory for cleanup: %w", err)
-		}
-	}
 
 	if err := os.MkdirAll(absToolPath, 0o755); err != nil {
 		return fmt.Errorf("failed to create tool directory: %w", err)
@@ -67,7 +55,7 @@ func (c *Client) WorkerDownloadTools(ctx context.Context) error {
 	for _, toolUrl := range registry.ToolPaths {
 		fileName := filepath.Base(toolUrl)
 
-		if extractedFiles, exists := oldState[fileName]; exists {
+		if extractedFiles, exists := oldState[fileName]; exists && cachedToolFilesReady(absToolPath, extractedFiles) {
 			l.Success("Tools cache hit: %s", fileName)
 			newState[fileName] = extractedFiles
 			continue
@@ -126,17 +114,38 @@ func (c *Client) WorkerDownloadTools(ctx context.Context) error {
 	return nil
 }
 
+func cachedToolFilesReady(toolPath string, files []string) bool {
+	if len(files) == 0 {
+		return false
+	}
+	for _, relativePath := range files {
+		path, err := safeToolPath(toolPath, relativePath)
+		if err != nil {
+			return false
+		}
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			return false
+		}
+	}
+	return true
+}
+
 func (c *Client) downloadAndExtractSingleTool(ctx context.Context, url string, destDir string, fileName string) ([]string, error) {
 	dlLog := NewLogger("Worker.Download")
-	var extractedFiles []string
 
 	stream, err := c.Workers().Storage(ctx, &pb.StorageRequest{Path: url})
 	if err != nil {
 		return nil, fmt.Errorf("failed to start download stream: %w", err)
 	}
 
-	tempFile := filepath.Join(destDir, fileName)
-	file, err := os.Create(tempFile)
+	downloadDir, err := os.MkdirTemp(destDir, ".oasm-tool-download-")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create download staging directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(downloadDir) }()
+	tempFile := filepath.Join(downloadDir, fileName)
+	file, err := os.OpenFile(tempFile, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary file: %w", err)
 	}
@@ -147,29 +156,42 @@ func (c *Client) downloadAndExtractSingleTool(ctx context.Context, url string, d
 			break
 		}
 		if err != nil {
-			file.Close()
-			os.Remove(tempFile)
+			_ = file.Close()
 			return nil, fmt.Errorf("error receiving stream: %w", err)
 		}
 		if _, err = file.WriteAt(resp.Chunk, int64(resp.Offset)); err != nil {
-			file.Close()
-			os.Remove(tempFile)
+			_ = file.Close()
 			return nil, fmt.Errorf("failed to write chunk: %w", err)
 		}
 		if resp.Eof {
 			break
 		}
 	}
-	file.Close()
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return nil, fmt.Errorf("failed to sync downloaded artifact: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close downloaded artifact: %w", err)
+	}
+	if err := verifyToolArtifactDigest(tempFile, fileName); err != nil {
+		return nil, err
+	}
 	dlLog.Success("Download completed: %s", tempFile)
 
 	extLog := NewLogger("Worker.Extract")
 	extLog.Info("Extracting %s...", fileName)
+	stagingDir, err := os.MkdirTemp(destDir, ".oasm-tool-stage-")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create extraction staging directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(stagingDir) }()
 
+	var extractedFiles []string
 	if strings.HasSuffix(fileName, ".zip") {
-		extractedFiles, err = c.extractZip(tempFile, destDir, extLog)
+		extractedFiles, err = c.extractZip(tempFile, stagingDir, extLog)
 	} else if strings.HasSuffix(fileName, ".tar.gz") || strings.HasSuffix(fileName, ".tgz") {
-		extractedFiles, err = c.extractTarGz(tempFile, destDir, extLog)
+		extractedFiles, err = c.extractTarGz(tempFile, stagingDir, extLog)
 	} else {
 		return nil, fmt.Errorf("unsupported archive format: %s", fileName)
 	}
@@ -177,9 +199,144 @@ func (c *Client) downloadAndExtractSingleTool(ctx context.Context, url string, d
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract and set permissions: %w", err)
 	}
+	if err := smokeTestStagedTools(ctx, stagingDir, extractedFiles); err != nil {
+		return nil, err
+	}
+	if err := activateStagedToolFiles(stagingDir, destDir, extractedFiles); err != nil {
+		return nil, err
+	}
 
-	_ = os.Remove(tempFile)
 	return extractedFiles, nil
+}
+
+func verifyToolArtifactDigest(path string, artifactID string) error {
+	if len(artifactID) < sha256.Size*2 {
+		return errors.New("tool artifact ID does not contain a SHA-256 digest")
+	}
+	expected := strings.ToLower(artifactID[:sha256.Size*2])
+	for _, character := range expected {
+		if !strings.ContainsRune("0123456789abcdef", character) {
+			return errors.New("tool artifact ID contains an invalid SHA-256 digest")
+		}
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open downloaded tool artifact for verification: %w", err)
+	}
+	defer file.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return fmt.Errorf("hash downloaded tool artifact: %w", err)
+	}
+	actual := fmt.Sprintf("%x", hash.Sum(nil))
+	if actual != expected {
+		return fmt.Errorf("tool artifact SHA-256 mismatch: expected %s, got %s", expected, actual)
+	}
+	return nil
+}
+
+func smokeTestStagedTools(ctx context.Context, stagingDir string, files []string) error {
+	for _, relativePath := range files {
+		baseName := filepath.Base(relativePath)
+		if strings.Contains(baseName, ".") && !strings.HasSuffix(strings.ToLower(baseName), ".exe") {
+			continue
+		}
+		binaryPath, err := safeToolPath(stagingDir, relativePath)
+		if err != nil {
+			return err
+		}
+		command := exec.CommandContext(ctx, binaryPath, "-version")
+		output, runErr := command.CombinedOutput()
+		if runErr != nil {
+			return fmt.Errorf("smoke-test staged tool %s: %w: %s", relativePath, runErr, strings.TrimSpace(string(output)))
+		}
+	}
+	return nil
+}
+
+func activateStagedToolFiles(stagingDir string, destDir string, files []string) error {
+	backupDir, err := os.MkdirTemp(destDir, ".oasm-tool-backup-")
+	if err != nil {
+		return fmt.Errorf("create tool rollback directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(backupDir) }()
+
+	type promotedFile struct {
+		relativePath string
+		hadBackup    bool
+	}
+	promoted := make([]promotedFile, 0, len(files))
+	rollback := func() {
+		for index := len(promoted) - 1; index >= 0; index-- {
+			entry := promoted[index]
+			livePath, liveErr := safeToolPath(destDir, entry.relativePath)
+			backupPath, backupErr := safeToolPath(backupDir, entry.relativePath)
+			if liveErr != nil || backupErr != nil {
+				continue
+			}
+			_ = os.RemoveAll(livePath)
+			if entry.hadBackup {
+				_ = os.MkdirAll(filepath.Dir(livePath), 0o755)
+				_ = os.Rename(backupPath, livePath)
+			}
+		}
+	}
+
+	for _, relativePath := range files {
+		stagedPath, err := safeToolPath(stagingDir, relativePath)
+		if err != nil {
+			rollback()
+			return err
+		}
+		livePath, err := safeToolPath(destDir, relativePath)
+		if err != nil {
+			rollback()
+			return err
+		}
+		backupPath, err := safeToolPath(backupDir, relativePath)
+		if err != nil {
+			rollback()
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(livePath), 0o755); err != nil {
+			rollback()
+			return fmt.Errorf("prepare live tool directory: %w", err)
+		}
+		hadBackup := false
+		if _, statErr := os.Lstat(livePath); statErr == nil {
+			if err := os.MkdirAll(filepath.Dir(backupPath), 0o755); err != nil {
+				rollback()
+				return fmt.Errorf("prepare tool rollback path: %w", err)
+			}
+			if err := os.Rename(livePath, backupPath); err != nil {
+				rollback()
+				return fmt.Errorf("backup live tool %s: %w", relativePath, err)
+			}
+			hadBackup = true
+		} else if !os.IsNotExist(statErr) {
+			rollback()
+			return fmt.Errorf("inspect live tool %s: %w", relativePath, statErr)
+		}
+
+		promoted = append(promoted, promotedFile{relativePath: relativePath, hadBackup: hadBackup})
+		if err := os.Rename(stagedPath, livePath); err != nil {
+			rollback()
+			return fmt.Errorf("activate staged tool %s: %w", relativePath, err)
+		}
+	}
+	return nil
+}
+
+func safeToolPath(root string, relativePath string) (string, error) {
+	if filepath.IsAbs(relativePath) {
+		return "", fmt.Errorf("illegal absolute tool path: %s", relativePath)
+	}
+	candidate := filepath.Join(root, filepath.Clean(relativePath))
+	relative, err := filepath.Rel(filepath.Clean(root), candidate)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("illegal tool path: %s", relativePath)
+	}
+	return candidate, nil
 }
 
 func (c *Client) extractZip(srcZip string, destDir string, l *LoggerType) ([]string, error) {
@@ -195,9 +352,9 @@ func (c *Client) extractZip(srcZip string, destDir string, l *LoggerType) ([]str
 			continue
 		}
 
-		target := filepath.Join(destDir, f.Name)
-		if !strings.HasPrefix(filepath.Clean(target), filepath.Clean(destDir)) {
-			return nil, fmt.Errorf("illegal file path: %s", f.Name)
+		target, err := safeToolPath(destDir, f.Name)
+		if err != nil {
+			return nil, err
 		}
 
 		if f.FileInfo().IsDir() {
@@ -207,7 +364,10 @@ func (c *Client) extractZip(srcZip string, destDir string, l *LoggerType) ([]str
 
 		os.MkdirAll(filepath.Dir(target), 0o755)
 
-		outFile, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR|os.O_TRUNC, f.Mode())
+		if !f.Mode().IsRegular() {
+			return nil, fmt.Errorf("refuse non-regular file in tool archive: %s", f.Name)
+		}
+		outFile, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_RDWR, f.Mode())
 		if err != nil {
 			return nil, err
 		}
@@ -264,9 +424,9 @@ func (c *Client) extractTarGz(srcGzip string, destDir string, l *LoggerType) ([]
 			continue
 		}
 
-		target := filepath.Join(destDir, header.Name)
-		if !strings.HasPrefix(filepath.Clean(target), filepath.Clean(destDir)) {
-			return nil, fmt.Errorf("illegal file path: %s", header.Name)
+		target, err := safeToolPath(destDir, header.Name)
+		if err != nil {
+			return nil, err
 		}
 
 		switch header.Typeflag {
@@ -296,6 +456,8 @@ func (c *Client) extractTarGz(srcGzip string, destDir string, l *LoggerType) ([]
 
 			extractedFiles = append(extractedFiles, header.Name)
 			l.Verbose("Extracted: %s", header.Name)
+		default:
+			return nil, fmt.Errorf("refuse non-regular entry in tool archive: %s", header.Name)
 		}
 	}
 	return extractedFiles, nil
@@ -354,5 +516,26 @@ func saveToolState(path string, state map[string][]string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".tool-versions-")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer func() { _ = os.Remove(temporaryPath) }()
+	if err := temporary.Chmod(0o600); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(data); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryPath, path)
 }

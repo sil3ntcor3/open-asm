@@ -32,7 +32,9 @@ func connectWorker(ctx context.Context, client *oasm.Client, ready chan<- bool) 
 		}
 
 		if err != nil {
-			notifyConnectionState(ready, false)
+			if !notifyConnectionState(ctx, ready, false) {
+				return
+			}
 			log.ErrorE("Worker identity connection failed, retrying in %v", err, currentDelay)
 			if !waitForReconnect(ctx, currentDelay) {
 				return
@@ -46,10 +48,14 @@ func connectWorker(ctx context.Context, client *oasm.Client, ready chan<- bool) 
 
 		currentDelay = baseDelay
 		log.Success("Worker identity connected. Worker ID: %s", client.WorkerID())
-		notifyConnectionState(ready, true)
+		if !notifyConnectionState(ctx, ready, true) {
+			return
+		}
 
 		err = client.WorkerAlive(ctx)
-		notifyConnectionState(ready, false)
+		if !notifyConnectionState(ctx, ready, false) {
+			return
+		}
 		if err != nil {
 			log.Warning("Alive stream interrupted: %v. Reconnecting with worker identity...", err)
 		}
@@ -59,10 +65,12 @@ func connectWorker(ctx context.Context, client *oasm.Client, ready chan<- bool) 
 	}
 }
 
-func notifyConnectionState(ready chan<- bool, connected bool) {
+func notifyConnectionState(ctx context.Context, ready chan<- bool, connected bool) bool {
 	select {
 	case ready <- connected:
-	default:
+		return true
+	case <-ctx.Done():
+		return false
 	}
 }
 

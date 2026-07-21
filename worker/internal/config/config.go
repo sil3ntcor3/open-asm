@@ -10,20 +10,22 @@ import (
 )
 
 type Config struct {
-	ApiKey              string        `mapstructure:"api_key"`
-	MaxConcurrency      int           `mapstructure:"max_concurrency"`
-	GrpcHost            string        `mapstructure:"grpc_host"`
-	GrpcPort            int           `mapstructure:"grpc_port"`
-	GrpcTLSEnabled      bool          `mapstructure:"grpc_tls_enabled"`
-	GrpcCAFile          string        `mapstructure:"grpc_tls_ca_file"`
-	GrpcCertFile        string        `mapstructure:"grpc_tls_cert_file"`
-	GrpcKeyFile         string        `mapstructure:"grpc_tls_key_file"`
-	GrpcServerName      string        `mapstructure:"grpc_tls_server_name"`
-	ToolPath            string        `mapstructure:"tool_path"`
-	Network             string        `mapstructure:"network"`
-	JobTimeout          time.Duration `mapstructure:"job_timeout"`
-	JobStdoutLimitBytes int64         `mapstructure:"job_stdout_limit_bytes"`
-	JobStderrLimitBytes int64         `mapstructure:"job_stderr_limit_bytes"`
+	ApiKey                        string        `mapstructure:"api_key"`
+	MaxConcurrency                int           `mapstructure:"max_concurrency"`
+	GrpcHost                      string        `mapstructure:"grpc_host"`
+	GrpcPort                      int           `mapstructure:"grpc_port"`
+	GrpcTLSEnabled                bool          `mapstructure:"grpc_tls_enabled"`
+	GrpcCAFile                    string        `mapstructure:"grpc_tls_ca_file"`
+	GrpcCertFile                  string        `mapstructure:"grpc_tls_cert_file"`
+	GrpcKeyFile                   string        `mapstructure:"grpc_tls_key_file"`
+	GrpcServerName                string        `mapstructure:"grpc_tls_server_name"`
+	ToolPath                      string        `mapstructure:"tool_path"`
+	Network                       string        `mapstructure:"network"`
+	JobTimeout                    time.Duration `mapstructure:"job_timeout"`
+	JobStdoutLimitBytes           int64         `mapstructure:"job_stdout_limit_bytes"`
+	JobStderrLimitBytes           int64         `mapstructure:"job_stderr_limit_bytes"`
+	NucleiTemplateRefreshInterval time.Duration `mapstructure:"nuclei_template_refresh_interval"`
+	NucleiTemplateMaxStale        time.Duration `mapstructure:"nuclei_template_max_stale"`
 }
 
 func LoadConfig() (*Config, error) {
@@ -47,6 +49,8 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault("job_timeout", 30*time.Minute)
 	viper.SetDefault("job_stdout_limit_bytes", 16*1024*1024)
 	viper.SetDefault("job_stderr_limit_bytes", 16*1024*1024)
+	viper.SetDefault("nuclei_template_refresh_interval", 6*time.Hour)
+	viper.SetDefault("nuclei_template_max_stale", 24*time.Hour)
 
 	var cfg Config
 	if err := viper.Unmarshal(&cfg); err != nil {
@@ -68,6 +72,18 @@ func validateConfig(cfg *Config) error {
 	}
 	if cfg.JobStdoutLimitBytes <= 0 || cfg.JobStderrLimitBytes <= 0 {
 		return fmt.Errorf("job output limits must be greater than zero")
+	}
+	if cfg.NucleiTemplateRefreshInterval <= 0 {
+		return fmt.Errorf("Nuclei template refresh interval must be greater than zero")
+	}
+	if cfg.NucleiTemplateRefreshInterval < cfg.JobTimeout {
+		return fmt.Errorf("Nuclei template refresh interval must not be shorter than the job timeout")
+	}
+	if cfg.NucleiTemplateMaxStale <= 0 {
+		return fmt.Errorf("Nuclei template maximum stale age must be greater than zero")
+	}
+	if cfg.NucleiTemplateMaxStale < cfg.NucleiTemplateRefreshInterval {
+		return fmt.Errorf("Nuclei template maximum stale age must not be shorter than the refresh interval")
 	}
 
 	return nil

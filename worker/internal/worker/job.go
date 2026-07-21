@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
-	"runtime"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -43,6 +43,14 @@ type commandExecutionResult struct {
 	stdoutLimited  bool
 	stderrLimited  bool
 	outputLimited  bool
+}
+
+const maxExecutionTargetBytes = 16 * 1024
+
+type toolInvocation struct {
+	executable string
+	args       []string
+	stdin      string
 }
 
 type boundedBuffer struct {
@@ -114,13 +122,13 @@ func processJob(
 	activeJobs.add(handle)
 	defer activeJobs.remove(job.Id)
 
-	cmdStr := job.GetCommand()
-	if cmdStr == "" {
-		jobLogGlobal.Warning("[%s] Empty command", job.Id)
+	execution := job.GetExecution()
+	if execution == nil || execution.GetToolName() == "" || execution.GetTarget() == "" {
+		jobLogGlobal.Warning("[%s] Missing typed execution plan", job.Id)
 		_ = client.JobsResult(ctx, job.Id, executionFailurePayload(
 			executionOutcomeStartFailed,
 			-1,
-			"No command provided by Core",
+			"No typed execution plan provided by Core",
 			"",
 			"",
 			false,
@@ -129,11 +137,11 @@ func processJob(
 		return
 	}
 
-	jobLogGlobal.Info("[%s] Executing: %s", job.Id, cmdStr)
+	jobLogGlobal.Info("[%s] Executing allowlisted tool: %s", job.Id, execution.GetToolName())
 	var payload *jobs_registry.DataPayloadResult
 
-	if after, ok := strings.CutPrefix(cmdStr, "screenshot "); ok {
-		url := strings.TrimSpace(after)
+	if execution.GetToolName() == "screenshot" {
+		url := execution.GetTarget()
 		jobLogGlobal.Debug("[%s] Capturing screenshot: %s", job.Id, url)
 
 		screenshotCtx, cancelScreenshot := context.WithTimeout(jobCtx, limits.timeout)
@@ -162,9 +170,9 @@ func processJob(
 			)
 		}
 	} else {
-		result := runToolCommand(
+		result := runToolExecution(
 			jobCtx,
-			cmdStr,
+			execution,
 			toolPath,
 			limits.timeout,
 			limits.stdoutLimitBytes,
@@ -186,9 +194,155 @@ func processJob(
 	jobLogGlobal.Success("[%s] Completed", job.Id)
 }
 
-func runToolCommand(
+func runToolExecution(
 	ctx context.Context,
-	command string,
+	execution *jobs_registry.ToolExecution,
+	toolPath string,
+	timeout time.Duration,
+	stdoutLimitBytes int64,
+	stderrLimitBytes int64,
+	handle *jobHandle,
+) commandExecutionResult {
+	invocation, err := buildToolInvocation(toolPath, execution)
+	if err != nil {
+		return commandExecutionResult{
+			outcome:        executionOutcomeStartFailed,
+			exitCode:       -1,
+			failureMessage: err.Error(),
+		}
+	}
+
+	if execution.GetToolName() != "subfinder" {
+		return runDirectCommand(
+			ctx,
+			invocation,
+			toolPath,
+			timeout,
+			stdoutLimitBytes,
+			stderrLimitBytes,
+			handle,
+		)
+	}
+
+	deadline := time.Now().Add(timeout)
+	subfinderResult := runDirectCommand(
+		ctx,
+		invocation,
+		toolPath,
+		timeout,
+		stdoutLimitBytes,
+		stderrLimitBytes,
+		handle,
+	)
+	if subfinderResult.outcome != executionOutcomeSucceeded {
+		return subfinderResult
+	}
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return commandExecutionResult{
+			outcome:        executionOutcomeTimedOut,
+			exitCode:       -1,
+			failureMessage: fmt.Sprintf("command exceeded deadline %s", timeout),
+			stderr:         subfinderResult.stderr,
+		}
+	}
+
+	dnsxInvocation := toolInvocation{
+		executable: scannerExecutable(toolPath, "dnsx"),
+		args:       []string{"-duc", "-a", "-aaaa", "-cname", "-mx", "-ns", "-soa", "-txt", "-resp"},
+		stdin:      execution.GetTarget() + "\n" + subfinderResult.stdout,
+	}
+	dnsxResult := runDirectCommand(
+		ctx,
+		dnsxInvocation,
+		toolPath,
+		remaining,
+		stdoutLimitBytes,
+		stderrLimitBytes,
+		handle,
+	)
+	if subfinderResult.stderr != "" {
+		dnsxResult.stderr = subfinderResult.stderr + dnsxResult.stderr
+	}
+	return dnsxResult
+}
+
+func buildToolInvocation(toolPath string, execution *jobs_registry.ToolExecution) (toolInvocation, error) {
+	if execution == nil {
+		return toolInvocation{}, errors.New("missing typed execution plan")
+	}
+	target := execution.GetTarget()
+	if target == "" {
+		return toolInvocation{}, errors.New("execution target is empty")
+	}
+	if len(target) > maxExecutionTargetBytes {
+		return toolInvocation{}, fmt.Errorf("execution target exceeds %d bytes", maxExecutionTargetBytes)
+	}
+
+	switch execution.GetToolName() {
+	case "httpx":
+		return toolInvocation{
+			executable: scannerExecutable(toolPath, "httpx"),
+			args: []string{
+				"-duc", "-u", target, "-status-code", "-favicon", "-asn", "-title",
+				"-web-server", "-irr", "-tech-detect", "-ip", "-cname", "-location",
+				"-tls-grab", "-cdn", "-probe", "-json", "-follow-redirects", "-timeout",
+				"10", "-threads", "100", "-silent",
+			},
+		}, nil
+	case "naabu":
+		return toolInvocation{
+			executable: scannerExecutable(toolPath, "naabu"),
+			args:       []string{"-host", target, "-silent", "-top-ports", "1000"},
+		}, nil
+	case "nuclei":
+		absToolPath, err := filepath.Abs(toolPath)
+		if err != nil {
+			return toolInvocation{}, fmt.Errorf("resolve worker tool path: %w", err)
+		}
+		templatePath, err := resolveActiveNucleiTemplatePath(absToolPath)
+		if err != nil {
+			return toolInvocation{}, fmt.Errorf("resolve active Nuclei templates: %w", err)
+		}
+		ready, err := hasNucleiTemplates(templatePath)
+		if err != nil || !ready {
+			if err != nil {
+				return toolInvocation{}, fmt.Errorf("inspect active Nuclei templates: %w", err)
+			}
+			return toolInvocation{}, errors.New("active Nuclei templates are unavailable")
+		}
+		return toolInvocation{
+			executable: scannerExecutable(toolPath, "nuclei"),
+			args:       []string{"-duc", "-t", templatePath, "-u", target, "-j", "--silent"},
+		}, nil
+	case "subfinder":
+		return toolInvocation{
+			executable: scannerExecutable(toolPath, "subfinder"),
+			args:       []string{"-duc", "-d", target},
+		}, nil
+	default:
+		return toolInvocation{}, fmt.Errorf("tool %q is not allowlisted for worker execution", execution.GetToolName())
+	}
+}
+
+func scannerExecutable(toolPath string, toolName string) string {
+	name := toolName
+	if filepath.Ext(name) == "" && isWindowsPlatform() {
+		name += ".exe"
+	}
+	if toolPath == "" {
+		return name
+	}
+	return filepath.Join(toolPath, name)
+}
+
+var isWindowsPlatform = func() bool { return filepath.Separator == '\\' }
+
+// runDirectCommand executes one fixed binary and argument vector with bounded
+// output and a hard deadline. It never invokes a command shell.
+func runDirectCommand(
+	ctx context.Context,
+	invocation toolInvocation,
 	toolPath string,
 	timeout time.Duration,
 	stdoutLimitBytes int64,
@@ -213,17 +367,18 @@ func runToolCommand(
 	stdout := &boundedBuffer{limit: stdoutLimitBytes, onLimit: onLimit}
 	stderr := &boundedBuffer{limit: stderrLimitBytes, onLimit: onLimit}
 
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(executionCtx, "cmd", "/C", command)
-	} else {
-		cmd = exec.CommandContext(executionCtx, "sh", "-c", command)
-	}
+	cmd := exec.CommandContext(executionCtx, invocation.executable, invocation.args...)
 	cmd.SysProcAttr = newSysProcAttr()
 	cmd.Env = setupCmdEnv(toolPath)
+	if toolPath != "" {
+		cmd.Dir = toolPath
+	}
 	cmd.Cancel = func() error { return killCommand(cmd) }
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
+	if invocation.stdin != "" {
+		cmd.Stdin = strings.NewReader(invocation.stdin)
+	}
 
 	if err := cmd.Start(); err != nil {
 		return commandExecutionResult{

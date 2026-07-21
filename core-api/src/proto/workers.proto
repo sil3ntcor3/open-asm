@@ -75,6 +75,21 @@ message BuiltinToolRegistryResponse {
   repeated string tool_paths = 1;
 }
 
+message ScannerStatusReportRequest {
+  string engine_version = 1;
+  string template_version = 2;
+  string template_source = 3;
+  string state = 4;
+  optional string last_update_attempt_at = 5;
+  optional string last_update_success_at = 6;
+  optional string last_validated_at = 7;
+  optional string last_error = 8;
+}
+
+message ScannerStatusReportResponse {
+  string message = 1;
+}
+
 service WorkersService {
   rpc Join(JoinRequest) returns (JoinResponse);
   rpc Alive(AliveRequest) returns (stream AliveResponse);
@@ -82,4 +97,5 @@ service WorkersService {
   rpc Storage(StorageRequest) returns (stream StorageResponse);
   rpc ConnectInternalNetwork(ConnectInternalNetworkRequest) returns (ConnectInternalNetworkResponse);
   rpc BuiltinToolRegistry(BuiltinToolRegistryRequest) returns (BuiltinToolRegistryResponse);
+  rpc ReportScannerStatus(ScannerStatusReportRequest) returns (ScannerStatusReportResponse);
 }

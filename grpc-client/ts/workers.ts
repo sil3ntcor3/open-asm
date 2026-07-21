@@ -193,6 +193,52 @@ export interface BuiltinToolRegistryResponse {
      */
     toolPaths: string[];
 }
+/**
+ * @generated from protobuf message workers.ScannerStatusReportRequest
+ */
+export interface ScannerStatusReportRequest {
+    /**
+     * @generated from protobuf field: string engine_version = 1
+     */
+    engineVersion: string;
+    /**
+     * @generated from protobuf field: string template_version = 2
+     */
+    templateVersion: string;
+    /**
+     * @generated from protobuf field: string template_source = 3
+     */
+    templateSource: string;
+    /**
+     * @generated from protobuf field: string state = 4
+     */
+    state: string;
+    /**
+     * @generated from protobuf field: optional string last_update_attempt_at = 5
+     */
+    lastUpdateAttemptAt?: string;
+    /**
+     * @generated from protobuf field: optional string last_update_success_at = 6
+     */
+    lastUpdateSuccessAt?: string;
+    /**
+     * @generated from protobuf field: optional string last_validated_at = 7
+     */
+    lastValidatedAt?: string;
+    /**
+     * @generated from protobuf field: optional string last_error = 8
+     */
+    lastError?: string;
+}
+/**
+ * @generated from protobuf message workers.ScannerStatusReportResponse
+ */
+export interface ScannerStatusReportResponse {
+    /**
+     * @generated from protobuf field: string message = 1
+     */
+    message: string;
+}
 // @generated message type with reflection information, may provide speed optimized methods
 class JoinRequest$Type extends MessageType<JoinRequest> {
     constructor() {
@@ -958,6 +1004,152 @@ class BuiltinToolRegistryResponse$Type extends MessageType<BuiltinToolRegistryRe
  * @generated MessageType for protobuf message workers.BuiltinToolRegistryResponse
  */
 export const BuiltinToolRegistryResponse = new BuiltinToolRegistryResponse$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ScannerStatusReportRequest$Type extends MessageType<ScannerStatusReportRequest> {
+    constructor() {
+        super("workers.ScannerStatusReportRequest", [
+            { no: 1, name: "engine_version", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "template_version", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 3, name: "template_source", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 4, name: "state", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 5, name: "last_update_attempt_at", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
+            { no: 6, name: "last_update_success_at", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
+            { no: 7, name: "last_validated_at", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
+            { no: 8, name: "last_error", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<ScannerStatusReportRequest>): ScannerStatusReportRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.engineVersion = "";
+        message.templateVersion = "";
+        message.templateSource = "";
+        message.state = "";
+        if (value !== undefined)
+            reflectionMergePartial<ScannerStatusReportRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ScannerStatusReportRequest): ScannerStatusReportRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string engine_version */ 1:
+                    message.engineVersion = reader.string();
+                    break;
+                case /* string template_version */ 2:
+                    message.templateVersion = reader.string();
+                    break;
+                case /* string template_source */ 3:
+                    message.templateSource = reader.string();
+                    break;
+                case /* string state */ 4:
+                    message.state = reader.string();
+                    break;
+                case /* optional string last_update_attempt_at */ 5:
+                    message.lastUpdateAttemptAt = reader.string();
+                    break;
+                case /* optional string last_update_success_at */ 6:
+                    message.lastUpdateSuccessAt = reader.string();
+                    break;
+                case /* optional string last_validated_at */ 7:
+                    message.lastValidatedAt = reader.string();
+                    break;
+                case /* optional string last_error */ 8:
+                    message.lastError = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ScannerStatusReportRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string engine_version = 1; */
+        if (message.engineVersion !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.engineVersion);
+        /* string template_version = 2; */
+        if (message.templateVersion !== "")
+            writer.tag(2, WireType.LengthDelimited).string(message.templateVersion);
+        /* string template_source = 3; */
+        if (message.templateSource !== "")
+            writer.tag(3, WireType.LengthDelimited).string(message.templateSource);
+        /* string state = 4; */
+        if (message.state !== "")
+            writer.tag(4, WireType.LengthDelimited).string(message.state);
+        /* optional string last_update_attempt_at = 5; */
+        if (message.lastUpdateAttemptAt !== undefined)
+            writer.tag(5, WireType.LengthDelimited).string(message.lastUpdateAttemptAt);
+        /* optional string last_update_success_at = 6; */
+        if (message.lastUpdateSuccessAt !== undefined)
+            writer.tag(6, WireType.LengthDelimited).string(message.lastUpdateSuccessAt);
+        /* optional string last_validated_at = 7; */
+        if (message.lastValidatedAt !== undefined)
+            writer.tag(7, WireType.LengthDelimited).string(message.lastValidatedAt);
+        /* optional string last_error = 8; */
+        if (message.lastError !== undefined)
+            writer.tag(8, WireType.LengthDelimited).string(message.lastError);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message workers.ScannerStatusReportRequest
+ */
+export const ScannerStatusReportRequest = new ScannerStatusReportRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ScannerStatusReportResponse$Type extends MessageType<ScannerStatusReportResponse> {
+    constructor() {
+        super("workers.ScannerStatusReportResponse", [
+            { no: 1, name: "message", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<ScannerStatusReportResponse>): ScannerStatusReportResponse {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.message = "";
+        if (value !== undefined)
+            reflectionMergePartial<ScannerStatusReportResponse>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ScannerStatusReportResponse): ScannerStatusReportResponse {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string message */ 1:
+                    message.message = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ScannerStatusReportResponse, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string message = 1; */
+        if (message.message !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.message);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message workers.ScannerStatusReportResponse
+ */
+export const ScannerStatusReportResponse = new ScannerStatusReportResponse$Type();
 /**
  * @generated ServiceType for protobuf service workers.WorkersService
  */
@@ -967,5 +1159,6 @@ export const WorkersService = new ServiceType("workers.WorkersService", [
     { name: "GetManifest", options: {}, I: GetManifestRequest, O: GetManifestResponse },
     { name: "Storage", serverStreaming: true, options: {}, I: StorageRequest, O: StorageResponse },
     { name: "ConnectInternalNetwork", options: {}, I: ConnectInternalNetworkRequest, O: ConnectInternalNetworkResponse },
-    { name: "BuiltinToolRegistry", options: {}, I: BuiltinToolRegistryRequest, O: BuiltinToolRegistryResponse }
+    { name: "BuiltinToolRegistry", options: {}, I: BuiltinToolRegistryRequest, O: BuiltinToolRegistryResponse },
+    { name: "ReportScannerStatus", options: {}, I: ScannerStatusReportRequest, O: ScannerStatusReportResponse }
 ]);

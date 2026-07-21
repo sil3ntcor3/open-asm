@@ -985,6 +985,12 @@ export type JobTimelineResponseDto = {
   data: JobTimelineItem[];
 };
 
+export type ToolExecutionDto = {
+  toolName: string;
+  target: string;
+  port?: number;
+};
+
 export type GetNextJobResponseDto = {
   id: string;
   createdAt: string;
@@ -993,6 +999,7 @@ export type GetNextJobResponseDto = {
   category: string;
   status: string;
   command: string;
+  execution: ToolExecutionDto;
 };
 
 export type DataPayloadResultRaw = { [key: string]: unknown };
@@ -1358,6 +1365,20 @@ export type SwitchAssetDto = {
   isEnabled: boolean;
 };
 
+/**
+ * @nullable
+ */
+export type WorkerInstanceNucleiTemplateStatus =
+  | (typeof WorkerInstanceNucleiTemplateStatus)[keyof typeof WorkerInstanceNucleiTemplateStatus]
+  | null;
+
+export const WorkerInstanceNucleiTemplateStatus = {
+  ready: 'ready',
+  refreshing: 'refreshing',
+  stale: 'stale',
+  error: 'error',
+} as const;
+
 export type WorkerInstance = {
   id: string;
   createdAt: string;
@@ -1378,6 +1399,24 @@ export type WorkerInstance = {
   maxConcurrency?: number | null;
   isPaused?: boolean;
   isOnline?: boolean;
+  /** @nullable */
+  nucleiEngineVersion?: string | null;
+  /** @nullable */
+  nucleiTemplateVersion?: string | null;
+  /** @nullable */
+  nucleiTemplateSource?: string | null;
+  /** @nullable */
+  nucleiTemplateStatus?: WorkerInstanceNucleiTemplateStatus;
+  /** @nullable */
+  nucleiTemplateLastAttemptAt?: string | null;
+  /** @nullable */
+  nucleiTemplateLastSuccessAt?: string | null;
+  /** @nullable */
+  nucleiTemplateValidatedAt?: string | null;
+  /** @nullable */
+  nucleiTemplateLastError?: string | null;
+  /** @nullable */
+  scannerStatusUpdatedAt?: string | null;
 };
 
 export type GetManyWorkerInstanceDto = {

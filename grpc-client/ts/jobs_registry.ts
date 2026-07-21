@@ -86,9 +86,38 @@ export interface Job {
      */
     asset?: Asset;
     /**
+     * Retained for API/history compatibility. Workers must not execute this
+     * display value as a shell command.
+     *
      * @generated from protobuf field: optional string command = 3
      */
     command?: string;
+    /**
+     * @generated from protobuf field: jobs_registry.ToolExecution execution = 4
+     */
+    execution?: ToolExecution;
+}
+/**
+ * @generated from protobuf message jobs_registry.ToolExecution
+ */
+export interface ToolExecution {
+    /**
+     * A worker-side allowlisted tool identifier, never an executable path.
+     *
+     * @generated from protobuf field: string tool_name = 1
+     */
+    toolName: string;
+    /**
+     * The complete target is transported as one argument, not interpolated
+     * into a command string.
+     *
+     * @generated from protobuf field: string target = 2
+     */
+    target: string;
+    /**
+     * @generated from protobuf field: optional int32 port = 3
+     */
+    port?: number;
 }
 /**
  * @generated from protobuf message jobs_registry.JobResponse
@@ -887,7 +916,8 @@ class Job$Type extends MessageType<Job> {
         super("jobs_registry.Job", [
             { no: 1, name: "id", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 2, name: "asset", kind: "message", T: () => Asset },
-            { no: 3, name: "command", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ }
+            { no: 3, name: "command", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
+            { no: 4, name: "execution", kind: "message", T: () => ToolExecution }
         ]);
     }
     create(value?: PartialMessage<Job>): Job {
@@ -911,6 +941,9 @@ class Job$Type extends MessageType<Job> {
                 case /* optional string command */ 3:
                     message.command = reader.string();
                     break;
+                case /* jobs_registry.ToolExecution execution */ 4:
+                    message.execution = ToolExecution.internalBinaryRead(reader, reader.uint32(), options, message.execution);
+                    break;
                 default:
                     let u = options.readUnknownField;
                     if (u === "throw")
@@ -932,6 +965,9 @@ class Job$Type extends MessageType<Job> {
         /* optional string command = 3; */
         if (message.command !== undefined)
             writer.tag(3, WireType.LengthDelimited).string(message.command);
+        /* jobs_registry.ToolExecution execution = 4; */
+        if (message.execution)
+            ToolExecution.internalBinaryWrite(message.execution, writer.tag(4, WireType.LengthDelimited).fork(), options).join();
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -942,6 +978,68 @@ class Job$Type extends MessageType<Job> {
  * @generated MessageType for protobuf message jobs_registry.Job
  */
 export const Job = new Job$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ToolExecution$Type extends MessageType<ToolExecution> {
+    constructor() {
+        super("jobs_registry.ToolExecution", [
+            { no: 1, name: "tool_name", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "target", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 3, name: "port", kind: "scalar", opt: true, T: 5 /*ScalarType.INT32*/ }
+        ]);
+    }
+    create(value?: PartialMessage<ToolExecution>): ToolExecution {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.toolName = "";
+        message.target = "";
+        if (value !== undefined)
+            reflectionMergePartial<ToolExecution>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ToolExecution): ToolExecution {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string tool_name */ 1:
+                    message.toolName = reader.string();
+                    break;
+                case /* string target */ 2:
+                    message.target = reader.string();
+                    break;
+                case /* optional int32 port */ 3:
+                    message.port = reader.int32();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ToolExecution, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string tool_name = 1; */
+        if (message.toolName !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.toolName);
+        /* string target = 2; */
+        if (message.target !== "")
+            writer.tag(2, WireType.LengthDelimited).string(message.target);
+        /* optional int32 port = 3; */
+        if (message.port !== undefined)
+            writer.tag(3, WireType.Varint).int32(message.port);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message jobs_registry.ToolExecution
+ */
+export const ToolExecution = new ToolExecution$Type();
 // @generated message type with reflection information, may provide speed optimized methods
 class JobResponse$Type extends MessageType<JobResponse> {
     constructor() {

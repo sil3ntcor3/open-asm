@@ -24,6 +24,21 @@ type RawGrpcResponse = {
   assetTags?: AssetTag[];
 };
 
+export class ToolExecutionDto {
+  @ApiProperty()
+  @IsString()
+  toolName: string;
+
+  @ApiProperty()
+  @IsString()
+  target: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsInt()
+  port?: number;
+}
+
 export class GetNextJobResponseDto extends PickType(Job, [
   'id',
   'category',
@@ -33,7 +48,11 @@ export class GetNextJobResponseDto extends PickType(Job, [
   'updatedAt',
   'command',
   'asset',
-]) {}
+]) {
+  @ApiProperty({ type: () => ToolExecutionDto })
+  @Type(() => ToolExecutionDto)
+  execution: ToolExecutionDto;
+}
 
 export class WorkerIdParams {
   @ApiProperty()
