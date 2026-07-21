@@ -209,6 +209,47 @@ func TestBuildNucleiInvocationResolvesImmutableTemplateVersion(t *testing.T) {
 	}
 }
 
+func TestDnsxWildcardFilterInvocationDropsWildcardNoise(t *testing.T) {
+	inv := dnsxWildcardFilterInvocation("/scanner-tools", "frazan.com", "mail.frazan.com\nmx.mx.mx.frazan.com\n")
+
+	if got := argumentValue(t, inv.args, "-wd"); got != "frazan.com" {
+		t.Fatalf("-wd = %q, want the apex domain frazan.com", got)
+	}
+	if !containsArg(inv.args, "-silent") {
+		t.Fatalf("wildcard filter args = %q, want -silent (hostname-only output)", inv.args)
+	}
+	for _, banned := range []string{"-resp", "-a", "-mx"} {
+		if containsArg(inv.args, banned) {
+			t.Fatalf("wildcard filter args = %q, must not request record types (ignored by -wd)", inv.args)
+		}
+	}
+	if want := "frazan.com\nmail.frazan.com\nmx.mx.mx.frazan.com\n"; inv.stdin != want {
+		t.Fatalf("stdin = %q, want the apex prepended to the subfinder output %q", inv.stdin, want)
+	}
+}
+
+func TestDnsxEnrichInvocationAlwaysIncludesApex(t *testing.T) {
+	inv := dnsxEnrichInvocation("/scanner-tools", "frazan.com", "")
+
+	for _, want := range []string{"-a", "-aaaa", "-cname", "-mx", "-ns", "-soa", "-txt", "-resp"} {
+		if !containsArg(inv.args, want) {
+			t.Fatalf("enrich args = %q, want it to request %q for the Core parser", inv.args, want)
+		}
+	}
+	if inv.stdin != "frazan.com\n" {
+		t.Fatalf("stdin = %q, want the apex enriched even with no filtered hosts", inv.stdin)
+	}
+}
+
+func containsArg(args []string, want string) bool {
+	for _, arg := range args {
+		if arg == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestScreenshotPayloadReportsCaptureFailure(t *testing.T) {
 	payload := screenshotPayload("example.com", "", errors.New("capture failed"))
 

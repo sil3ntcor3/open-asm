@@ -224,6 +224,7 @@ func runToolExecution(
 		)
 	}
 
+	target := execution.GetTarget()
 	deadline := time.Now().Add(timeout)
 	subfinderResult := runDirectCommand(
 		ctx,
@@ -237,34 +238,87 @@ func runToolExecution(
 	if subfinderResult.outcome != executionOutcomeSucceeded {
 		return subfinderResult
 	}
+
+	// Pass 1: wildcard filtering. Parked / wildcard-DNS domains (e.g. HugeDomains
+	// parking) resolve every possible label to the same address, so subfinder's
+	// passive sources return inflated junk such as mx.mx.mx.mx.<domain>. dnsx -wd
+	// probes the wildcard root and drops any name that only matches the wildcard
+	// set, while keeping genuinely distinct subdomains and always keeping the apex.
 	remaining := time.Until(deadline)
 	if remaining <= 0 {
-		return commandExecutionResult{
-			outcome:        executionOutcomeTimedOut,
-			exitCode:       -1,
-			failureMessage: fmt.Sprintf("command exceeded deadline %s", timeout),
-			stderr:         subfinderResult.stderr,
-		}
+		return subfinderDeadlineExceeded(timeout, subfinderResult.stderr)
 	}
-
-	dnsxInvocation := toolInvocation{
-		executable: scannerExecutable(toolPath, "dnsx"),
-		args:       []string{"-duc", "-a", "-aaaa", "-cname", "-mx", "-ns", "-soa", "-txt", "-resp"},
-		stdin:      execution.GetTarget() + "\n" + subfinderResult.stdout,
-	}
-	dnsxResult := runDirectCommand(
+	filterResult := runDirectCommand(
 		ctx,
-		dnsxInvocation,
+		dnsxWildcardFilterInvocation(toolPath, target, subfinderResult.stdout),
 		toolPath,
 		remaining,
 		stdoutLimitBytes,
 		stderrLimitBytes,
 		handle,
 	)
-	if subfinderResult.stderr != "" {
-		dnsxResult.stderr = subfinderResult.stderr + dnsxResult.stderr
+
+	// The apex is enriched unconditionally below, so an empty or failed filter
+	// pass falls back to the apex only. That guarantees a transient dnsx error
+	// can never silently reintroduce the wildcard-inflated junk it exists to drop.
+	cleanHosts := filterResult.stdout
+	if filterResult.outcome != executionOutcomeSucceeded {
+		jobLogGlobal.Warning(
+			"Wildcard filter pass failed for %s (%s); enriching apex only",
+			target, filterResult.outcome,
+		)
+		cleanHosts = ""
 	}
+
+	// Pass 2: enrich the filtered host list with the DNS record types the Core
+	// parser consumes. Output format is unchanged from the previous single dnsx
+	// pass, so the built-in subfinder parser needs no changes.
+	remaining = time.Until(deadline)
+	if remaining <= 0 {
+		return subfinderDeadlineExceeded(timeout, subfinderResult.stderr)
+	}
+	dnsxResult := runDirectCommand(
+		ctx,
+		dnsxEnrichInvocation(toolPath, target, cleanHosts),
+		toolPath,
+		remaining,
+		stdoutLimitBytes,
+		stderrLimitBytes,
+		handle,
+	)
+	dnsxResult.stderr = subfinderResult.stderr + filterResult.stderr + dnsxResult.stderr
 	return dnsxResult
+}
+
+func subfinderDeadlineExceeded(timeout time.Duration, stderr string) commandExecutionResult {
+	return commandExecutionResult{
+		outcome:        executionOutcomeTimedOut,
+		exitCode:       -1,
+		failureMessage: fmt.Sprintf("command exceeded deadline %s", timeout),
+		stderr:         stderr,
+	}
+}
+
+// dnsxWildcardFilterInvocation builds the dnsx pass that removes wildcard-DNS
+// noise. -wd forces dnsx to emit hostnames only (record-type flags are ignored
+// in this mode), so its output is fed into the enrich pass rather than parsed.
+func dnsxWildcardFilterInvocation(toolPath, target, hosts string) toolInvocation {
+	return toolInvocation{
+		executable: scannerExecutable(toolPath, "dnsx"),
+		args:       []string{"-duc", "-wd", target, "-silent"},
+		stdin:      target + "\n" + hosts,
+	}
+}
+
+// dnsxEnrichInvocation builds the dnsx pass that resolves the full set of DNS
+// record types consumed by the Core subfinder parser. The apex target is always
+// prepended so the primary asset is enriched even when hosts is empty.
+func dnsxEnrichInvocation(toolPath, target, hosts string) toolInvocation {
+	return toolInvocation{
+		executable: scannerExecutable(toolPath, "dnsx"),
+		args:       []string{"-duc", "-a", "-aaaa", "-cname", "-mx", "-ns", "-soa", "-txt", "-resp"},
+		stdin:      target + "\n" + hosts,
+	}
 }
 
 func buildToolInvocation(toolPath string, execution *jobs_registry.ToolExecution) (toolInvocation, error) {

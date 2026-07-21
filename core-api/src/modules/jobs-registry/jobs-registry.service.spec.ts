@@ -826,6 +826,7 @@ describe('JobsRegistryService', () => {
       id: 'job-uuid',
       tool: { name: 'tool-a' },
       asset: {
+        id: 'asset-uuid-for-mockjob',
         target: { id: 'target-uuid' },
       },
       jobHistory: {
@@ -912,6 +913,43 @@ describe('JobsRegistryService', () => {
       const result = await service.getNextStepForJob(jobWithNextStep as any);
 
       expect(result).toBe(1);
+    });
+
+    it('scopes a non-target-wide next step to the triggering asset', async () => {
+      mockToolsService.getToolByNames.mockResolvedValue([
+        { name: 'tool-b', priority: 4, category: 'http_probe' },
+      ]);
+      const createSpy = jest
+        .spyOn(service, 'createNewJob')
+        .mockResolvedValue([{} as any]);
+
+      await service.getNextStepForJob(mockJob as any);
+
+      expect(createSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ assetIds: ['asset-uuid-for-mockjob'] }),
+      );
+      createSpy.mockRestore();
+    });
+
+    it('fans a VULNERABILITIES next step out across all enabled target assets', async () => {
+      mockToolsService.getToolByNames.mockResolvedValue([
+        { name: 'nuclei', priority: 4, category: 'vulnerabilities' },
+      ]);
+      const createSpy = jest
+        .spyOn(service, 'createNewJob')
+        .mockResolvedValue([{} as any]);
+
+      await service.getNextStepForJob(mockJob as any);
+
+      // Empty assetIds makes createNewJob query every enabled asset for the
+      // target instead of only the asset whose chain reached this step.
+      expect(createSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          assetIds: [],
+          targetIds: ['target-uuid'],
+        }),
+      );
+      createSpy.mockRestore();
     });
   });
 

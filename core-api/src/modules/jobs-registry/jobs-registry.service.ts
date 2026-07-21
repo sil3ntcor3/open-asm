@@ -104,6 +104,19 @@ export function createToolExecutionPlan(job: Job): ToolExecutionDto | null {
   };
 }
 
+/**
+ * Tool categories whose jobs are scoped to the whole target (every enabled
+ * host) rather than a single asset. When one of these is the next workflow
+ * step, {@link JobsRegistryService.getNextStepForJob} fans it out across all
+ * enabled assets instead of the one asset that triggered the transition.
+ * PORTS_SCANNER is already forced target-wide inside createNewJob; VULNERABILITIES
+ * (Nuclei) is added here so vulnerability scanning covers the full attack surface.
+ */
+const TARGET_WIDE_NEXT_STEP_CATEGORIES = new Set<ToolCategory>([
+  ToolCategory.PORTS_SCANNER,
+  ToolCategory.VULNERABILITIES,
+]);
+
 @Injectable()
 export class JobsRegistryService {
   constructor(
@@ -893,7 +906,15 @@ export class JobsRegistryService {
       this.createNewJob({
         tool,
         targetIds: [job.asset.target.id],
-        assetIds: [job.asset.id],
+        // Target-wide steps (e.g. Nuclei) must cover every enabled host for the
+        // target, not just the single asset whose chain happened to reach this
+        // step. Scoping to [job.asset.id] here is why a discovery run scanned
+        // only the one host that survived the port/service gate. The idempotency
+        // guard in findAssetsForJob dedupes this fan-out across sibling
+        // completions so it cannot create duplicate jobs.
+        assetIds: TARGET_WIDE_NEXT_STEP_CATEGORIES.has(tool.category!)
+          ? []
+          : [job.asset.id],
         workflow: job.jobHistory.workflow,
         jobHistory: job.jobHistory,
         priority: tool.priority,

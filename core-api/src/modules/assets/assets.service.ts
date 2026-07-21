@@ -172,6 +172,99 @@ export class AssetsService {
   }
 
   /**
+   * Builds the base query for host-centric views (the "Hosts" tab).
+   *
+   * Unlike {@link buildBaseQuery}, this is anchored on the `asset` table and
+   * only LEFT JOINs `asset_service`. That is deliberate: a discovered subdomain
+   * with no open ports (hence no asset_service) must still be listed as a host.
+   * The service-anchored base query hides those hosts entirely, which is why a
+   * completed discovery run could show zero assets even though the subdomains
+   * were persisted. Service-specific filters (ports, techs, status codes, TLS)
+   * are applied via their joins so selecting one still narrows to matching hosts.
+   */
+  private buildHostBaseQuery(query: GetAssetsQueryDto, workspaceId: string) {
+    const queryBuilder = this.assetRepo
+      .createQueryBuilder('asset')
+      .innerJoin('asset.target', 'target')
+      .innerJoin('target.workspaceTargets', 'workspaceTargets')
+      .leftJoin('asset.assetServices', 'asset_service')
+      .where('"workspaceTargets"."workspaceId" = :workspaceId', { workspaceId })
+      .andWhere('asset.value IS NOT NULL');
+
+    if (query.targetIds) {
+      queryBuilder.andWhere('asset."targetId" = ANY(:targetIds)', {
+        targetIds: query.targetIds,
+      });
+    }
+
+    if (query.hosts) {
+      queryBuilder.andWhere('asset.value = ANY(:hosts)', {
+        hosts: query.hosts,
+      });
+    }
+
+    if (query.value) {
+      queryBuilder.andWhere('asset.value::text ILIKE :value', {
+        value: `%${query.value}%`,
+      });
+    }
+
+    if (query.ipAddresses) {
+      queryBuilder
+        .leftJoin('asset.ipAssets', 'ipAssets')
+        .andWhere('"ipAssets"."ip" = ANY(:ipAddresses)', {
+          ipAddresses: query.ipAddresses,
+        });
+    }
+
+    if (query.ports) {
+      queryBuilder.andWhere('asset_service.port = ANY(:ports)', {
+        ports: query.ports,
+      });
+    }
+
+    if (query.techs) {
+      queryBuilder
+        .leftJoin(
+          'asset_service.httpResponses',
+          'host_http_response',
+          'host_http_response.id = (SELECT hr.id FROM http_responses hr WHERE hr."assetServiceId" = asset_service.id ORDER BY hr."createdAt" DESC LIMIT 1)',
+        )
+        .andWhere('host_http_response.tech && :techs', { techs: query.techs });
+    }
+
+    if (query.statusCodes) {
+      queryBuilder
+        .leftJoin('asset_service.statusCodeAssets', 'statusCodeAssets')
+        .andWhere('"statusCodeAssets"."statusCode" = ANY(:statusCodes)', {
+          statusCodes: query.statusCodes,
+        });
+    }
+
+    if (query.tlsHosts) {
+      queryBuilder
+        .leftJoin('asset_service.tlsAssets', 'tlsAssets')
+        .andWhere('"tlsAssets"."host" = ANY(:tlsHosts)', {
+          tlsHosts: query.tlsHosts,
+        });
+    }
+
+    if (query.startDate) {
+      queryBuilder.andWhere('asset."createdAt" >= :startDate', {
+        startDate: query.startDate,
+      });
+    }
+
+    if (query.endDate) {
+      queryBuilder.andWhere('asset."createdAt" <= :endDate', {
+        endDate: `${query.endDate} 23:59:59.999`,
+      });
+    }
+
+    return queryBuilder;
+  }
+
+  /**
    * Retrieves a paginated list of assets associated with a specified target.
    *
    * @param id - The ID of the target for which to retrieve assets.
@@ -488,19 +581,12 @@ export class AssetsService {
       query.sortBy = '"assetCount"';
     }
 
-    const queryBuilder = this.buildBaseQuery(query, workspaceId)
+    const queryBuilder = this.buildHostBaseQuery(query, workspaceId)
       .select([
         'asset.value',
         'COUNT(DISTINCT asset_service.id) as "assetCount"',
       ])
-      .andWhere('asset.value IS NOT NULL')
       .groupBy('asset.value');
-
-    if (query.value) {
-      queryBuilder.andWhere('asset.value::text ILIKE :value', {
-        value: `%${query.value}%`,
-      });
-    }
 
     const totalInDb = await this.dataSource
       .createQueryBuilder()
