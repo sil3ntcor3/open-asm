@@ -15,6 +15,19 @@ export class AddAssetServiceDiscoveryColumns1784900000000
   name = 'AddAssetServiceDiscoveryColumns1784900000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // The nmap step introduces ToolCategory.SERVICE_DISCOVERY. tools.category and
+    // jobs.category are Postgres enum columns, so the new value must be added to
+    // both enum types or seeding the nmap tool (and creating nmap jobs) fails.
+    // ADD VALUE IF NOT EXISTS is idempotent and, on PostgreSQL 12+, is allowed
+    // inside the migration transaction as long as the value is not *used* in the
+    // same transaction (this migration only adds it).
+    await queryRunner.query(
+      `ALTER TYPE "tools_category_enum" ADD VALUE IF NOT EXISTS 'service_discovery'`,
+    );
+    await queryRunner.query(
+      `ALTER TYPE "jobs_category_enum" ADD VALUE IF NOT EXISTS 'service_discovery'`,
+    );
+
     await queryRunner.query(
       `ALTER TABLE "asset_services" ADD "service" character varying`,
     );
