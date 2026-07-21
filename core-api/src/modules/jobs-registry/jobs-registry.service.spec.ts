@@ -225,6 +225,64 @@ describe('JobsRegistryService', () => {
         { unresolvedDnsStatus: 'unresolved' },
       );
     });
+
+    const makeAssetServiceQb = () => {
+      const queryBuilder = {
+        innerJoinAndSelect: jest.fn().mockReturnThis(),
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      };
+      mockDataSource.getRepository.mockReturnValue({
+        createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+      });
+      return queryBuilder;
+    };
+
+    const callFindAssetServices = (category: ToolCategory) =>
+      (
+        service as unknown as {
+          findAssetServicesForJob(
+            targetIds?: string[],
+            assetIds?: string[],
+            workspaceId?: string,
+            category?: ToolCategory,
+          ): Promise<unknown[]>;
+        }
+      ).findAssetServicesForJob(undefined, undefined, undefined, category);
+
+    // A screenshot is only meaningful for an endpoint that actually speaks HTTP.
+    // naabu opens an asset_service for every live port (FTP/SMTP/IMAP/...), so
+    // screenshot job creation must be gated to services httpx confirmed as web
+    // (an http_responses row with failed=false). This uses httpx's own HTTP
+    // detection rather than a port allow-list, so web services on non-standard
+    // ports are still screenshotted — legitimate web services are not excluded.
+    it('only creates screenshot jobs for services httpx confirmed as web', async () => {
+      const queryBuilder = makeAssetServiceQb();
+
+      await callFindAssetServices(ToolCategory.SCREENSHOT);
+
+      const gatedByWebProbe = queryBuilder.andWhere.mock.calls.some(
+        ([clause]) =>
+          typeof clause === 'string' &&
+          clause.includes('http_responses') &&
+          clause.includes('failed'),
+      );
+      expect(gatedByWebProbe).toBe(true);
+    });
+
+    it('does not gate the http probe itself on a prior web response', async () => {
+      const queryBuilder = makeAssetServiceQb();
+
+      await callFindAssetServices(ToolCategory.HTTP_PROBE);
+
+      const gatedByWebProbe = queryBuilder.andWhere.mock.calls.some(
+        ([clause]) =>
+          typeof clause === 'string' && clause.includes('http_responses'),
+      );
+      expect(gatedByWebProbe).toBe(false);
+    });
   });
 
   describe('handleJobError', () => {
@@ -961,9 +1019,30 @@ describe('JobsRegistryService', () => {
       );
     });
 
-    it('reports FAILED only once every job is terminal', () => {
+    it('does not report FAILED when some jobs completed, even once every job is terminal', () => {
+      // The whole run must not be branded failed just because individual tasks
+      // failed. As long as at least one job produced a result, the run is
+      // COMPLETED; the per-status counts still expose the failures on drill-down.
       expect(
         deriveJobHistoryStatus(counts({ completed: 20, failed: 6 })),
+      ).toBe(JobStatus.COMPLETED);
+    });
+
+    it('reports COMPLETED for a terminal mix of completed, failed and cancelled', () => {
+      expect(
+        deriveJobHistoryStatus(counts({ completed: 19, failed: 6, cancelled: 2 })),
+      ).toBe(JobStatus.COMPLETED);
+    });
+
+    it('reports FAILED only when every terminal job failed (no successes)', () => {
+      expect(deriveJobHistoryStatus(counts({ failed: 5 }))).toBe(
+        JobStatus.FAILED,
+      );
+    });
+
+    it('reports FAILED for failures mixed with cancellations but no successes', () => {
+      expect(
+        deriveJobHistoryStatus(counts({ failed: 3, cancelled: 2 })),
       ).toBe(JobStatus.FAILED);
     });
 
