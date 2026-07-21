@@ -131,11 +131,19 @@ export class DataAdapterService {
     await queryRunner.startTransaction();
 
     try {
-      if (data.failed && job.assetServiceId) {
+      if (job.assetServiceId) {
+        // isErrorPage must track the *latest* probe outcome, not stay stuck at
+        // whatever the first probe set. httpx reports failed=true only when it
+        // could not obtain any HTTP response for this endpoint. Previously we
+        // only ever set the flag true and never cleared it, so a service that
+        // failed once stayed flagged forever — even after a later scan probed it
+        // successfully. That left it excluded from every isErrorPage=false
+        // consumer (e.g. the Targets "services" count), showing 0 services for a
+        // target whose ports were up. Assign the current outcome unconditionally.
         await queryRunner.manager
           .createQueryBuilder()
           .update(AssetService)
-          .set({ isErrorPage: true })
+          .set({ isErrorPage: Boolean(data.failed) })
           .where({ id: job.assetServiceId })
           .execute();
       }

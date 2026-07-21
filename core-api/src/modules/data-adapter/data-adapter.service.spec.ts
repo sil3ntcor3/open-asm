@@ -365,7 +365,7 @@ describe('DataAdapterService', () => {
       expect(mockQueryRunner.release).toHaveBeenCalled();
     });
 
-    it('should update asset service when response failed', async () => {
+    it('should flag the asset service as an error page when the probe failed', async () => {
       const failedResponse = { ...mockHttpResponse, failed: true };
 
       mockDataSource.createQueryRunner.mockReturnValue(mockQueryRunner);
@@ -378,9 +378,31 @@ describe('DataAdapterService', () => {
         job: mockJob,
       });
 
-      expect(mockQueryRunner.manager.createQueryBuilder).toHaveBeenCalledTimes(
-        3,
-      );
+      expect(mockQueryRunner.manager.set).toHaveBeenCalledWith({
+        isErrorPage: true,
+      });
+    });
+
+    it('should clear the error-page flag when a later probe succeeds', async () => {
+      // Regression guard: isErrorPage must reflect the *latest* probe. A service
+      // that failed once and is later probed successfully (failed=false) must be
+      // un-flagged, otherwise it stays hidden from every isErrorPage=false
+      // consumer (e.g. the Targets "services" count) forever.
+      const successResponse = { ...mockHttpResponse, failed: false };
+
+      mockDataSource.createQueryRunner.mockReturnValue(mockQueryRunner);
+      mockQueryRunner.manager
+        .createQueryBuilder()
+        .execute.mockResolvedValue(undefined);
+
+      await service.httpResponses({
+        data: successResponse,
+        job: mockJob,
+      });
+
+      expect(mockQueryRunner.manager.set).toHaveBeenCalledWith({
+        isErrorPage: false,
+      });
     });
 
     it('should rollback transaction on error', async () => {
