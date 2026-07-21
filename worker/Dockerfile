@@ -32,12 +32,15 @@ FROM debian:bookworm-slim
 
 WORKDIR /app
 
-# Install ca-certificates for TLS, bash, chromium for browser tasks, and libpcap for naabu
+# Install ca-certificates for TLS, bash, chromium for browser tasks, libpcap for
+# naabu, and nmap for -sV service discovery (protocol identification per open
+# port, used to gate web-only steps and enrich the asset inventory).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     bash \
     chromium \
     libpcap0.8 \
+    nmap \
     curl \
     iputils-ping \
     dnsutils \

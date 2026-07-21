@@ -1229,4 +1229,76 @@ describe('DataAdapterService', () => {
       expect(service.validateData).toHaveBeenCalledWith(mockData, AssetTag);
     });
   });
+
+  describe('serviceDiscovery', () => {
+    const webJob = {
+      assetServiceId: 'svc-1',
+      assetService: { id: 'svc-1', port: 443 },
+    } as never;
+
+    it('stores service, product and scheme for a web service', async () => {
+      await service.serviceDiscovery({
+        job: webJob,
+        data: [
+          {
+            port: 443,
+            service: 'ssl/http',
+            product: 'Apache httpd',
+            isWeb: true,
+            scheme: 'https',
+          },
+        ],
+      } as never);
+
+      expect(mockDataSource.set).toHaveBeenCalledWith({
+        service: 'ssl/http',
+        product: 'Apache httpd',
+        scheme: 'https',
+      });
+      expect(mockDataSource.where).toHaveBeenCalledWith({ id: 'svc-1' });
+    });
+
+    it('clears the scheme for a non-web service so it is never screenshotted', async () => {
+      await service.serviceDiscovery({
+        job: {
+          assetServiceId: 'svc-2',
+          assetService: { id: 'svc-2', port: 465 },
+        },
+        data: [
+          {
+            port: 465,
+            service: 'ssl/smtp',
+            product: 'Exim smtpd',
+            isWeb: false,
+            scheme: '',
+          },
+        ],
+      } as never);
+
+      expect(mockDataSource.set).toHaveBeenCalledWith({
+        service: 'ssl/smtp',
+        product: 'Exim smtpd',
+        scheme: null,
+      });
+    });
+
+    it('matches the entry for this service port among multiple results', async () => {
+      await service.serviceDiscovery({
+        job: webJob,
+        data: [
+          { port: 80, service: 'http', isWeb: true, scheme: 'http' },
+          { port: 443, service: 'ssl/http', isWeb: true, scheme: 'https' },
+        ],
+      } as never);
+
+      expect(mockDataSource.set).toHaveBeenCalledWith(
+        expect.objectContaining({ service: 'ssl/http', scheme: 'https' }),
+      );
+    });
+
+    it('is a no-op without an asset service or data', async () => {
+      await service.serviceDiscovery({ job: {}, data: [] } as never);
+      expect(mockDataSource.update).not.toHaveBeenCalled();
+    });
+  });
 });

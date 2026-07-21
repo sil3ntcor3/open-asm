@@ -1,5 +1,8 @@
 import { BOT_ID } from '@/common/constants/app.constants';
-import { ScreenshotPayload } from '@/common/interfaces/app.interface';
+import {
+  ScreenshotPayload,
+  ServiceDiscoveryPayload,
+} from '@/common/interfaces/app.interface';
 import { JobDataResultType } from '@/common/types/app.types';
 import { Injectable, Logger } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
@@ -420,6 +423,43 @@ export class DataAdapterService {
   }
 
   /**
+   * Persists nmap service-discovery results onto the asset_service. The worker
+   * runs nmap against a single (host, port) and returns the parsed services as
+   * JSON, so we match the entry for this service's port (falling back to the
+   * first). `scheme` is stored only for web services, making it the gate the
+   * screenshot step queries on.
+   */
+  public async serviceDiscovery({
+    data,
+    job,
+  }: DataAdapterInput<ServiceDiscoveryPayload[]>): Promise<void> {
+    if (!job.assetServiceId || !Array.isArray(data) || data.length === 0) {
+      return;
+    }
+
+    const match =
+      data.find((entry) => entry.port === job.assetService?.port) ?? data[0];
+    if (!match) {
+      return;
+    }
+
+    await this.dataSource
+      .createQueryBuilder()
+      .update(AssetService)
+      .set({
+        service: match.service || null,
+        product: match.product || null,
+        // Only web services carry a scheme; non-web services clear it so the
+        // screenshot gate (scheme IS NOT NULL) never fires for them.
+        scheme: match.isWeb ? match.scheme || null : null,
+      })
+      .where({ id: job.assetServiceId })
+      .execute();
+
+    return;
+  }
+
+  /**
    * Sync data based on tool category
    * @param payload Data to sync
    * @returns
@@ -466,6 +506,10 @@ export class DataAdapterService {
           handler: (data: DataAdapterInput<ScreenshotPayload>) =>
             this.screenshot(data),
           validationClass: ScreenshotPayload,
+        },
+        [ToolCategory.SERVICE_DISCOVERY]: {
+          handler: (data: DataAdapterInput<ServiceDiscoveryPayload[]>) =>
+            this.serviceDiscovery(data),
         },
         // Note: ASSISTANT category is handled separately or not supported in this mapping
       };

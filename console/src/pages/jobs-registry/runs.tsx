@@ -64,6 +64,48 @@ const isJobTerminal = (job: Job) =>
   job.status === JobStatus.failed ||
   job.status === JobStatus.cancelled;
 
+export type PipelineStepStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+/**
+ * Derives the pipeline-indicator status of one workflow step (tool) from the
+ * jobs of the steps before it and the jobs of the step itself.
+ *
+ * A previous step only holds this one at "pending" while it still has ACTIVE
+ * work (running or queued). A previous step that has already finished — even
+ * with some failed jobs — must not pin this step at "pending". Treating a
+ * failed upstream job as "not completed" is what made nuclei render as
+ * "pending" when it had in fact already run to completion, purely because the
+ * screenshot step before it had failures.
+ */
+export function derivePipelineStepStatus(
+  previousStepsJobs: { status?: string }[][],
+  currentStepJobs: { status?: string }[],
+): PipelineStepStatus {
+  for (const prevJobs of previousStepsJobs) {
+    const stillActive = prevJobs.some(
+      (job) =>
+        job.status === JobStatus.in_progress ||
+        job.status === JobStatus.pending,
+    );
+    if (stillActive) return 'pending';
+  }
+
+  if (currentStepJobs.length === 0) return 'pending';
+  if (currentStepJobs.some((job) => job.status === JobStatus.failed)) {
+    return 'failed';
+  }
+  if (currentStepJobs.some((job) => job.status === JobStatus.in_progress)) {
+    return 'running';
+  }
+  if (currentStepJobs.every((job) => job.status === JobStatus.completed)) {
+    return 'completed';
+  }
+  if (currentStepJobs.every((job) => job.status === JobStatus.pending)) {
+    return 'pending';
+  }
+  return 'running';
+}
+
 const getJobEndedAt = (job: Job) => {
   if (!isJobTerminal(job)) return null;
   return job.completedAt || job.updatedAt;
@@ -445,32 +487,19 @@ export default function Runs() {
   ]);
 
   const getToolStatus = useMemo(() => {
-    return (toolIndex: number) => {
+    return (toolIndex: number): PipelineStepStatus => {
       const tools = jobHistoryDetail?.tools || [];
 
-      // Check if any previous tool in the workflow is still running or waiting
+      const previousStepsJobs: Job[][] = [];
       for (let i = 0; i < toolIndex; i++) {
         const prevTool = tools[i];
         if (!prevTool) {
           console.warn(`Previous tool is undefined at index: ${i}`);
           continue;
         }
-        const prevToolJobs = getJobsForTool(prevTool.id, prevTool.name);
-
-        if (prevToolJobs.length > 0) {
-          const hasPrevRunning = prevToolJobs.some(
-            (job) => job.status === JobStatus.in_progress,
-          );
-          if (hasPrevRunning) return 'pending';
-
-          const allPrevCompleted = prevToolJobs.every(
-            (job) => job.status === JobStatus.completed,
-          );
-          if (!allPrevCompleted) return 'pending';
-        }
+        previousStepsJobs.push(getJobsForTool(prevTool.id, prevTool.name));
       }
 
-      // Check current tool jobs
       const currentTool = tools[toolIndex];
       if (!currentTool) {
         console.warn(`Current tool is undefined at index: ${toolIndex}`);
@@ -478,29 +507,7 @@ export default function Runs() {
       }
       const currentToolJobs = getJobsForTool(currentTool.id, currentTool.name);
 
-      if (currentToolJobs.length === 0) return 'pending';
-
-      const hasFailed = currentToolJobs.some(
-        (job) => job.status === JobStatus.failed,
-      );
-      if (hasFailed) return 'failed';
-
-      const hasRunning = currentToolJobs.some(
-        (job) => job.status === JobStatus.in_progress,
-      );
-      if (hasRunning) return 'running';
-
-      const allCompleted = currentToolJobs.every(
-        (job) => job.status === JobStatus.completed,
-      );
-      if (allCompleted) return 'completed';
-
-      const allPending = currentToolJobs.every(
-        (job) => job.status === JobStatus.pending,
-      );
-      if (allPending) return 'pending';
-
-      return 'running';
+      return derivePipelineStepStatus(previousStepsJobs, currentToolJobs);
     };
   }, [jobHistoryDetail?.tools, getJobsForTool]);
 

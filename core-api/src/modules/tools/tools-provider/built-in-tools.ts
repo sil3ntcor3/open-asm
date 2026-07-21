@@ -127,7 +127,7 @@ export const builtInTools: Tool[] = [
       'Httpx is a fast and multi-purpose HTTP toolkit that allows running multiple probes using the retryable http library. It is designed to maintain result reliability with an increased number of threads.',
     logoUrl: '/static/images/httpx.png',
     command:
-      'httpx -duc -u {{value}} -status-code -favicon -asn -title -web-server -irr -tech-detect -ip -cname -location -tls-grab -cdn -probe -json -follow-redirects -timeout 10 -threads 100 -silent',
+      'httpx -duc -u {{value}} -status-code -favicon -asn -title -web-server -irr -tech-detect -ip -cname -location -tls-grab -cdn -probe -json -timeout 10 -retries 2 -threads 100 -silent',
     parser: JSON.parse,
     version: '1.7.1',
     priority: JobPriority.MEDIUM,
@@ -148,7 +148,7 @@ export const builtInTools: Tool[] = [
     description:
       'A fast port scanner written in go with a focus on reliability and simplicity. Designed to be used in combination with other tools for attack surface discovery in bug bounties and pentests.',
     logoUrl: '/static/images/naabu.png',
-    command: 'naabu -host {{value}} -silent -top-ports 1000',
+    command: 'naabu -host {{value}} -silent -top-ports 1000 -rate 500',
     parser: (result: string) => {
       const parsed = result
         .trim()
@@ -159,6 +159,19 @@ export const builtInTools: Tool[] = [
       return parsed;
     },
     version: '2.3.5',
+    priority: JobPriority.MEDIUM,
+  },
+  {
+    name: 'nmap',
+    category: ToolCategory.SERVICE_DISCOVERY,
+    description:
+      'Nmap service detection (-sV) identifies the protocol and product running on each open port, reliably distinguishing web services (http/https, on any port) from non-web services (ftp, smtp, imap, pop3, ssh, ...). The worker returns parsed JSON, so this parser is a passthrough.',
+    logoUrl: '/static/images/nmap.png',
+    // Display only; the worker runs nmap against the (host, port) of each
+    // asset_service and returns parsed service JSON.
+    command: 'nmap -sV -Pn -T3 --version-intensity 2 -oG - -p {{port}} {{value}}',
+    parser: JSON.parse,
+    version: '7.99',
     priority: JobPriority.MEDIUM,
   },
   {
