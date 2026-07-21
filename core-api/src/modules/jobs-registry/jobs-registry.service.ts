@@ -6,6 +6,7 @@ import {
 import {
   BullMQName,
   CATEGORY_DATA_SOURCE_MAP,
+  DnsResolutionStatus,
   EventTriggerType,
   JobPriority,
   JobRunType,
@@ -339,6 +340,16 @@ export class JobsRegistryService {
       .createQueryBuilder('assets')
       .where('assets.isEnabled = true');
 
+    if (
+      category === ToolCategory.PORTS_SCANNER ||
+      category === ToolCategory.VULNERABILITIES
+    ) {
+      assetsQueryBuilder.andWhere(
+        'assets.dnsResolutionStatus != :unresolvedDnsStatus',
+        { unresolvedDnsStatus: DnsResolutionStatus.UNRESOLVED },
+      );
+    }
+
     // Idempotency guard: skip assets that already have an open (pending or
     // in-progress) job for this category, so repeated triggers cannot fan out
     // duplicate jobs and explode the queue.
@@ -398,6 +409,16 @@ export class JobsRegistryService {
       .createQueryBuilder('assetServices')
       .innerJoinAndSelect('assetServices.asset', 'asset')
       .where('asset.isEnabled = true');
+
+    if (
+      category === ToolCategory.HTTP_PROBE ||
+      category === ToolCategory.SCREENSHOT
+    ) {
+      assetServicesQueryBuilder.andWhere(
+        'asset.dnsResolutionStatus != :unresolvedDnsStatus',
+        { unresolvedDnsStatus: DnsResolutionStatus.UNRESOLVED },
+      );
+    }
 
     // Idempotency guard: skip asset services that already have an open (pending
     // or in-progress) job for this category, so repeated triggers cannot fan
@@ -750,11 +771,22 @@ export class JobsRegistryService {
   }
 
   public async handleJobError(dto: UpdateResultDto, job: Job, error: Error) {
+    const logMessage = error.message.slice(0, 4096);
+    const diagnosticPayload = JSON.stringify({
+      outcome: dto.data.outcome,
+      exitCode: dto.data.exitCode,
+      failureMessage: dto.data.failureMessage,
+      stderr: dto.data.stderr?.slice(0, 4096),
+      stdoutTruncated: dto.data.stdoutTruncated,
+      stderrTruncated: dto.data.stderrTruncated,
+    }).slice(0, 8192);
+
     await this.repo.save({
       ...job,
       status: JobStatus.FAILED,
-      error: error.message,
+      error: logMessage,
       retryCount: job.retryCount + 1,
+      completedAt: new Date(),
     });
 
     // Deduplicate error logs - only create new log if message differs from last error
@@ -763,11 +795,11 @@ export class JobsRegistryService {
       order: { createdAt: 'DESC' },
     });
 
-    if (!lastErrorLog || lastErrorLog.logMessage !== error.message) {
+    if (!lastErrorLog || lastErrorLog.logMessage !== logMessage) {
       await this.jobErrorLogRepo.save({
         job,
-        logMessage: error.message,
-        payload: JSON.stringify(dto.data),
+        logMessage,
+        payload: diagnosticPayload,
       });
     }
   }
@@ -1021,7 +1053,14 @@ export class JobsRegistryService {
         '"jobHistory".id as "id"',
         '"jobHistory"."createdAt" as "createdAt"',
         '"jobHistory"."jobHistoryName" as "jobHistoryName"',
-        '"jobHistory"."updatedAt" as "updatedAt"',
+        `COALESCE(
+          (
+            SELECT MAX(COALESCE("completedAt", "updatedAt"))
+            FROM jobs
+            WHERE "jobHistoryId" = "jobHistory".id
+          ),
+          "jobHistory"."updatedAt"
+        ) as "updatedAt"`,
         '"workflow"."name" as "workflowName"',
         '"jobHistory"."jobRunType" as "jobRunType"',
         // Subquery to count total jobs for this job history
@@ -1270,7 +1309,10 @@ export class JobsRegistryService {
     const result = await this.repo
       .createQueryBuilder()
       .update(Job)
-      .set({ status: JobStatus.CANCELLED })
+      .set({
+        status: JobStatus.CANCELLED,
+        completedAt: () => 'CURRENT_TIMESTAMP',
+      })
       .where('"jobHistoryId" = :jobHistoryId', { jobHistoryId })
       .andWhere('status IN (:...statuses)', {
         statuses: [JobStatus.PENDING, JobStatus.IN_PROGRESS, JobStatus.PAUSED],
@@ -1313,7 +1355,9 @@ export class JobsRegistryService {
 
       // Update job status, clear workerId, and increment retryCount
       job.status = JobStatus.PENDING;
-      job.workerId = undefined;
+      job.workerId = null;
+      job.pickJobAt = null;
+      job.completedAt = null;
       job.retryCount = job.retryCount + 1;
 
       await queryRunner.manager.save(job);
@@ -1355,6 +1399,7 @@ export class JobsRegistryService {
       // kills the process; the late/partial result is dropped because result
       // processing only accepts IN_PROGRESS jobs.
       job.status = JobStatus.CANCELLED;
+      job.completedAt = new Date();
 
       await queryRunner.manager.save(job);
 

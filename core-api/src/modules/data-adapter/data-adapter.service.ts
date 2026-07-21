@@ -7,6 +7,7 @@ import { validate } from 'class-validator';
 import * as crypto from 'crypto';
 import { DataSource, InsertResult } from 'typeorm';
 import {
+  DnsResolutionStatus,
   IssueSourceType,
   Severity,
   ToolCategory,
@@ -72,7 +73,13 @@ export class DataAdapterService {
         .createQueryBuilder()
         .update(Asset)
         .where({ id: job.asset.id })
-        .set({ isPrimary: true, dnsRecords: primaryAssets?.dnsRecords })
+        .set({
+          isPrimary: true,
+          dnsRecords: primaryAssets?.dnsRecords,
+          dnsResolutionStatus:
+            primaryAssets?.dnsResolutionStatus ??
+            DnsResolutionStatus.UNRESOLVED,
+        })
         .execute();
 
       const workspaceId = await this.workspaceService.getWorkspaceIdByTargetId(
@@ -94,7 +101,10 @@ export class DataAdapterService {
             isEnabled: workspaceConfigs.isAutoEnableAssetAfterDiscovered,
           })),
         )
-        .orIgnore()
+        .orUpdate(
+          ['dnsRecords', 'dnsResolutionStatus'],
+          ['value', 'targetId'],
+        )
         .execute();
 
       await queryRunner.commitTransaction();

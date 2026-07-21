@@ -44,8 +44,8 @@ export class Job extends BaseEntity {
    * The timestamp when the job was picked up by a worker.
    */
   @ApiProperty()
-  @Column({ nullable: true })
-  pickJobAt?: Date;
+  @Column({ type: 'timestamp', nullable: true })
+  pickJobAt?: Date | null;
 
   /**
    * The priority of the job.
@@ -56,8 +56,8 @@ export class Job extends BaseEntity {
   /**
    * The ID of the worker that is processing the job.
    */
-  @Column({ nullable: true })
-  workerId?: string;
+  @Column({ type: 'varchar', nullable: true })
+  workerId?: string | null;
 
   /**
    * The tool used for this job.
@@ -78,8 +78,8 @@ export class Job extends BaseEntity {
    * The timestamp when the job was completed.
    */
   @ApiProperty()
-  @Column({ nullable: true })
-  completedAt?: Date;
+  @Column({ type: 'timestamp', nullable: true })
+  completedAt?: Date | null;
 
   /**
    * The history of this job.

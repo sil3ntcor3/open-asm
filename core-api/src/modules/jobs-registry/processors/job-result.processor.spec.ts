@@ -33,6 +33,8 @@ describe('JobResultProcessor', () => {
         error: true,
         outcome: 'failed',
         failureMessage: 'scanner exited with code 1',
+        stderr:
+          '[FTL] Could not run enumeration: no valid ipv4 or ipv6 targets were found',
         raw: '{"host":"must-not-be-persisted.example"}',
       }),
       deleteFile: jest.fn().mockResolvedValue(undefined),
@@ -60,9 +62,19 @@ describe('JobResultProcessor', () => {
     }>;
 
     await expect(processor.process(bullJob)).rejects.toThrow(
-      'scanner exited with code 1',
+      'scanner exited with code 1: [FTL] Could not run enumeration: no valid ipv4 or ipv6 targets were found',
     );
     expect(dataAdapterService.syncData).not.toHaveBeenCalled();
-    expect(jobsRegistryService.handleJobError).toHaveBeenCalledTimes(1);
+    expect(jobsRegistryService.handleJobError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: storedJob.id,
+        data: expect.objectContaining({
+          failureMessage: 'scanner exited with code 1',
+          stderr: expect.stringContaining('no valid ipv4 or ipv6 targets'),
+        }),
+      }),
+      storedJob,
+      expect.any(Error),
+    );
   });
 });

@@ -227,6 +227,10 @@ describe('DataAdapterService', () => {
       expect(mockQueryRunner.startTransaction).toHaveBeenCalled();
       expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
       expect(mockQueryRunner.release).toHaveBeenCalled();
+      expect(mockQueryRunner.manager.orUpdate).toHaveBeenCalledWith(
+        ['dnsRecords', 'dnsResolutionStatus'],
+        ['value', 'targetId'],
+      );
       expect(result).toEqual(mockInsertResult);
     });
 
