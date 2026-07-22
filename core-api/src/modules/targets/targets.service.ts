@@ -255,10 +255,13 @@ export class TargetsService implements OnModuleInit {
        INNER JOIN workspace_targets wt ON wt."targetId" = t.id
        INNER JOIN workspaces w ON w.id = wt."workspaceId" AND w."deletedAt" IS NULL
        LEFT JOIN LATERAL (
+         -- Count every discovered service endpoint (naabu-found open ports).
+         -- NOT gated on isErrorPage: that flag mirrors httpx's flaky failed=true,
+         -- so a transient scan-time IPS block would otherwise zero the count.
          SELECT COUNT(DISTINCT s.id)::int AS cnt
          FROM assets a
          JOIN asset_services s ON s."assetId" = a.id
-         WHERE a."targetId" = t.id AND s."isErrorPage" = false
+         WHERE a."targetId" = t.id
        ) svc ON TRUE
        LEFT JOIN LATERAL (
          SELECT CASE
@@ -688,10 +691,13 @@ export class TargetsService implements OnModuleInit {
        FROM targets t
        INNER JOIN workspace_targets wt ON wt."targetId" = t.id
        LEFT JOIN LATERAL (
+         -- Count every discovered service endpoint (naabu-found open ports).
+         -- NOT gated on isErrorPage: that flag mirrors httpx's flaky failed=true,
+         -- so a transient scan-time IPS block would otherwise zero the count.
          SELECT COUNT(DISTINCT s.id)::int AS cnt
          FROM assets a
          JOIN asset_services s ON s."assetId" = a.id
-         WHERE a."targetId" = t.id AND s."isErrorPage" = false
+         WHERE a."targetId" = t.id
        ) svc ON TRUE
        LEFT JOIN LATERAL (
          SELECT ${statusExpr} AS status

@@ -142,6 +142,25 @@ describe('TargetsService', () => {
       expect(sql).toContain('LATERAL');
     });
 
+    it('counts every discovered service without gating on isErrorPage', async () => {
+      (mockTargetRepository.query as jest.Mock).mockResolvedValue([
+        { id: targetId, totalAssetServices: 10 },
+      ]);
+
+      await service.getTargetById(targetId, workspaceId);
+
+      const [sql] = (mockTargetRepository.query as jest.Mock).mock.calls[0] as [
+        string,
+        unknown[],
+      ];
+      // The services count reflects discovered service endpoints (naabu open
+      // ports). isErrorPage is set from httpx's flaky `failed` flag, so gating
+      // the count on it made a target scanned during a transient IPS block
+      // (all probes failed) report 0 services despite real discovered services.
+      expect(sql).toContain('COUNT(DISTINCT s.id)');
+      expect(sql).not.toContain('"isErrorPage"');
+    });
+
     it('includes persisted scan window fields in the target detail projection', async () => {
       (mockTargetRepository.query as jest.Mock).mockResolvedValue([
         {
@@ -171,6 +190,29 @@ describe('TargetsService', () => {
       await expect(
         service.getTargetById(targetId, workspaceId),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('getTargetsInWorkspace', () => {
+    it('counts every discovered service without gating on isErrorPage', async () => {
+      const workspaceId = randomUUID();
+      (mockTargetRepository.query as jest.Mock)
+        .mockResolvedValueOnce([{ cnt: 1 }]) // total count query
+        .mockResolvedValueOnce([]); // list page query
+
+      await service.getTargetsInWorkspace(
+        { limit: 10, page: 1 } as Parameters<
+          TargetsService['getTargetsInWorkspace']
+        >[0],
+        workspaceId,
+      );
+
+      const calls = (mockTargetRepository.query as jest.Mock).mock.calls;
+      // The paginated list query carries the totalAssetServices count subquery;
+      // it must count all discovered services, not exclude httpx-failed ones.
+      const listSql = calls[1][0] as string;
+      expect(listSql).toContain('COUNT(DISTINCT s.id)');
+      expect(listSql).not.toContain('"isErrorPage"');
     });
   });
 
