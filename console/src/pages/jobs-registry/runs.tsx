@@ -106,6 +106,28 @@ export function derivePipelineStepStatus(
   return 'running';
 }
 
+/** How often the run-detail view refetches while a run is still active. */
+export const JOBS_POLL_INTERVAL_MS = 1000;
+
+/**
+ * True while any job is still active (queued or running). Gates the run-detail
+ * polling: both the pipeline-indicator query (which feeds the pills) and the
+ * job-table query refetch on an interval only while this holds, and stop once
+ * every job is terminal. The pipeline pills previously froze mid-run because the
+ * query feeding them was never given a refetch interval, so its snapshot — and
+ * therefore this predicate, which is derived from it — stayed stuck at whatever
+ * the jobs looked like when the page first loaded.
+ */
+export function jobsAreActive(
+  jobs: { status?: string }[] | undefined,
+): boolean {
+  return (jobs ?? []).some(
+    (job) =>
+      job.status === JobStatus.in_progress ||
+      job.status === JobStatus.pending,
+  );
+}
+
 const getJobEndedAt = (job: Job) => {
   if (!isJobTerminal(job)) return null;
   return job.completedAt || job.updatedAt;
@@ -278,7 +300,14 @@ export default function Runs() {
       },
     });
 
-  // Fetch all jobs for pipeline indicators (without pagination)
+  // Fetch all jobs for the pipeline indicators (without pagination). This query
+  // MUST poll while the run is active: the pipeline pills derive their per-step
+  // status entirely from this data, so without a refetch interval they froze at
+  // the page-load snapshot (e.g. "subfinder running") while nmap/httpx/etc. ran
+  // to completion underneath. Poll while any job is active and stop once they
+  // are all terminal; keep polling in the background so a run opened in an
+  // inactive tab still advances live. The interval reads the query's own latest
+  // data, so it re-evaluates after every refetch.
   const {
     data: allJobsData,
     error: allJobsError,
@@ -288,21 +317,22 @@ export default function Runs() {
     sortBy: 'createdAt',
     sortOrder: 'ASC',
     jobHistoryId: jobHistoryId || '',
+  }, {
+    query: {
+      refetchInterval: (query) =>
+        jobsAreActive(query.state.data?.data) ? JOBS_POLL_INTERVAL_MS : false,
+      refetchIntervalInBackground: true,
+    },
   });
 
-  // Check if any jobs are still in progress (pending or in_progress)
-  // Always poll initially, stop when no active jobs remain
-  const hasActiveJobsRef = useRef(true);
-  const hasActiveJobs = useMemo(() => {
-    const jobs = allJobsData?.data || [];
-    const active = jobs.some(
-      (job) =>
-        job.status === JobStatus.pending ||
-        job.status === JobStatus.in_progress,
-    );
-    hasActiveJobsRef.current = active;
-    return active;
-  }, [allJobsData?.data]);
+  // Whether the run still has active jobs, derived from the (now polling)
+  // all-jobs snapshot. Gates the paginated table's refetch below — using the
+  // global snapshot rather than the current page so polling doesn't stop just
+  // because the visible page happens to hold only terminal jobs.
+  const hasActiveJobs = useMemo(
+    () => jobsAreActive(allJobsData?.data),
+    [allJobsData?.data],
+  );
 
   const {
     data: paginatedJobsData,
@@ -317,7 +347,8 @@ export default function Runs() {
     jobHistoryId: jobHistoryId || '',
   }, {
     query: {
-      refetchInterval: hasActiveJobs ? 1000 : false,
+      refetchInterval: hasActiveJobs ? JOBS_POLL_INTERVAL_MS : false,
+      refetchIntervalInBackground: true,
     },
   });
   const paginatedJobsQueryKeyRef = useRef(paginatedJobsQueryKey);

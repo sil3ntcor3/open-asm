@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { derivePipelineStepStatus } from '@/pages/jobs-registry/runs';
+import { derivePipelineStepStatus, jobsAreActive } from '@/pages/jobs-registry/runs';
 import { JobStatus } from '@/services/apis/gen/queries';
 
 const jobs = (status: JobStatus, count: number) =>
@@ -70,5 +70,40 @@ describe('derivePipelineStepStatus', () => {
         jobs(JobStatus.completed, 3),
       ),
     ).toBe('completed');
+  });
+});
+
+// Drives the run-detail polling: while any job is still active the pipeline
+// pills + job table must keep refetching so they advance live; once every job
+// is terminal polling stops. The pipeline pills froze mid-run because the query
+// that feeds them was never given a refetch interval, so this predicate now
+// gates BOTH job queries.
+describe('jobsAreActive', () => {
+  it('is true when any job is pending', () => {
+    expect(
+      jobsAreActive([
+        { status: JobStatus.completed },
+        { status: JobStatus.pending },
+      ]),
+    ).toBe(true);
+  });
+
+  it('is true when any job is in progress', () => {
+    expect(jobsAreActive([{ status: JobStatus.in_progress }])).toBe(true);
+  });
+
+  it('is false when every job is terminal', () => {
+    expect(
+      jobsAreActive([
+        { status: JobStatus.completed },
+        { status: JobStatus.failed },
+        { status: JobStatus.cancelled },
+      ]),
+    ).toBe(false);
+  });
+
+  it('is false for an empty or missing job list', () => {
+    expect(jobsAreActive([])).toBe(false);
+    expect(jobsAreActive(undefined)).toBe(false);
   });
 });

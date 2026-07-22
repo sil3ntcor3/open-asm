@@ -252,14 +252,20 @@ describe('JobsRegistryService', () => {
         }
       ).findAssetServicesForJob(undefined, undefined, undefined, category);
 
-    // Screenshots only run against endpoints nmap identified as web (scheme set).
-    // This is the reliable, port-agnostic "web service" gate that replaces the
-    // fragile httpx signal.
-    it('gates screenshot creation on the nmap web scheme', async () => {
+    // Screenshots run against every service EXCEPT those nmap positively
+    // classified as non-web (a service was identified but it carries no web
+    // scheme — e.g. ssh/ftp/smtp). Services nmap could not classify at all
+    // (scheme AND service both NULL — the normal outcome when target-side scan
+    // detection filtered nmap during the naabu storm) still get a best-effort
+    // screenshot: the headless browser is the ground-truth web detector and
+    // simply returns "No screenshot" for genuine non-web endpoints. This stops
+    // screenshots from silently vanishing whenever nmap is transiently blocked,
+    // while still avoiding wasted captures against nmap-confirmed non-web ports.
+    it('screenshots web and unclassified services, excluding nmap-confirmed non-web', async () => {
       const qb = makeAssetServiceQb();
       await findAssetServices(ToolCategory.SCREENSHOT);
       expect(qb.andWhere).toHaveBeenCalledWith(
-        'assetServices.scheme IS NOT NULL',
+        '(assetServices.scheme IS NOT NULL OR assetServices.service IS NULL)',
       );
     });
 
@@ -1202,6 +1208,88 @@ describe('JobsRegistryService', () => {
           targetIds: ['target-uuid'],
         }),
       );
+      createSpy.mockRestore();
+    });
+
+    // Regression: a gated middle step (e.g. screenshot when nmap classified no
+    // web services) that yields zero jobs must NOT terminate the pipeline. The
+    // chain has to skip forward to the next step (nuclei) so vulnerability
+    // scanning still runs. This is the root cause of "pipeline stops after httpx".
+    const threeStepJob = {
+      id: 'job-uuid',
+      tool: { name: 'httpx' },
+      asset: {
+        id: 'asset-uuid-for-mockjob',
+        target: { id: 'target-uuid' },
+      },
+      jobHistory: {
+        id: 'jh-uuid',
+        workflow: {
+          content: {
+            jobs: [
+              { name: 'probe', run: 'httpx' },
+              { name: 'shot', run: 'screenshot' },
+              { name: 'vuln', run: 'nuclei' },
+            ],
+          },
+          workspace: { id: 'workspace-uuid' },
+        },
+      },
+    };
+
+    const toolByName: Record<string, unknown> = {
+      screenshot: { name: 'screenshot', priority: 4, category: 'screenshot' },
+      nuclei: { name: 'nuclei', priority: 4, category: 'vulnerabilities' },
+    };
+
+    it('skips a zero-job next step and creates the following step instead', async () => {
+      mockToolsService.getToolByNames.mockImplementation(
+        ({ names }: { names: string[] }) =>
+          Promise.resolve(names.map((n) => toolByName[n])),
+      );
+      const createSpy = jest
+        .spyOn(service, 'createNewJob')
+        .mockImplementation(({ tool }: any) =>
+          Promise.resolve(tool.name === 'nuclei' ? [{} as any] : []),
+        );
+
+      const result = await service.getNextStepForJob(threeStepJob as any);
+
+      // screenshot was attempted (yielded 0) then the chain advanced to nuclei.
+      expect(createSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tool: expect.objectContaining({ name: 'screenshot' }),
+        }),
+      );
+      expect(createSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tool: expect.objectContaining({ name: 'nuclei' }),
+        }),
+      );
+      expect(result).toBe(1);
+      createSpy.mockRestore();
+    });
+
+    it('does not advance past a next step that already yields jobs', async () => {
+      mockToolsService.getToolByNames.mockImplementation(
+        ({ names }: { names: string[] }) =>
+          Promise.resolve(names.map((n) => toolByName[n])),
+      );
+      const createSpy = jest
+        .spyOn(service, 'createNewJob')
+        .mockResolvedValue([{} as any]);
+
+      const result = await service.getNextStepForJob(threeStepJob as any);
+
+      // screenshot produced a job, so we stop there and let its completion chain
+      // to nuclei — nuclei must not be created eagerly here.
+      expect(createSpy).toHaveBeenCalledTimes(1);
+      expect(createSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tool: expect.objectContaining({ name: 'screenshot' }),
+        }),
+      );
+      expect(result).toBe(1);
       createSpy.mockRestore();
     });
   });

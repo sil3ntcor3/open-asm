@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -201,6 +202,30 @@ func TestBuildHttpxInvocationProbesServiceDirectlyWithoutFollowingRedirects(t *t
 		if !hasArgument(invocation.args, required) {
 			t.Fatalf("httpx args = %q, missing required flag %q", invocation.args, required)
 		}
+	}
+}
+
+func TestBuildNaabuInvocationUsesCalmerScanRate(t *testing.T) {
+	// The naabu SYN burst is the primary trigger for target-side scan detection,
+	// which then filters nmap/httpx for the rest of the storm and strands the
+	// screenshot/nuclei steps. Keep the rate well below naabu's 1000 default (and
+	// below the 500 that still tripped pentest-ground.com) so the scan stays under
+	// common detection thresholds. The pipeline's resilience fixes handle blocks
+	// that still slip through; this just makes them rarer.
+	inv, err := buildToolInvocation("/scanner-tools", &jobs_registry.ToolExecution{
+		ToolName: "naabu",
+		Target:   "example.com",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rate := argumentValue(t, inv.args, "-rate")
+	n, convErr := strconv.Atoi(rate)
+	if convErr != nil {
+		t.Fatalf("naabu -rate = %q, want an integer", rate)
+	}
+	if n <= 0 || n > 250 {
+		t.Fatalf("naabu -rate = %d, want a calmer rate in (0, 250]", n)
 	}
 }
 

@@ -61,13 +61,56 @@ func TestParseNmapServicesClassifiesWebAndScheme(t *testing.T) {
 	}
 }
 
-func TestParseNmapServicesExcludesNonOpenPorts(t *testing.T) {
+func TestParseNmapServicesDropsFilteredNonWebPorts(t *testing.T) {
+	// A filtered non-web port carries only nmap's port-number guess (no banner);
+	// recording it as e.g. "ssh" would wrongly mark it non-web and let the gate
+	// exclude a possibly-web odd port. Filtered non-web ports are therefore left
+	// unclassified (dropped here) so the best-effort screenshot gate handles them.
 	services := parseNmapServices(nmapGreppableSample)
 	if _, ok := serviceByPort(services, 22); ok {
-		t.Errorf("filtered port 22 must not be returned as a discovered service")
+		t.Errorf("filtered non-web port 22 must not be recorded as a service")
 	}
 	if len(services) != 8 {
-		t.Errorf("expected 8 open services, got %d", len(services))
+		t.Errorf("expected 8 open services (filtered ssh dropped), got %d", len(services))
+	}
+}
+
+func TestParseNmapServicesRecoversFilteredWebService(t *testing.T) {
+	// Exact `nmap -sV -oG -` output captured against pentest-ground.com:80 while
+	// the target's IPS was filtering the worker during the naabu storm. nmap can
+	// no longer grab the banner (product empty) but still port-labels it http, so
+	// we must classify it as a web service — otherwise scheme stays NULL, the
+	// screenshot step is gated out, and the chain never reaches nuclei.
+	sample := "Host: 178.79.134.182 ()\tPorts: 80/filtered/tcp//http///\n"
+	services := parseNmapServices(sample)
+	svc, ok := serviceByPort(services, 80)
+	if !ok {
+		t.Fatal("filtered web port 80 must be classified, not dropped")
+	}
+	if !svc.IsWeb || svc.Scheme != "http" {
+		t.Errorf("port 80: got {web=%v scheme=%q}, want web http", svc.IsWeb, svc.Scheme)
+	}
+}
+
+func TestParseNmapServicesRecoversFilteredHttpsService(t *testing.T) {
+	// A filtered TLS web service still carries the "ssl/http" (escaped "ssl|http")
+	// label and must be recovered as https so it is screenshotted.
+	sample := "Host: 178.79.134.182 ()\tPorts: 443/filtered/tcp//ssl|http///\n"
+	services := parseNmapServices(sample)
+	svc, ok := serviceByPort(services, 443)
+	if !ok {
+		t.Fatal("filtered https port 443 must be classified, not dropped")
+	}
+	if !svc.IsWeb || svc.Scheme != "https" {
+		t.Errorf("port 443: got {web=%v scheme=%q}, want web https", svc.IsWeb, svc.Scheme)
+	}
+}
+
+func TestParseNmapServicesExcludesClosedPorts(t *testing.T) {
+	// A definitively closed port is not a live service and must be excluded.
+	sample := "Host: 10.0.0.1 ()\tPorts: 81/closed/tcp//hosts2-ns///\n"
+	if services := parseNmapServices(sample); len(services) != 0 {
+		t.Errorf("closed port must be excluded, got %d services", len(services))
 	}
 }
 

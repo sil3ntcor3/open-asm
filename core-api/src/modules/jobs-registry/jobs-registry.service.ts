@@ -508,17 +508,28 @@ export class JobsRegistryService {
       );
     }
 
-    // Web-service gate for screenshots. The nmap service-discovery step runs
-    // before screenshot in the workflow and sets asset_services.scheme only for
-    // endpoints it identified as http/https (on ANY port — nmap does not use a
-    // port allow-list, so odd-port web services are still captured). Requiring a
-    // scheme therefore limits screenshots to genuine web services without
-    // depending on httpx, whose failed flag is unreliable under scan load. A
-    // service nmap has not yet classified (scheme NULL) is skipped now and picked
-    // up once its nmap job completes and re-triggers this fan-out; the
-    // idempotency guard below dedupes it.
+    // Best-effort web-service gate for screenshots. The nmap service-discovery
+    // step runs before screenshot in the workflow and, when it can reach the
+    // port, sets asset_services.scheme for endpoints it identified as http/https
+    // (on ANY port — nmap does not use a port allow-list, so odd-port web
+    // services are still captured) and asset_services.service for every port it
+    // classified (web or not).
+    //
+    // Requiring scheme alone is too fragile: target-side scan detection routinely
+    // filters nmap during the naabu storm, so a genuine web service comes back
+    // unclassified (scheme AND service both NULL) and would be screenshotted
+    // never — even though the block is transient and the endpoint is reachable
+    // again by the time the screenshot step runs. We therefore screenshot a
+    // service when nmap identified it as web (scheme set) OR when nmap could not
+    // classify it at all (service NULL), and only skip services nmap positively
+    // identified as non-web (service set, no web scheme — e.g. ssh/ftp/smtp). The
+    // headless browser is the ground-truth web detector and returns "No
+    // screenshot" for any non-web endpoint that slips through, and the
+    // idempotency guard below keeps the fan-out from duplicating.
     if (category === ToolCategory.SCREENSHOT) {
-      assetServicesQueryBuilder.andWhere('assetServices.scheme IS NOT NULL');
+      assetServicesQueryBuilder.andWhere(
+        '(assetServices.scheme IS NOT NULL OR assetServices.service IS NULL)',
+      );
     }
 
     // Idempotency guard: skip asset services that already have an open (pending
@@ -1012,38 +1023,61 @@ export class JobsRegistryService {
     const currentJobMetadata = jobs.find((j) => j.run === currentTool);
     if (!currentJobMetadata) return 0;
 
-    const indexCurrentTool = workflow?.content.jobs.findIndex(
+    const indexCurrentTool = jobs.findIndex(
       (j) => j.name === currentJobMetadata.name,
     );
-    const nextTool = workflow?.content.jobs[indexCurrentTool + 1]?.run;
-    if (!nextTool) return 0;
 
-    const tools = await this.toolsService.getToolByNames({
-      names: [nextTool],
-    });
+    // Walk forward through the remaining workflow steps. A step that yields zero
+    // jobs must NOT terminate the pipeline: the gate that excluded every
+    // candidate (e.g. the screenshot web-service gate when nmap classified no
+    // web services — a common outcome when target-side scan detection filters
+    // nmap during the naabu storm) is transient/step-local and must not silently
+    // strand the downstream steps. When the next step creates nothing we skip to
+    // the following step so vulnerability scanning (Nuclei) still runs across the
+    // full attack surface. Only a step that actually creates jobs stops the walk;
+    // those jobs' completions then drive the next transition. This is the direct
+    // fix for "pipeline stops after httpx": previously a zero-job next step
+    // returned 0 and the workflow was immediately marked done.
+    for (let index = indexCurrentTool + 1; index < jobs.length; index++) {
+      const nextTool = jobs[index]?.run;
+      if (!nextTool) continue;
 
-    const createPromises = tools.map((tool) =>
-      this.createNewJob({
-        tool,
-        targetIds: [job.asset.target.id],
-        // Target-wide steps (e.g. Nuclei) must cover every enabled host for the
-        // target, not just the single asset whose chain happened to reach this
-        // step. Scoping to [job.asset.id] here is why a discovery run scanned
-        // only the one host that survived the port/service gate. The idempotency
-        // guard in findAssetsForJob dedupes this fan-out across sibling
-        // completions so it cannot create duplicate jobs.
-        assetIds: TARGET_WIDE_NEXT_STEP_CATEGORIES.has(tool.category!)
-          ? []
-          : [job.asset.id],
-        workflow: job.jobHistory.workflow,
-        jobHistory: job.jobHistory,
-        priority: tool.priority,
-        workspaceId: workflow.workspace.id,
-      }),
-    );
+      const tools = await this.toolsService.getToolByNames({
+        names: [nextTool],
+      });
 
-    const results = await Promise.all(createPromises);
-    return results.reduce((total, jobs) => total + jobs.length, 0);
+      const createPromises = tools.map((tool) =>
+        this.createNewJob({
+          tool,
+          targetIds: [job.asset.target.id],
+          // Target-wide steps (e.g. Nuclei) must cover every enabled host for the
+          // target, not just the single asset whose chain happened to reach this
+          // step. Scoping to [job.asset.id] here is why a discovery run scanned
+          // only the one host that survived the port/service gate. The idempotency
+          // guard in findAssetsForJob dedupes this fan-out across sibling
+          // completions so it cannot create duplicate jobs.
+          assetIds: TARGET_WIDE_NEXT_STEP_CATEGORIES.has(tool.category!)
+            ? []
+            : [job.asset.id],
+          workflow: job.jobHistory.workflow,
+          jobHistory: job.jobHistory,
+          priority: tool.priority,
+          workspaceId: workflow.workspace.id,
+        }),
+      );
+
+      const results = await Promise.all(createPromises);
+      const createdCount = results.reduce(
+        (total, created) => total + created.length,
+        0,
+      );
+
+      if (createdCount > 0) {
+        return createdCount;
+      }
+    }
+
+    return 0;
   }
 
   /**
