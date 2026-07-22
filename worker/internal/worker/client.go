@@ -20,6 +20,41 @@ import (
 
 const nucleiTemplateRefreshCheckInterval = 15 * time.Minute
 
+// chromiumBinCandidates are the system chromium/chrome paths the worker prefers
+// over rod's auto-download, in priority order.
+var chromiumBinCandidates = []string{
+	"/usr/bin/chromium",
+	"/usr/bin/chromium-browser",
+	"/usr/bin/google-chrome",
+}
+
+// resolveChromiumBin returns the first existing system chromium/chrome binary,
+// or "" to let rod resolve/download one.
+func resolveChromiumBin() string {
+	for _, path := range chromiumBinCandidates {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return ""
+}
+
+// newBrowserLauncher builds the headless chromium launcher used for screenshots.
+// It sets --ignore-certificate-errors so web services with a self-signed or
+// mismatched TLS certificate (common across an attack surface) still load and
+// screenshot instead of aborting navigation with net::ERR_CERT_COMMON_NAME_INVALID.
+// A non-empty binPath pins a system browser; "" lets rod resolve one.
+func newBrowserLauncher(binPath string) *launcher.Launcher {
+	l := launcher.New().
+		Leakless(false).
+		Headless(true).
+		Set("ignore-certificate-errors")
+	if binPath != "" {
+		l = l.Bin(binPath)
+	}
+	return l
+}
+
 func connectInternalNetwork(ctx context.Context, client *oasm.Client, network string) error {
 	networkInfos, err := GetNetworkInfos()
 	if err != nil {
@@ -91,21 +126,14 @@ func Start(ctx context.Context, cfg *config.Config) {
 	}()
 
 	jobLog.Info("Initializing headless browser...")
-	l := launcher.New().Leakless(false).Headless(true)
-
-	if _, err := os.Stat("/usr/bin/chromium"); err == nil {
-		jobLog.Verbose("Using system chromium at /usr/bin/chromium")
-		l = l.Bin("/usr/bin/chromium")
-	} else if _, err := os.Stat("/usr/bin/chromium-browser"); err == nil {
-		jobLog.Verbose("Using system chromium at /usr/bin/chromium-browser")
-		l = l.Bin("/usr/bin/chromium-browser")
-	} else if _, err := os.Stat("/usr/bin/google-chrome"); err == nil {
-		jobLog.Verbose("Using system chromium at /usr/bin/google-chrome")
-		l = l.Bin("/usr/bin/google-chrome")
+	binPath := resolveChromiumBin()
+	if binPath != "" {
+		jobLog.Verbose("Using system chromium at %s", binPath)
 	} else {
 		jobLog.Verbose("No system chromium found, go-rod will download Chrome automatically")
 	}
 
+	l := newBrowserLauncher(binPath)
 	browser := rod.New().ControlURL(l.MustLaunch()).MustConnect()
 
 	toolPath, err := filepath.Abs(cfg.ToolPath)
