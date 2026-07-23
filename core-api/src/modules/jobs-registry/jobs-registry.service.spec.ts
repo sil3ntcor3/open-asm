@@ -208,6 +208,7 @@ describe('JobsRegistryService', () => {
       qb.andWhere = jest.fn(chain);
       qb.take = jest.fn(chain);
       qb.skip = jest.fn(chain);
+      qb.addSelect = jest.fn(chain);
       qb.orderBy = jest.fn(chain);
       qb.addOrderBy = jest.fn(chain);
       qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
@@ -226,12 +227,22 @@ describe('JobsRegistryService', () => {
         jobHistoryId: 'history-1',
       } as never);
 
-      // Primary sort is the status-priority CASE, applied ascending so rank 0
-      // (in_progress) comes first.
+      // The status-priority CASE is added as a computed column, NOT passed
+      // straight to orderBy(). Passing the raw CASE to orderBy() 500s under
+      // skip/take pagination because TypeORM alias-resolves it ("CASE job"
+      // alias was not found); the dotless alias avoids that.
+      expect(qb.addSelect).toHaveBeenCalledTimes(1);
+      const [rankExpr, rankAlias] = qb.addSelect.mock.calls[0];
+      expect(rankExpr).toContain('CASE');
+      expect(rankExpr).toContain("'in_progress'");
+      expect(rankAlias).toBe('job_status_rank');
+
+      // Primary sort is the computed rank alias, ascending so rank 0
+      // (in_progress) comes first — and it must NOT be a raw CASE expression.
       expect(qb.orderBy).toHaveBeenCalledTimes(1);
       const [orderExpr, orderDir] = qb.orderBy.mock.calls[0];
-      expect(orderExpr).toContain('CASE');
-      expect(orderExpr).toContain("'in_progress'");
+      expect(orderExpr).toBe('job_status_rank');
+      expect(orderExpr).not.toContain('CASE');
       expect(orderDir).toBe('ASC');
 
       // Secondary sort is the client-requested column.
