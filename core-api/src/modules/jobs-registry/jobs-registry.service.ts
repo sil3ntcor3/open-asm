@@ -80,8 +80,10 @@ export const JOB_STATUS_DISPLAY_PRIORITY: readonly JobStatus[] = [
 
 /**
  * Builds a SQL CASE expression that maps each job status to its
- * {@link JOB_STATUS_DISPLAY_PRIORITY} rank, for use as an ORDER BY key. Any
- * status not in the list falls to the bottom.
+ * {@link JOB_STATUS_DISPLAY_PRIORITY} rank. In {@link
+ * JobsRegistryService.getManyJobs} it is added as a computed SELECT column and
+ * ordered by its alias (not passed straight to orderBy — see the call site for
+ * why). Any status not in the list falls to the bottom.
  *
  * The status literals are our own enum constants — never client input — so
  * interpolating them directly is safe. This mirrors how TypeORM's `orderBy`
@@ -284,9 +286,18 @@ export class JobsRegistryService {
     // pages — the run-detail view showed in-progress tasks on page 3 instead of
     // pinned to the top of page 1. The secondary sort keeps the requested
     // ordering (e.g. createdAt DESC) within each status group.
+    //
+    // The rank is added as a computed SELECT column and ordered by its alias
+    // rather than passing the raw CASE straight to orderBy(): under skip/take
+    // pagination over the joined entities (the errorLogs collection forces
+    // TypeORM's distinct-id subquery), orderBy() alias-resolves its argument as
+    // `alias.column` and mis-parses `CASE job.status` into a phantom alias
+    // ("CASE job" alias was not found), 500-ing the endpoint. A dotless alias
+    // sidesteps that resolution.
     qb.take(query.limit)
       .skip((page - 1) * limit)
-      .orderBy(buildJobStatusOrderByCase('job.status'), 'ASC')
+      .addSelect(buildJobStatusOrderByCase('job.status'), 'job_status_rank')
+      .orderBy('job_status_rank', 'ASC')
       .addOrderBy(`job.${sortBy}`, sortOrder);
 
     const [data, total] = await qb.getManyAndCount();
