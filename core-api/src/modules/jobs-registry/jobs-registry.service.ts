@@ -61,6 +61,43 @@ import { JobErrorLog } from './entities/job-error-log.entity';
 import { JobHistory } from './entities/job-history.entity';
 import { Job } from './entities/job.entity';
 
+/**
+ * Display-priority order for a jobs listing: active work first (running, then
+ * queued, then paused), terminal jobs last. Used as the PRIMARY sort key in
+ * {@link JobsRegistryService.getManyJobs} so in-flight jobs pin to the top of
+ * page 1 instead of scattering across pages by creation time. Within a single
+ * priority rank the client-requested column (e.g. createdAt DESC) still orders
+ * the rows. The index in this array IS the rank (lower = higher up the list).
+ */
+export const JOB_STATUS_DISPLAY_PRIORITY: readonly JobStatus[] = [
+  JobStatus.IN_PROGRESS,
+  JobStatus.PENDING,
+  JobStatus.PAUSED,
+  JobStatus.COMPLETED,
+  JobStatus.FAILED,
+  JobStatus.CANCELLED,
+] as const;
+
+/**
+ * Builds a SQL CASE expression that maps each job status to its
+ * {@link JOB_STATUS_DISPLAY_PRIORITY} rank, for use as an ORDER BY key. Any
+ * status not in the list falls to the bottom.
+ *
+ * The status literals are our own enum constants — never client input — so
+ * interpolating them directly is safe. This mirrors how TypeORM's `orderBy`
+ * interpolates its column expression (see {@link resolveSortColumn}) rather
+ * than parameterizing it, so the surrounding query's bound parameters are
+ * unaffected.
+ *
+ * @param column The aliased status column, e.g. `job.status`.
+ */
+export function buildJobStatusOrderByCase(column: string): string {
+  const whenClauses = JOB_STATUS_DISPLAY_PRIORITY.map(
+    (status, rank) => `WHEN '${status}' THEN ${rank}`,
+  ).join(' ');
+  return `CASE ${column} ${whenClauses} ELSE ${JOB_STATUS_DISPLAY_PRIORITY.length} END`;
+}
+
 /** Columns a client is allowed to sort `jobs` rows by. */
 const JOB_SORT_COLUMNS = [
   'createdAt',
@@ -241,9 +278,16 @@ export class JobsRegistryService {
       );
     }
 
+    // Surface active work first: order by status priority (running > queued >
+    // paused > terminal) BEFORE the client-requested column. Without this
+    // primary key, running jobs sort purely by createdAt and scatter across
+    // pages — the run-detail view showed in-progress tasks on page 3 instead of
+    // pinned to the top of page 1. The secondary sort keeps the requested
+    // ordering (e.g. createdAt DESC) within each status group.
     qb.take(query.limit)
       .skip((page - 1) * limit)
-      .orderBy(`job.${sortBy}`, sortOrder);
+      .orderBy(buildJobStatusOrderByCase('job.status'), 'ASC')
+      .addOrderBy(`job.${sortBy}`, sortOrder);
 
     const [data, total] = await qb.getManyAndCount();
 

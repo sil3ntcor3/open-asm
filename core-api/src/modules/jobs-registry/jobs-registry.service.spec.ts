@@ -16,8 +16,10 @@ import { JobHistory } from './entities/job-history.entity';
 import { Job } from './entities/job.entity';
 import { JobControlAction } from './dto/jobs-registry.dto';
 import {
+  buildJobStatusOrderByCase,
   createToolExecutionPlan,
   deriveJobHistoryStatus,
+  JOB_STATUS_DISPLAY_PRIORITY,
   JobsRegistryService,
 } from './jobs-registry.service';
 
@@ -171,6 +173,76 @@ describe('JobsRegistryService', () => {
     mockJobHistoryRepository.createQueryBuilder.mockReturnValue(qb);
     return qb;
   };
+
+  describe('job status display ordering', () => {
+    it('ranks active jobs (running, then queued) ahead of terminal jobs', () => {
+      const rank = (status: JobStatus) =>
+        JOB_STATUS_DISPLAY_PRIORITY.indexOf(status);
+
+      // Running is always first so in-flight work pins to the top of page 1.
+      expect(JOB_STATUS_DISPLAY_PRIORITY[0]).toBe(JobStatus.IN_PROGRESS);
+      expect(rank(JobStatus.IN_PROGRESS)).toBeLessThan(rank(JobStatus.PENDING));
+      expect(rank(JobStatus.PENDING)).toBeLessThan(rank(JobStatus.PAUSED));
+      expect(rank(JobStatus.PAUSED)).toBeLessThan(rank(JobStatus.COMPLETED));
+      expect(rank(JobStatus.PAUSED)).toBeLessThan(rank(JobStatus.FAILED));
+      expect(rank(JobStatus.PAUSED)).toBeLessThan(rank(JobStatus.CANCELLED));
+    });
+
+    it('builds a CASE expression mapping each status to its priority rank', () => {
+      const expr = buildJobStatusOrderByCase('job.status');
+      expect(expr).toContain('CASE job.status');
+      expect(expr).toContain("WHEN 'in_progress' THEN 0");
+      expect(expr).toContain("WHEN 'pending' THEN 1");
+      expect(expr).toContain("WHEN 'paused' THEN 2");
+      // Any unlisted status falls to the bottom.
+      expect(expr).toMatch(/ELSE \d+ END$/);
+    });
+  });
+
+  describe('getManyJobs', () => {
+    const createJobsQueryBuilder = () => {
+      const qb: Record<string, jest.Mock> = {};
+      const chain = () => qb as unknown as never;
+      qb.leftJoinAndSelect = jest.fn(chain);
+      qb.where = jest.fn(chain);
+      qb.andWhere = jest.fn(chain);
+      qb.take = jest.fn(chain);
+      qb.skip = jest.fn(chain);
+      qb.orderBy = jest.fn(chain);
+      qb.addOrderBy = jest.fn(chain);
+      qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
+      return qb;
+    };
+
+    it('orders running jobs first, then by the requested column', async () => {
+      const qb = createJobsQueryBuilder();
+      mockJobRepository.createQueryBuilder.mockReturnValue(qb);
+
+      await service.getManyJobs({
+        page: 1,
+        limit: 10,
+        sortBy: 'createdAt',
+        sortOrder: SortOrder.DESC,
+        jobHistoryId: 'history-1',
+      } as never);
+
+      // Primary sort is the status-priority CASE, applied ascending so rank 0
+      // (in_progress) comes first.
+      expect(qb.orderBy).toHaveBeenCalledTimes(1);
+      const [orderExpr, orderDir] = qb.orderBy.mock.calls[0];
+      expect(orderExpr).toContain('CASE');
+      expect(orderExpr).toContain("'in_progress'");
+      expect(orderDir).toBe('ASC');
+
+      // Secondary sort is the client-requested column.
+      expect(qb.addOrderBy).toHaveBeenCalledWith('job.createdAt', SortOrder.DESC);
+
+      // The status priority must be applied BEFORE the column sort.
+      expect(qb.orderBy.mock.invocationCallOrder[0]).toBeLessThan(
+        qb.addOrderBy.mock.invocationCallOrder[0],
+      );
+    });
+  });
 
   describe('typed worker execution plan', () => {
     it('keeps a hostile-looking target as data instead of interpolating a command', () => {
