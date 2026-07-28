@@ -881,6 +881,15 @@ export type UpdateSystemConfigDto = {
 
 export type AssetDnsRecords = { [key: string]: unknown };
 
+export type AssetDnsResolutionStatus =
+  (typeof AssetDnsResolutionStatus)[keyof typeof AssetDnsResolutionStatus];
+
+export const AssetDnsResolutionStatus = {
+  unknown: 'unknown',
+  resolved: 'resolved',
+  unresolved: 'unresolved',
+} as const;
+
 export type Asset = {
   id: string;
   createdAt: string;
@@ -889,6 +898,7 @@ export type Asset = {
   targetId: string;
   isPrimary: boolean;
   dnsRecords: AssetDnsRecords;
+  dnsResolutionStatus: AssetDnsResolutionStatus;
   isEnabled: boolean;
 };
 
@@ -900,6 +910,7 @@ export const ToolCategory = {
   ports_scanner: 'ports_scanner',
   vulnerabilities: 'vulnerabilities',
   screenshot: 'screenshot',
+  service_discovery: 'service_discovery',
   classifier: 'classifier',
   assistant: 'assistant',
 } as const;
@@ -932,6 +943,9 @@ export type AssetService = {
   assetId: string;
   isErrorPage: boolean;
   screenshotPath?: string;
+  service?: string;
+  product?: string;
+  scheme?: string;
 };
 
 export type JobErrorLog = {
@@ -950,9 +964,11 @@ export type Job = {
   asset: Asset;
   category: string;
   status: string;
-  pickJobAt: string;
+  /** @nullable */
+  pickJobAt: string | null;
   tool: Tool;
-  completedAt: string;
+  /** @nullable */
+  completedAt: string | null;
   command: string;
   assetServiceId: string;
   assetService: AssetService;
@@ -1079,11 +1095,24 @@ export type GetManyJobHistoryResponseDtoDto = {
   pageCount: number;
 };
 
+export type JobHistoryStepDetail = {
+  toolId: string;
+  toolName: string;
+  total: number;
+  pending: number;
+  inProgress: number;
+  paused: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+};
+
 export type JobHistoryDetailResponseDto = {
   id: string;
   createdAt: string;
   updatedAt: string;
   tools: Tool[];
+  steps: JobHistoryStepDetail[];
   workflowName: string;
   jobHistoryName: string;
 };
@@ -1447,6 +1476,7 @@ export const CreateToolDtoCategory = {
   ports_scanner: 'ports_scanner',
   vulnerabilities: 'vulnerabilities',
   screenshot: 'screenshot',
+  service_discovery: 'service_discovery',
   classifier: 'classifier',
   assistant: 'assistant',
 } as const;
@@ -2958,6 +2988,7 @@ export const ToolsControllerGetManyToolsCategory = {
   ports_scanner: 'ports_scanner',
   vulnerabilities: 'vulnerabilities',
   screenshot: 'screenshot',
+  service_discovery: 'service_discovery',
   classifier: 'classifier',
   assistant: 'assistant',
 } as const;
@@ -2975,6 +3006,7 @@ export const ToolsControllerGetInstalledToolsCategory = {
   ports_scanner: 'ports_scanner',
   vulnerabilities: 'vulnerabilities',
   screenshot: 'screenshot',
+  service_discovery: 'service_discovery',
   classifier: 'classifier',
   assistant: 'assistant',
 } as const;

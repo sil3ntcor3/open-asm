@@ -78,6 +78,64 @@ describe('JobResultProcessor', () => {
     );
   });
 
+  // getNextStepForJob only advances the workflow once every job of the current
+  // step has left pending/in-progress. A failed job is just as terminal as a
+  // completed one, so if the LAST job of a step fails, the failure path has to
+  // drive the transition too — otherwise nothing ever fires it and the run
+  // stalls at that step forever.
+  it('advances the workflow when a job reaches final failure', async () => {
+    const storedJob = {
+      id: 'f23d232b-cb67-45a5-a1d4-4f6665e87792',
+      isSaveData: true,
+      tool: { type: WorkerType.BUILT_IN, name: 'naabu' },
+      jobHistory: { id: '32193967-812b-436f-8b4e-961d11f43b7b' },
+      status: JobStatus.IN_PROGRESS,
+    } as Job;
+
+    const jobsRegistryService = {
+      findJobForUpdate: jest.fn().mockResolvedValue(storedJob),
+      handleJobError: jest.fn().mockResolvedValue(undefined),
+      getNextStepForJob: jest.fn().mockResolvedValue(0),
+      markWorkflowDone: jest.fn().mockResolvedValue(undefined),
+    } as unknown as JobsRegistryService;
+    const storageService = {
+      readJsonFile: jest.fn().mockResolvedValue({
+        error: true,
+        outcome: 'failed',
+        failureMessage: 'scanner exited with code 1',
+      }),
+      deleteFile: jest.fn().mockResolvedValue(undefined),
+    } as unknown as StorageService;
+
+    const processor = new JobResultProcessor(
+      jobsRegistryService,
+      { syncData: jest.fn() } as unknown as DataAdapterService,
+      {} as RedisService,
+      storageService,
+      { save: jest.fn() } as unknown as Repository<Job>,
+    );
+
+    await expect(
+      processor.process({
+        data: {
+          workerId: 'worker-1',
+          jobId: storedJob.id,
+          resultRef: 'job-results/result.json',
+        },
+        attemptsMade: 0,
+        opts: { attempts: 1 },
+      } as BullJob<{ workerId: string; jobId: string; resultRef: string }>),
+    ).rejects.toThrow();
+
+    expect(jobsRegistryService.handleJobError).toHaveBeenCalled();
+    expect(jobsRegistryService.getNextStepForJob).toHaveBeenCalledWith(
+      storedJob,
+    );
+    expect(jobsRegistryService.markWorkflowDone).toHaveBeenCalledWith(
+      storedJob.jobHistory.id,
+    );
+  });
+
   it('treats a screenshot capture failure as a completed best-effort step', async () => {
     // A screenshot is best-effort enrichment: failing to capture one (e.g. the
     // target is a non-web service such as SMTP:465) must not fail the job or the

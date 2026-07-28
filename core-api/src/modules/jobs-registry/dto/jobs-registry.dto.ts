@@ -11,6 +11,7 @@ import { ApiProperty, PickType } from '@nestjs/swagger';
 import { Expose, Transform, Type } from 'class-transformer';
 import { IsBoolean, IsIn, IsObject, IsOptional, IsUUID } from 'class-validator';
 import { IsEnum, IsInt, IsString } from 'class-validator';
+import type { EntityManager } from 'typeorm';
 import { JobHistory } from '../entities/job-history.entity';
 import { Job } from '../entities/job.entity';
 
@@ -265,6 +266,14 @@ export class CreateJobs extends PickType(Job, [
   jobHistory?: JobHistory;
   jobName?: string;
   jobRunType?: JobRunType;
+  /**
+   * Runs every read and write on this EntityManager instead of checking out a
+   * fresh pooled connection. Callers already inside a transaction MUST pass it:
+   * the pg pool and the job-result processor are both sized at 10, so a caller
+   * that holds a connection and then implicitly asks for a second one can
+   * deadlock the pool.
+   */
+  manager?: EntityManager;
 }
 
 /**

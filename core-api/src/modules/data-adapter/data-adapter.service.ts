@@ -25,6 +25,8 @@ import { StorageService } from '../storage/storage.service';
 import { Vulnerability } from '../vulnerabilities/entities/vulnerability.entity';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import { DataAdapterInput } from './data-adapter.interface';
+import { TARPIT_OPEN_PORT_THRESHOLD } from '@/common/constants/app.constants';
+
 @Injectable()
 export class DataAdapterService {
   private readonly logger = new Logger(DataAdapterService.name);
@@ -203,8 +205,30 @@ export class DataAdapterService {
         })
         .execute();
 
+      // Tarpit guard. Target-side scan detection (a firewall or IPS answering
+      // the SYN on every probed port) makes naabu report hundreds of "open"
+      // ports for a single host. Those are not reachable services, and deriving
+      // an asset_service from each one is corrosive twice over: it inflates the
+      // inventory and service counts shown to the operator, and it multiplies
+      // every downstream per-service step (nmap, httpx, screenshot) by the same
+      // bogus factor. In the enerbank.com discovery, 121 of 338 assets came back
+      // in the 50-435 open-port range and accounted for 27,318 of the 28,091
+      // asset_services — the remaining 217 hosts produced under 800 between them.
+      //
+      // The raw Port row above is still written, so the scan result is preserved
+      // for inspection and nothing is silently discarded; we only decline to
+      // treat an implausible result as a set of real services.
+      const isImplausiblePortCount =
+        uniquePorts.length > TARPIT_OPEN_PORT_THRESHOLD;
+
+      if (isImplausiblePortCount) {
+        this.logger.warn(
+          `Skipping asset service creation for ${job.asset.value}: ${uniquePorts.length} open ports exceeds the ${TARPIT_OPEN_PORT_THRESHOLD} threshold, treating the port scan as scan-detection noise`,
+        );
+      }
+
       // Insert asset services data
-      if (uniquePorts && uniquePorts.length > 0) {
+      if (!isImplausiblePortCount && uniquePorts && uniquePorts.length > 0) {
         const assetServices = uniquePorts.map((port) => ({
           value: `${job.asset.value}:${port}`,
           port: port,

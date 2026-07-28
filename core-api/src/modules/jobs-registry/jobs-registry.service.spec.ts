@@ -55,6 +55,7 @@ describe('JobsRegistryService', () => {
   const mockDataSource = {
     createQueryRunner: jest.fn(),
     getRepository: jest.fn(),
+    transaction: jest.fn(),
   };
 
   const mockDataAdapterService = {
@@ -101,6 +102,7 @@ describe('JobsRegistryService', () => {
     mockJobErrorLogRepository.save.mockReset();
     mockDataSource.createQueryRunner.mockReset();
     mockDataSource.getRepository.mockReset();
+    mockDataSource.transaction.mockReset();
     mockDataAdapterService.syncData.mockReset();
     mockStorageService.upload.mockReset();
     mockRedisService.publish.mockReset();
@@ -172,6 +174,48 @@ describe('JobsRegistryService', () => {
     };
     mockJobHistoryRepository.createQueryBuilder.mockReturnValue(qb);
     return qb;
+  };
+
+  /**
+   * Mocks the run-level state that getNextStepForJob inspects before advancing:
+   * whether the run still has open (pending/in-progress) jobs, and which tools
+   * already have jobs in the run (used to resume from the furthest step).
+   */
+  const mockRunState = ({
+    hasOpenJobs = false,
+    toolsInRun = [] as string[],
+  } = {}) => {
+    // The unlocked pre-check reads through the injected repository; the locked
+    // re-check reads through the transaction manager's repository.
+    mockJobRepository.exists.mockResolvedValue(hasOpenJobs);
+    // One chainable builder serves both reads the locked section makes: the
+    // DISTINCT tool-name lookup (getRawMany) and any asset/service lookup
+    // createNewJob performs on the same manager (getMany).
+    const stepQb = {
+      select: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      innerJoinAndSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getRawMany: jest
+        .fn()
+        .mockResolvedValue(toolsInRun.map((name) => ({ name }))),
+      getMany: jest.fn().mockResolvedValue([{ id: 'asset-1', isPrimary: true }]),
+    };
+    const managerRepo = {
+      exists: jest.fn().mockResolvedValue(hasOpenJobs),
+      createQueryBuilder: jest.fn().mockReturnValue(stepQb),
+      create: jest.fn().mockReturnValue({}),
+      save: jest.fn().mockResolvedValue([{}]),
+    };
+    const manager = {
+      query: jest.fn().mockResolvedValue([]),
+      getRepository: jest.fn().mockReturnValue(managerRepo),
+    };
+    mockDataSource.transaction.mockImplementation(
+      (cb: (m: typeof manager) => Promise<number>) => cb(manager),
+    );
+    return { manager, managerRepo, stepQb };
   };
 
   describe('job status display ordering', () => {
@@ -917,7 +961,18 @@ describe('JobsRegistryService', () => {
         getExists: jest.fn().mockResolvedValue(true),
       });
       mockToolsService.getInstalledTools.mockResolvedValue({
-        data: [{ name: 'test-tool' }],
+        data: [{ id: 'tool-1', name: 'test-tool' }],
+      });
+      mockJobRepository.createQueryBuilder.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        groupBy: jest.fn().mockReturnThis(),
+        addGroupBy: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([
+          { toolName: 'test-tool', status: JobStatus.COMPLETED, count: '1' },
+        ]),
       });
 
       const result = await service.getJobHistoryDetail(
@@ -925,13 +980,12 @@ describe('JobsRegistryService', () => {
         mockHistoryId,
       );
 
+      // The whole-run job rows are no longer materialised just to render the
+      // pipeline; only the workflow is joined and counts come from an aggregate.
       expect(mockJobHistoryRepository.findOne).toHaveBeenCalledWith({
         where: { id: mockHistoryId },
         relations: {
           workflow: true,
-          jobs: {
-            tool: true,
-          },
         },
       });
       expect(result).toEqual({
@@ -940,8 +994,97 @@ describe('JobsRegistryService', () => {
         jobHistoryName: 'test-job-history',
         createdAt: mockJobHistory.createdAt,
         updatedAt: mockJobHistory.updatedAt,
-        tools: [{ name: 'test-tool' }],
+        tools: [{ id: 'tool-1', name: 'test-tool' }],
+        steps: [
+          {
+            toolId: 'tool-1',
+            toolName: 'test-tool',
+            total: 1,
+            pending: 0,
+            inProgress: 0,
+            paused: 0,
+            completed: 1,
+            failed: 0,
+            cancelled: 0,
+          },
+        ],
       });
+    });
+
+    // Regression: the pipeline indicator derived each step's state from the
+    // first page of the paginated job list. On a 338-asset discovery (2,141
+    // jobs) page one held only the running step, so finished steps disappeared
+    // from the payload and rendered as "pending" forever. The detail endpoint
+    // now returns whole-run counts per step, which no page size can truncate.
+    it('returns per-step job counts covering the whole run', async () => {
+      mockJobHistoryRepository.findOne.mockResolvedValue(mockJobHistory);
+      mockJobHistoryRepository.createQueryBuilder.mockReturnValue({
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getExists: jest.fn().mockResolvedValue(true),
+      });
+      mockToolsService.getInstalledTools.mockResolvedValue({
+        data: [
+          { id: 'tool-subfinder', name: 'subfinder' },
+          { id: 'tool-naabu', name: 'naabu' },
+          { id: 'tool-nmap', name: 'nmap' },
+        ],
+      });
+      mockJobHistoryRepository.findOne.mockResolvedValue({
+        ...mockJobHistory,
+        workflow: {
+          name: 'test-workflow',
+          content: {
+            jobs: [{ run: 'subfinder' }, { run: 'naabu' }, { run: 'nmap' }],
+          },
+        },
+      });
+      // Aggregate rows as the GROUP BY returns them (tool name + status).
+      mockJobRepository.createQueryBuilder.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        groupBy: jest.fn().mockReturnThis(),
+        addGroupBy: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([
+          { toolName: 'subfinder', status: JobStatus.COMPLETED, count: '1' },
+          { toolName: 'naabu', status: JobStatus.COMPLETED, count: '338' },
+          { toolName: 'nmap', status: JobStatus.IN_PROGRESS, count: '3' },
+          { toolName: 'nmap', status: JobStatus.PENDING, count: '1716' },
+          { toolName: 'nmap', status: JobStatus.COMPLETED, count: '83' },
+        ]),
+      });
+
+      const result = await service.getJobHistoryDetail(
+        mockWorkspaceId,
+        mockHistoryId,
+      );
+
+      expect(result.steps).toEqual([
+        expect.objectContaining({
+          toolName: 'subfinder',
+          total: 1,
+          completed: 1,
+          pending: 0,
+          inProgress: 0,
+        }),
+        expect.objectContaining({
+          toolName: 'naabu',
+          total: 338,
+          completed: 338,
+          pending: 0,
+          inProgress: 0,
+        }),
+        expect.objectContaining({
+          toolName: 'nmap',
+          total: 1802,
+          completed: 83,
+          inProgress: 3,
+          pending: 1716,
+        }),
+      ]);
     });
 
     it('should throw NotFoundException when job history not found', async () => {
@@ -1184,6 +1327,111 @@ describe('JobsRegistryService', () => {
       },
     };
 
+    beforeEach(() => {
+      // Default: run is quiesced and only the completing tool has jobs.
+      mockRunState({ hasOpenJobs: false, toolsInRun: ['tool-a'] });
+    });
+
+    // Regression (enerbank.com run 92ad0fd1): the 4th of 338 naabu jobs finished
+    // on an asset with no discovered services. Because every later asset-scoped
+    // step yielded zero jobs for that one asset, the forward-walk ran straight to
+    // Nuclei and fanned it out target-wide while 334 port scans were still
+    // pending. A step transition must not happen while the run has open jobs.
+    it('does not advance while the run still has open jobs', async () => {
+      mockRunState({ hasOpenJobs: true, toolsInRun: ['tool-a'] });
+      const createSpy = jest
+        .spyOn(service, 'createNewJob')
+        .mockResolvedValue([{} as any]);
+
+      const result = await service.getNextStepForJob(mockJob as any);
+
+      expect(createSpy).not.toHaveBeenCalled();
+      expect(result).toBe(0);
+      createSpy.mockRestore();
+    });
+
+    // Connection-pool safety. The pg pool defaults to 10 connections and the
+    // result processor runs at concurrency 10, so if every completion opened a
+    // locking transaction, ten waiters would hold the whole pool while blocked
+    // on the advisory lock. The overwhelming majority of completions are NOT the
+    // last of their step, so they must answer from a single unlocked query and
+    // never open a transaction at all.
+    it('answers without opening a transaction when the step is unfinished', async () => {
+      mockRunState({ hasOpenJobs: true, toolsInRun: ['tool-a'] });
+
+      const result = await service.getNextStepForJob(mockJob as any);
+
+      expect(mockDataSource.transaction).not.toHaveBeenCalled();
+      expect(result).toBe(0);
+    });
+
+    // The lock holder must do ALL of its work on the transaction's own
+    // EntityManager. Reaching for this.dataSource inside the critical section
+    // would need a SECOND pooled connection while the first is still held —
+    // which deadlocked the real enerbank.com run: the last naabu completion hung
+    // past the BullMQ lock duration and the pipeline stalled with every job
+    // terminal and the run never advancing to nmap.
+    it('creates the next step on the locking transaction manager', async () => {
+      const { manager } = mockRunState({
+        hasOpenJobs: false,
+        toolsInRun: ['tool-a'],
+      });
+      mockToolsService.getToolByNames.mockResolvedValue([
+        { name: 'tool-b', priority: 4, category: 'http_probe' },
+      ]);
+      const createSpy = jest
+        .spyOn(service, 'createNewJob')
+        .mockResolvedValue([{} as any]);
+
+      await service.getNextStepForJob(mockJob as any);
+
+      expect(createSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ manager }),
+      );
+      createSpy.mockRestore();
+    });
+
+    // The last job to finish drives the transition, and it may belong to an
+    // earlier step than the run already reached. Resuming from the completing
+    // job's own index would re-create steps that already ran.
+    it('resumes from the furthest workflow step already present in the run', async () => {
+      const threeStep = {
+        ...mockJob,
+        tool: { name: 'tool-a' },
+        jobHistory: {
+          id: 'jh-uuid',
+          workflow: {
+            content: {
+              jobs: [
+                { name: 'job-1', run: 'tool-a' },
+                { name: 'job-2', run: 'tool-b' },
+                { name: 'job-3', run: 'tool-c' },
+              ],
+            },
+            workspace: { id: 'workspace-uuid' },
+          },
+        },
+      };
+      mockRunState({ hasOpenJobs: false, toolsInRun: ['tool-a', 'tool-b'] });
+      mockToolsService.getToolByNames.mockImplementation(
+        ({ names }: { names: string[] }) =>
+          Promise.resolve(names.map((name) => ({ name, category: 'nuclei' }))),
+      );
+      const createSpy = jest
+        .spyOn(service, 'createNewJob')
+        .mockResolvedValue([{} as any]);
+
+      await service.getNextStepForJob(threeStep as any);
+
+      expect(createSpy).toHaveBeenCalledTimes(1);
+      expect(createSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tool: expect.objectContaining({ name: 'tool-c' }),
+        }),
+      );
+      createSpy.mockRestore();
+    });
+
     it('should return 0 when no workflow exists', async () => {
       const jobNoWorkflow = { ...mockJob, jobHistory: { workflow: null } };
 
@@ -1257,7 +1505,11 @@ describe('JobsRegistryService', () => {
       expect(result).toBe(1);
     });
 
-    it('scopes a non-target-wide next step to the triggering asset', async () => {
+    // A step transition is now a run-level event fired once the previous step has
+    // fully drained, not a per-asset event. Scoping the new step to the single
+    // asset whose completion happened to trigger it would strand every other
+    // asset in the target at that step.
+    it('fans every next step out across the whole target, not the triggering asset', async () => {
       mockToolsService.getToolByNames.mockResolvedValue([
         { name: 'tool-b', priority: 4, category: 'http_probe' },
       ]);
@@ -1268,7 +1520,7 @@ describe('JobsRegistryService', () => {
       await service.getNextStepForJob(mockJob as any);
 
       expect(createSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ assetIds: ['asset-uuid-for-mockjob'] }),
+        expect.objectContaining({ assetIds: [], targetIds: ['target-uuid'] }),
       );
       createSpy.mockRestore();
     });
@@ -1326,6 +1578,7 @@ describe('JobsRegistryService', () => {
     };
 
     it('skips a zero-job next step and creates the following step instead', async () => {
+      mockRunState({ hasOpenJobs: false, toolsInRun: ['httpx'] });
       mockToolsService.getToolByNames.mockImplementation(
         ({ names }: { names: string[] }) =>
           Promise.resolve(names.map((n) => toolByName[n])),
@@ -1354,6 +1607,7 @@ describe('JobsRegistryService', () => {
     });
 
     it('does not advance past a next step that already yields jobs', async () => {
+      mockRunState({ hasOpenJobs: false, toolsInRun: ['httpx'] });
       mockToolsService.getToolByNames.mockImplementation(
         ({ names }: { names: string[] }) =>
           Promise.resolve(names.map((n) => toolByName[n])),
@@ -1374,6 +1628,61 @@ describe('JobsRegistryService', () => {
       );
       expect(result).toBe(1);
       createSpy.mockRestore();
+    });
+  });
+
+  describe('getNextJob dispatch ordering', () => {
+    // Regression: JobPriority is CRITICAL=0 .. BACKGROUND=4, so the most urgent
+    // job has the LOWEST value. Dispatching with `priority DESC` handed out
+    // BACKGROUND work first and starved CRITICAL work. In the enerbank.com run
+    // this let Nuclei (LOW=3) drain the queue ahead of naabu/nmap (MEDIUM=2):
+    // 73 vulnerability jobs ran while nmap never started a single job.
+    it('hands out the most urgent job first (priority ASC, then oldest)', async () => {
+      const queryBuilder = {
+        innerJoinAndSelect: jest.fn().mockReturnThis(),
+        innerJoin: jest.fn().mockReturnThis(),
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        setLock: jest.fn().mockReturnThis(),
+        setOnLocked: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+      };
+      const queryRunner = {
+        connect: jest.fn(),
+        startTransaction: jest.fn(),
+        commitTransaction: jest.fn(),
+        rollbackTransaction: jest.fn(),
+        release: jest.fn(),
+        manager: {
+          createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+          update: jest.fn(),
+        },
+      };
+      mockDataSource.createQueryRunner.mockReturnValue(queryRunner);
+      mockDataSource.getRepository.mockReturnValue({
+        findOne: jest.fn().mockResolvedValue({
+          id: 'worker-uuid',
+          type: 'built_in',
+          scope: 'cloud',
+          isPaused: false,
+          nucleiTemplateStatus: 'ready',
+          workspace: { id: 'workspace-uuid' },
+          tool: { id: 'tool-uuid', category: ToolCategory.PORTS_SCANNER },
+        }),
+      });
+
+      await service.getNextJob('worker-uuid');
+
+      expect(queryBuilder.orderBy).toHaveBeenCalledWith('jobs.priority', 'ASC');
+      expect(queryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'jobs.createdAt',
+        'ASC',
+      );
     });
   });
 
