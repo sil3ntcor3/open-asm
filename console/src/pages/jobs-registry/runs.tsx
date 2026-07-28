@@ -42,7 +42,7 @@ import {
   MoreHorizontal,
   X,
 } from 'lucide-react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 const getJobTitle = (row: Job) => {
   const value = row?.assetService
@@ -66,43 +66,53 @@ const isJobTerminal = (job: Job) =>
 
 export type PipelineStepStatus = 'pending' | 'running' | 'completed' | 'failed';
 
+/** Whole-run job counts for one workflow step, as returned by the API. */
+export type PipelineStepCounts = {
+  total: number;
+  pending: number;
+  inProgress: number;
+  paused: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+};
+
+const activeCount = (s: PipelineStepCounts) =>
+  s.pending + s.inProgress + s.paused;
+
 /**
- * Derives the pipeline-indicator status of one workflow step (tool) from the
- * jobs of the steps before it and the jobs of the step itself.
+ * Derives the pipeline-indicator status of one workflow step from whole-run job
+ * counts for the steps before it and for the step itself.
+ *
+ * Counts rather than job rows, deliberately. These used to be derived from the
+ * first page of the paginated job list, which cannot survive a run bigger than
+ * one page: that list is ordered active-work-first, so on the enerbank.com
+ * discovery (2,141 jobs) page one held only the running nmap step and the
+ * already-finished subfinder and naabu steps had no rows in the payload at all
+ * — they rendered as "pending" for the rest of the run.
  *
  * A previous step only holds this one at "pending" while it still has ACTIVE
- * work (running or queued). A previous step that has already finished — even
- * with some failed jobs — must not pin this step at "pending". Treating a
- * failed upstream job as "not completed" is what made nuclei render as
- * "pending" when it had in fact already run to completion, purely because the
- * screenshot step before it had failures.
+ * work. A previous step that has already finished — even with some failed jobs
+ * — must not pin this step at "pending". Treating a failed upstream job as "not
+ * completed" is what made nuclei render as "pending" when it had in fact
+ * already run to completion, purely because the screenshot step had failures.
  */
 export function derivePipelineStepStatus(
-  previousStepsJobs: { status?: string }[][],
-  currentStepJobs: { status?: string }[],
+  previousSteps: PipelineStepCounts[],
+  currentStep: PipelineStepCounts | undefined,
 ): PipelineStepStatus {
-  for (const prevJobs of previousStepsJobs) {
-    const stillActive = prevJobs.some(
-      (job) =>
-        job.status === JobStatus.in_progress ||
-        job.status === JobStatus.pending,
-    );
-    if (stillActive) return 'pending';
+  for (const previous of previousSteps) {
+    if (activeCount(previous) > 0) return 'pending';
   }
 
-  if (currentStepJobs.length === 0) return 'pending';
-  if (currentStepJobs.some((job) => job.status === JobStatus.failed)) {
-    return 'failed';
-  }
-  if (currentStepJobs.some((job) => job.status === JobStatus.in_progress)) {
-    return 'running';
-  }
-  if (currentStepJobs.every((job) => job.status === JobStatus.completed)) {
-    return 'completed';
-  }
-  if (currentStepJobs.every((job) => job.status === JobStatus.pending)) {
-    return 'pending';
-  }
+  if (!currentStep || currentStep.total === 0) return 'pending';
+  if (currentStep.failed > 0) return 'failed';
+  if (currentStep.inProgress > 0) return 'running';
+  if (currentStep.pending === currentStep.total) return 'pending';
+  // Nothing active left and no failures: the step is done. This also covers a
+  // step that ended with cancellations, which previously fell through to
+  // "running" and left a finished run showing a spinner forever.
+  if (activeCount(currentStep) === 0) return 'completed';
   return 'running';
 }
 
@@ -110,22 +120,18 @@ export function derivePipelineStepStatus(
 export const JOBS_POLL_INTERVAL_MS = 1000;
 
 /**
- * True while any job is still active (queued or running). Gates the run-detail
- * polling: both the pipeline-indicator query (which feeds the pills) and the
- * job-table query refetch on an interval only while this holds, and stop once
- * every job is terminal. The pipeline pills previously froze mid-run because the
- * query feeding them was never given a refetch interval, so its snapshot — and
- * therefore this predicate, which is derived from it — stayed stuck at whatever
- * the jobs looked like when the page first loaded.
+ * True while any workflow step still has active (queued, running or paused)
+ * work. Gates the run-detail polling: the job table refetches on an interval
+ * only while this holds, and stops once every job is terminal.
+ *
+ * Derived from the detail endpoint's whole-run step counts. It used to be
+ * derived from a separate 100-row job query, which both duplicated the polling
+ * and could not describe a run larger than one page.
  */
-export function jobsAreActive(
-  jobs: { status?: string }[] | undefined,
+export function stepsAreActive(
+  steps: PipelineStepCounts[] | undefined,
 ): boolean {
-  return (jobs ?? []).some(
-    (job) =>
-      job.status === JobStatus.in_progress ||
-      job.status === JobStatus.pending,
-  );
+  return (steps ?? []).some((step) => activeCount(step) > 0);
 }
 
 const getJobEndedAt = (job: Job) => {
@@ -293,10 +299,13 @@ export default function Runs() {
     isUpdateSearchQueryParam: false,
   });
 
-  const { data: jobHistoryDetail } =
+  // Drives both the pipeline pills and the active-run detection, so it must
+  // keep polling while the run advances.
+  const { data: jobHistoryDetail, error: jobHistoryDetailError } =
     useJobsRegistryControllerGetJobHistoryDetail(jobHistoryId || '', {
       query: {
-        refetchInterval: 1000,
+        refetchInterval: JOBS_POLL_INTERVAL_MS,
+        refetchIntervalInBackground: true,
       },
     });
 
@@ -308,30 +317,15 @@ export default function Runs() {
   // are all terminal; keep polling in the background so a run opened in an
   // inactive tab still advances live. The interval reads the query's own latest
   // data, so it re-evaluates after every refetch.
-  const {
-    data: allJobsData,
-    error: allJobsError,
-  } = useJobsRegistryControllerGetManyJobs({
-    page: 1,
-    limit: 100,
-    sortBy: 'createdAt',
-    sortOrder: 'ASC',
-    jobHistoryId: jobHistoryId || '',
-  }, {
-    query: {
-      refetchInterval: (query) =>
-        jobsAreActive(query.state.data?.data) ? JOBS_POLL_INTERVAL_MS : false,
-      refetchIntervalInBackground: true,
-    },
-  });
-
-  // Whether the run still has active jobs, derived from the (now polling)
-  // all-jobs snapshot. Gates the paginated table's refetch below — using the
-  // global snapshot rather than the current page so polling doesn't stop just
-  // because the visible page happens to hold only terminal jobs.
+  // Whether the run still has active jobs, derived from the detail endpoint's
+  // whole-run step counts. Gates the paginated table's refetch below — using
+  // run-wide counts rather than the visible page so polling doesn't stop just
+  // because the current page happens to hold only terminal jobs. This replaced
+  // a second 100-row job query that was polled once a second purely to answer
+  // this question and to feed the pipeline pills; both now come from counts.
   const hasActiveJobs = useMemo(
-    () => jobsAreActive(allJobsData?.data),
-    [allJobsData?.data],
+    () => stepsAreActive(jobHistoryDetail?.steps as PipelineStepCounts[] | undefined),
+    [jobHistoryDetail?.steps],
   );
 
   const {
@@ -353,34 +347,6 @@ export default function Runs() {
   });
   const paginatedJobsQueryKeyRef = useRef(paginatedJobsQueryKey);
   paginatedJobsQueryKeyRef.current = paginatedJobsQueryKey;
-
-  // Memoize jobs grouped by tool ID for efficient lookups, with name-based fallback
-  const jobsByToolId = useMemo(() => {
-    const jobs = allJobsData?.data || [];
-    const byId = new Map<string, Job[]>();
-    const byName = new Map<string, Job[]>();
-    jobs.forEach((job) => {
-      if (!job.tool) return;
-      const id = job.tool.id;
-      if (!byId.has(id)) byId.set(id, []);
-      byId.get(id)!.push(job);
-      const name = job.tool.name.toLowerCase();
-      if (!byName.has(name)) byName.set(name, []);
-      byName.get(name)!.push(job);
-    });
-    return { byId, byName };
-  }, [allJobsData?.data]);
-
-  // Get jobs for a tool, matching by ID first then by name as fallback
-  const getJobsForTool = useCallback((toolId: string, toolName?: string): Job[] => {
-    if (!jobsByToolId) return [];
-    const byId = jobsByToolId.byId.get(toolId);
-    if (byId) return byId;
-    if (toolName) {
-      return jobsByToolId.byName.get(toolName.toLowerCase()) || [];
-    }
-    return [];
-  }, [jobsByToolId]);
 
   const columns = useMemo<ColumnDef<Job>[]>(() => [
     {
@@ -517,30 +483,15 @@ export default function Runs() {
     resumeJobMutate,
   ]);
 
+  // Step state comes from the detail endpoint's whole-run counts, which are
+  // aligned with `tools` by workflow order. Reading it from the paginated job
+  // list instead is what froze finished steps at "pending" on any run larger
+  // than one page.
   const getToolStatus = useMemo(() => {
-    return (toolIndex: number): PipelineStepStatus => {
-      const tools = jobHistoryDetail?.tools || [];
-
-      const previousStepsJobs: Job[][] = [];
-      for (let i = 0; i < toolIndex; i++) {
-        const prevTool = tools[i];
-        if (!prevTool) {
-          console.warn(`Previous tool is undefined at index: ${i}`);
-          continue;
-        }
-        previousStepsJobs.push(getJobsForTool(prevTool.id, prevTool.name));
-      }
-
-      const currentTool = tools[toolIndex];
-      if (!currentTool) {
-        console.warn(`Current tool is undefined at index: ${toolIndex}`);
-        return 'pending';
-      }
-      const currentToolJobs = getJobsForTool(currentTool.id, currentTool.name);
-
-      return derivePipelineStepStatus(previousStepsJobs, currentToolJobs);
-    };
-  }, [jobHistoryDetail?.tools, getJobsForTool]);
+    const steps = (jobHistoryDetail?.steps || []) as PipelineStepCounts[];
+    return (toolIndex: number): PipelineStepStatus =>
+      derivePipelineStepStatus(steps.slice(0, toolIndex), steps[toolIndex]);
+  }, [jobHistoryDetail?.steps]);
 
   const navigate = useNavigate();
   return (
@@ -599,7 +550,7 @@ export default function Runs() {
         </div>
       )}
 
-      {!!allJobsError && (
+      {!!jobHistoryDetailError && (
         <div className="mb-4 p-4 rounded-lg bg-destructive/10 text-destructive text-sm">
           Failed to load pipeline status. Please try again.
         </div>

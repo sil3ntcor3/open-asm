@@ -35,3 +35,22 @@ export const BOT_NAME = 'Cai';
 export const STORAGE_BASE_PATH = '/api/storage';
 export const GITHUB_REPO = 'sil3ntcor3/open-asm';
 export const DEFAULT_ENCRYPTION_KEY = 'OASM_DEFAULT_ENCRYPTION_KEY';
+
+/**
+ * Above this many open ports on a single host, a port-scan result is treated as
+ * target-side scan detection rather than a real service list (see the tarpit
+ * guard in DataAdapterService.portsScanner).
+ *
+ * A genuine internet-facing host exposes a handful of ports; a tarpit answers on
+ * effectively all of them. 100 sits well clear of any legitimate host while
+ * still catching the noise: in the enerbank.com discovery every flagged asset
+ * reported 101-435 open ports, and no host sat near the boundary from below.
+ * Override with OASM_TARPIT_OPEN_PORT_THRESHOLD when a target legitimately
+ * exposes more (set it to 0 to disable the guard entirely).
+ */
+export const TARPIT_OPEN_PORT_THRESHOLD = (() => {
+  const configured = Number(process.env.OASM_TARPIT_OPEN_PORT_THRESHOLD);
+  if (!Number.isFinite(configured) || configured < 0) return 100;
+  // 0 disables the guard: no port count can exceed Infinity.
+  return configured === 0 ? Number.POSITIVE_INFINITY : configured;
+})();

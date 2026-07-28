@@ -164,6 +164,28 @@ export class JobResultProcessor extends WorkerHost {
           error,
         );
 
+        // A failed job is a terminal outcome for its workflow step, exactly like
+        // a completed one. getNextStepForJob only advances once every job of the
+        // step has left pending/in-progress, so when the LAST job of a step
+        // fails, this is the only thing that can fire the transition — without
+        // it the run stalls at that step forever. Failures are routine here
+        // (unreachable hosts, filtered ports), so this path is load-bearing, not
+        // an edge case.
+        try {
+          const nextStepJobCount =
+            await this.jobsRegistryService.getNextStepForJob(job);
+
+          if (nextStepJobCount === 0) {
+            await this.jobsRegistryService.markWorkflowDone(job.jobHistory.id);
+          }
+        } catch (advanceError) {
+          // Never let a transition problem mask the original job failure.
+          this.logger.error(
+            `Failed to advance workflow after job ${jobId} failed:`,
+            advanceError,
+          );
+        }
+
         // Final failure: delete the result file
         try {
           await this.storageService.deleteFile(fileName, bucket);

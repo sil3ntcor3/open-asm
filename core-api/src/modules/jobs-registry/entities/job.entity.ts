@@ -43,7 +43,10 @@ export class Job extends BaseEntity {
   /**
    * The timestamp when the job was picked up by a worker.
    */
-  @ApiProperty()
+  // Explicit type/format: a bare @ApiProperty() cannot infer through `Date |
+  // null`, so Swagger emitted a free-form object and the generated client typed
+  // it as `{ [key: string]: unknown }` — unusable as a date.
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
   @Column({ type: 'timestamp', nullable: true })
   pickJobAt?: Date | null;
 
@@ -77,7 +80,7 @@ export class Job extends BaseEntity {
   /**
    * The timestamp when the job was completed.
    */
-  @ApiProperty()
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
   @Column({ type: 'timestamp', nullable: true })
   completedAt?: Date | null;
 

@@ -32,7 +32,14 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
 import { randomUUID } from 'crypto';
-import { DataSource, DeepPartial, In, Repository } from 'typeorm';
+import {
+  DataSource,
+  DeepPartial,
+  EntityManager,
+  In,
+  Repository,
+} from 'typeorm';
+import { TARPIT_OPEN_PORT_THRESHOLD } from '@/common/constants/app.constants';
 import { AssetService } from '../assets/entities/asset-services.entity';
 import { Asset } from '../assets/entities/assets.entity';
 import { StorageService } from '../storage/storage.service';
@@ -42,7 +49,10 @@ import { builtInTools } from '../tools/tools-provider/built-in-tools';
 import { ToolsService } from '../tools/tools.service';
 import { WorkerInstance } from '../workers/entities/worker.entity';
 import { GetManyJobsRequestDto } from './dto/get-many-jobs-dto';
-import { JobHistoryDetailResponseDto } from './dto/job-history-detail.dto';
+import {
+  JobHistoryDetailResponseDto,
+  JobHistoryStepDetail,
+} from './dto/job-history-detail.dto';
 import { JobHistoryResponseDto } from './dto/job-history.dto';
 import {
   CreateJobs,
@@ -217,19 +227,6 @@ export function deriveJobHistoryStatus(
   return JobStatus.PENDING;
 }
 
-/**
- * Tool categories whose jobs are scoped to the whole target (every enabled
- * host) rather than a single asset. When one of these is the next workflow
- * step, {@link JobsRegistryService.getNextStepForJob} fans it out across all
- * enabled assets instead of the one asset that triggered the transition.
- * PORTS_SCANNER is already forced target-wide inside createNewJob; VULNERABILITIES
- * (Nuclei) is added here so vulnerability scanning covers the full attack surface.
- */
-const TARGET_WIDE_NEXT_STEP_CATEGORIES = new Set<ToolCategory>([
-  ToolCategory.PORTS_SCANNER,
-  ToolCategory.VULNERABILITIES,
-]);
-
 @Injectable()
 export class JobsRegistryService {
   constructor(
@@ -329,22 +326,35 @@ export class JobsRegistryService {
     jobName,
     isPublishEvent,
     jobRunType,
+    manager,
   }: CreateJobs): Promise<Job[]> {
     if (!tool) {
       throw new Error('Tool is required for creating a job');
     }
 
+    // Every repository below resolves through this. When a caller hands us a
+    // transactional manager we must stay on its connection: taking a second one
+    // from the pool while the caller still holds the first is what deadlocked
+    // the workflow step transition (pool max 10, processor concurrency 10).
+    const dbSource: DataSource | EntityManager = manager ?? this.dataSource;
+
     if (!tool.category) {
       throw new Error('Tool category is required for creating a job');
     }
 
+    // Resolve priority, falling back to the tool's default when the caller gave
+    // none or gave one outside the enum range. The checks must be nullish-aware,
+    // not truthiness-based: CRITICAL is 0, so `priority || fallback` and
+    // `if (!priority)` both discarded the single most urgent value and silently
+    // demoted it to the tool default (or BACKGROUND) — CRITICAL was unreachable.
+    const fallbackPriority = tool.priority ?? JobPriority.BACKGROUND;
     if (
-      priority &&
-      (priority < JobPriority.CRITICAL || priority > JobPriority.BACKGROUND)
+      priority === undefined ||
+      priority === null ||
+      priority < JobPriority.CRITICAL ||
+      priority > JobPriority.BACKGROUND
     ) {
-      priority = tool.priority || JobPriority.BACKGROUND;
-    } else if (!priority) {
-      priority = tool.priority || JobPriority.BACKGROUND;
+      priority = fallbackPriority;
     }
     // Step 1: create job history
     let jobHistory: JobHistory;
@@ -352,12 +362,15 @@ export class JobsRegistryService {
     if (existingJobHistory) {
       jobHistory = existingJobHistory;
     } else {
-      jobHistory = this.jobHistoryRepo.create({
+      const jobHistoryRepo = manager
+        ? manager.getRepository(JobHistory)
+        : this.jobHistoryRepo;
+      jobHistory = jobHistoryRepo.create({
         workflow,
         jobRunType,
         jobHistoryName: jobName,
       });
-      await this.jobHistoryRepo.save(jobHistory);
+      await jobHistoryRepo.save(jobHistory);
       this.eventEmitter.emit(EventTriggerType.WORKFLOW_START, {
         tool,
         targetIds,
@@ -373,7 +386,7 @@ export class JobsRegistryService {
       });
     }
 
-    const jobRepo = this.dataSource.getRepository(Job);
+    const jobRepo = dbSource.getRepository(Job);
     const jobsToInsert: Job[] = [];
 
     // Step 2: find appropriate data source based on tool category
@@ -388,6 +401,7 @@ export class JobsRegistryService {
         assetIds,
         workspaceId,
         tool.category,
+        dbSource,
       );
 
       // Step 3: iterate tools and create jobs
@@ -405,7 +419,7 @@ export class JobsRegistryService {
           status: JobStatus.PENDING,
           category: tool.category,
           tool,
-          priority: priority ?? 4,
+          priority,
           jobHistory,
           // Command is display-only. Workers receive a typed execution plan
           // and never evaluate this string in a shell.
@@ -426,6 +440,7 @@ export class JobsRegistryService {
         assetIds,
         workspaceId,
         tool.category,
+        dbSource,
       );
 
       const filteredAssets = this.filterAssetsByCategory(assets, tool.category);
@@ -443,7 +458,7 @@ export class JobsRegistryService {
           status: JobStatus.PENDING,
           category: tool.category,
           tool,
-          priority: priority ?? 4,
+          priority,
           jobHistory,
           // Command is display-only. Workers receive a typed execution plan
           // and never evaluate this string in a shell.
@@ -476,8 +491,9 @@ export class JobsRegistryService {
     assetIds?: string[],
     workspaceId?: string,
     category?: ToolCategory,
+    dbSource: DataSource | EntityManager = this.dataSource,
   ): Promise<Asset[]> {
-    const assetsQueryBuilder = this.dataSource
+    const assetsQueryBuilder = dbSource
       .getRepository(Asset)
       .createQueryBuilder('assets')
       .where('assets.isEnabled = true');
@@ -545,12 +561,30 @@ export class JobsRegistryService {
     assetIds?: string[],
     workspaceId?: string,
     category?: ToolCategory,
+    dbSource: DataSource | EntityManager = this.dataSource,
   ): Promise<AssetService[]> {
-    const assetServicesQueryBuilder = this.dataSource
+    const assetServicesQueryBuilder = dbSource
       .getRepository(AssetService)
       .createQueryBuilder('assetServices')
       .innerJoinAndSelect('assetServices.asset', 'asset')
       .where('asset.isEnabled = true');
+
+    // Tarpit guard, second layer. portsScanner already declines to create asset
+    // services for a host whose open-port count is implausible, but rows banked
+    // before that guard existed (or imported another way) would still be fanned
+    // out here — one job per service, for every per-service step in the workflow.
+    // Excluding them at selection keeps a historical tarpit result from
+    // multiplying the queue by tens of thousands.
+    if (Number.isFinite(TARPIT_OPEN_PORT_THRESHOLD)) {
+      assetServicesQueryBuilder.andWhere(
+        `"assetServices"."assetId" NOT IN (
+          SELECT "tarpit"."assetId" FROM "asset_services" "tarpit"
+          GROUP BY "tarpit"."assetId"
+          HAVING count(*) > :tarpitThreshold
+        )`,
+        { tarpitThreshold: TARPIT_OPEN_PORT_THRESHOLD },
+      );
+    }
 
     if (
       category === ToolCategory.HTTP_PROBE ||
@@ -718,8 +752,13 @@ export class JobsRegistryService {
             )
           )`,
         )
-        // [OPT-1] Use addOrderBy for compound sort (priority first, then createdAt)
-        .orderBy('jobs.priority', 'DESC')
+        // Compound sort: most urgent first, then oldest first (FIFO within a
+        // priority band). JobPriority ascends in value as it DESCENDS in urgency
+        // (CRITICAL=0 .. BACKGROUND=4), so the urgent end is ASC, not DESC.
+        // Ordering DESC handed out BACKGROUND work ahead of CRITICAL work: in the
+        // enerbank.com run Nuclei (LOW=3) drained the queue ahead of naabu and
+        // nmap (MEDIUM=2), and nmap never started a single one of its 773 jobs.
+        .orderBy('jobs.priority', 'ASC')
         .addOrderBy('jobs.createdAt', 'ASC');
 
       // [OPT-3] Only join workspaceTargets/workspaces when actually needed
@@ -1064,6 +1103,26 @@ export class JobsRegistryService {
   }
 
   /**
+   * Whether a run still has work that has not reached a terminal state. Drives
+   * the workflow step barrier: a step is finished only when none of its jobs are
+   * pending or in progress.
+   * @param repo repository to read through (pass a transactional one to read
+   * inside an open transaction rather than checking out another connection)
+   * @param jobHistoryId the run to inspect
+   */
+  private async hasOpenJobsForRun(
+    repo: Repository<Job>,
+    jobHistoryId: string,
+  ): Promise<boolean> {
+    return repo.exists({
+      where: {
+        jobHistory: { id: jobHistoryId },
+        status: In([JobStatus.PENDING, JobStatus.IN_PROGRESS]),
+      },
+    });
+  }
+
+  /**
    * Gets the next step for a job based on workflow definition.
    * @param job the completed job
    * @returns number of new jobs created (0 means no more steps in workflow)
@@ -1082,57 +1141,108 @@ export class JobsRegistryService {
       (j) => j.name === currentJobMetadata.name,
     );
 
-    // Walk forward through the remaining workflow steps. A step that yields zero
-    // jobs must NOT terminate the pipeline: the gate that excluded every
-    // candidate (e.g. the screenshot web-service gate when nmap classified no
-    // web services — a common outcome when target-side scan detection filters
-    // nmap during the naabu storm) is transient/step-local and must not silently
-    // strand the downstream steps. When the next step creates nothing we skip to
-    // the following step so vulnerability scanning (Nuclei) still runs across the
-    // full attack surface. Only a step that actually creates jobs stops the walk;
-    // those jobs' completions then drive the next transition. This is the direct
-    // fix for "pipeline stops after httpx": previously a zero-job next step
-    // returned 0 and the workflow was immediately marked done.
-    for (let index = indexCurrentTool + 1; index < jobs.length; index++) {
-      const nextTool = jobs[index]?.run;
-      if (!nextTool) continue;
+    const jobHistoryId = job.jobHistory.id;
 
-      const tools = await this.toolsService.getToolByNames({
-        names: [nextTool],
-      });
+    // A workflow step is a barrier: it begins only once the previous step has
+    // fully drained across the whole run. Advancing per-completion (the previous
+    // behaviour) let the FIRST asset to finish drag the whole pipeline forward —
+    // in the enerbank.com run the 4th of 338 naabu completions landed on an asset
+    // with no discovered services, so nmap/httpx/screenshot each yielded zero
+    // jobs for that one asset, the forward-walk fell through to Nuclei, and 338
+    // vulnerability jobs were created while 334 port scans were still pending.
+    //
+    // Unlocked fast path first. Every job saves its own terminal status before
+    // getting here, so whichever job commits LAST is guaranteed to observe a
+    // drained run — no completion can be missed by checking without a lock. The
+    // other 337 completions answer from this one indexed query and never open a
+    // transaction, which matters: the pg pool and the result processor are both
+    // sized at 10, so routing every completion through a locking transaction
+    // would let ten waiters pin the entire pool.
+    if (await this.hasOpenJobsForRun(this.repo, jobHistoryId)) return 0;
 
-      const createPromises = tools.map((tool) =>
-        this.createNewJob({
-          tool,
-          targetIds: [job.asset.target.id],
-          // Target-wide steps (e.g. Nuclei) must cover every enabled host for the
-          // target, not just the single asset whose chain happened to reach this
-          // step. Scoping to [job.asset.id] here is why a discovery run scanned
-          // only the one host that survived the port/service gate. The idempotency
-          // guard in findAssetsForJob dedupes this fan-out across sibling
-          // completions so it cannot create duplicate jobs.
-          assetIds: TARGET_WIDE_NEXT_STEP_CATEGORIES.has(tool.category!)
-            ? []
-            : [job.asset.id],
-          workflow: job.jobHistory.workflow,
-          jobHistory: job.jobHistory,
-          priority: tool.priority,
-          workspaceId: workflow.workspace.id,
-        }),
+    // Slow path: this completion believes it drained the step. Serialize the
+    // check-and-advance so two jobs finishing together cannot both fan out the
+    // next step.
+    return this.dataSource.transaction(async (manager) => {
+      await manager.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+        [`workflow-step:${jobHistoryId}`],
       );
 
-      const results = await Promise.all(createPromises);
-      const createdCount = results.reduce(
-        (total, created) => total + created.length,
-        0,
-      );
+      // Re-check under the lock: the pre-check above raced by definition.
+      // Returning 0 is safe — markWorkflowDone independently re-checks for open
+      // jobs before completing the run.
+      if (await this.hasOpenJobsForRun(manager.getRepository(Job), jobHistoryId))
+        return 0;
 
-      if (createdCount > 0) {
-        return createdCount;
+      // Resume from the furthest step the run has actually reached, not from the
+      // completing job's own step. The last job to finish can belong to an
+      // earlier step (steps overlap when an earlier one is retried or re-run),
+      // and walking from its index would re-create steps that already completed.
+      const toolsInRun = await manager
+        .getRepository(Job)
+        .createQueryBuilder('job')
+        .select('DISTINCT tool.name', 'name')
+        .innerJoin('job.tool', 'tool')
+        .where('job."jobHistoryId" = :jobHistoryId', { jobHistoryId })
+        .getRawMany<{ name: string }>();
+
+      const resumeIndex = toolsInRun.reduce((furthest, { name }) => {
+        const index = jobs.findIndex((j) => j.run === name);
+        return index > furthest ? index : furthest;
+      }, indexCurrentTool);
+
+      // Walk forward through the remaining workflow steps. A step that yields zero
+      // jobs must NOT terminate the pipeline: the gate that excluded every
+      // candidate (e.g. the screenshot web-service gate when nmap classified no
+      // web services) is step-local and must not silently strand the downstream
+      // steps. When the next step creates nothing we skip to the following step so
+      // vulnerability scanning (Nuclei) still runs across the full attack surface.
+      // Only a step that actually creates jobs stops the walk; those jobs'
+      // completions then drive the next transition. This is the fix for "pipeline
+      // stops after httpx": previously a zero-job next step returned 0 and the
+      // workflow was immediately marked done.
+      for (let index = resumeIndex + 1; index < jobs.length; index++) {
+        const nextTool = jobs[index]?.run;
+        if (!nextTool) continue;
+
+        const tools = await this.toolsService.getToolByNames({
+          names: [nextTool],
+        });
+
+        const createPromises = tools.map((tool) =>
+          this.createNewJob({
+            tool,
+            targetIds: [job.asset.target.id],
+            // Every step is fanned out target-wide. Now that a transition fires
+            // once per run rather than once per completing asset, scoping to
+            // [job.asset.id] would strand every other asset in the target at this
+            // step — only the host that happened to finish last would advance.
+            // The idempotency guards in findAssetsForJob/findAssetServicesForJob
+            // keep the fan-out from duplicating existing open jobs.
+            assetIds: [],
+            workflow: job.jobHistory.workflow,
+            jobHistory: job.jobHistory,
+            priority: tool.priority,
+            workspaceId: workflow.workspace.id,
+            // Stay on the locked transaction's connection — see CreateJobs.manager.
+            manager,
+          }),
+        );
+
+        const results = await Promise.all(createPromises);
+        const createdCount = results.reduce(
+          (total, created) => total + created.length,
+          0,
+        );
+
+        if (createdCount > 0) {
+          return createdCount;
+        }
       }
-    }
 
-    return 0;
+      return 0;
+    });
   }
 
   /**
@@ -1341,9 +1451,6 @@ export class JobsRegistryService {
       },
       relations: {
         workflow: true,
-        jobs: {
-          tool: true,
-        },
       },
     });
 
@@ -1380,6 +1487,63 @@ export class JobsRegistryService {
       })
       .filter((tool) => tool !== undefined);
 
+    // Per-step job counts for the pipeline indicator, aggregated in SQL over the
+    // WHOLE run. The client used to infer step state from the first page of the
+    // paginated job list, which cannot work once a run outgrows one page: that
+    // list is ordered active-work-first, so on a large discovery page one holds
+    // nothing but the currently-running step and every finished step reads back
+    // as "pending". Counting here also drops the previous `jobs: { tool: true }`
+    // relation load, which materialised every job row (thousands of them) just
+    // to render six icons.
+    const statusCounts = await this.repo
+      .createQueryBuilder('job')
+      .select('tool.name', 'toolName')
+      .addSelect('job.status', 'status')
+      .addSelect('COUNT(*)', 'count')
+      .innerJoin('job.tool', 'tool')
+      .where('job."jobHistoryId" = :id', { id })
+      .groupBy('tool.name')
+      .addGroupBy('job.status')
+      .getRawMany<{ toolName: string; status: JobStatus; count: string }>();
+
+    const countsByTool = new Map<string, JobHistoryStepDetail>();
+    const emptyStep = (toolId: string, toolName: string) => ({
+      toolId,
+      toolName,
+      total: 0,
+      pending: 0,
+      inProgress: 0,
+      paused: 0,
+      completed: 0,
+      failed: 0,
+      cancelled: 0,
+    });
+
+    const steps = (tools ?? []).map((tool) => {
+      const toolName = tool.name ?? '';
+      const step = emptyStep(tool.id ?? '', toolName);
+      countsByTool.set(toolName, step);
+      return step;
+    });
+
+    const statusField: Record<JobStatus, keyof JobHistoryStepDetail> = {
+      [JobStatus.PENDING]: 'pending',
+      [JobStatus.IN_PROGRESS]: 'inProgress',
+      [JobStatus.PAUSED]: 'paused',
+      [JobStatus.COMPLETED]: 'completed',
+      [JobStatus.FAILED]: 'failed',
+      [JobStatus.CANCELLED]: 'cancelled',
+    };
+
+    for (const row of statusCounts) {
+      const step = countsByTool.get(row.toolName);
+      if (!step) continue;
+      const field = statusField[row.status];
+      const count = parseInt(row.count, 10) || 0;
+      if (field) (step[field] as number) += count;
+      step.total += count;
+    }
+
     const {
       id: historyId,
       createdAt,
@@ -1395,6 +1559,7 @@ export class JobsRegistryService {
       createdAt,
       updatedAt,
       tools,
+      steps,
     };
   }
 

@@ -484,6 +484,53 @@ describe('DataAdapterService', () => {
       );
     });
 
+    // Target-side scan detection (tarpit/firewall) answers the SYN on nearly
+    // every probed port, so naabu reports hundreds of "open" ports for one host.
+    // In the enerbank.com run 121 of 338 assets came back with 50-435 open ports
+    // and produced 27,318 asset_services between them. Those are not real
+    // services: persisting them inflates the inventory and makes each downstream
+    // per-service step (nmap, httpx, screenshot) fan out to tens of thousands of
+    // jobs. The raw Port row is still written so the evidence is not lost.
+    it('does not create asset services for a host reporting implausibly many open ports', async () => {
+      const tarpitPorts = Array.from({ length: 300 }, (_, i) => i + 1);
+
+      mockDataSource.createQueryRunner.mockReturnValue(mockQueryRunner);
+      mockQueryRunner.manager
+        .createQueryBuilder()
+        .execute.mockResolvedValue(undefined);
+      const values = mockQueryRunner.manager.createQueryBuilder().values;
+      values.mockClear();
+
+      await service.portsScanner({ data: tarpitPorts, job: mockJob });
+
+      // The raw port record is still persisted...
+      expect(values).toHaveBeenCalledWith(
+        expect.objectContaining({ ports: tarpitPorts }),
+      );
+      // ...but no asset_services rows are derived from it.
+      expect(values).toHaveBeenCalledTimes(1);
+      expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
+    });
+
+    it('still creates asset services for a plausible open-port count', async () => {
+      const realPorts = [22, 80, 443, 8080];
+
+      mockDataSource.createQueryRunner.mockReturnValue(mockQueryRunner);
+      mockQueryRunner.manager
+        .createQueryBuilder()
+        .execute.mockResolvedValue(undefined);
+      const values = mockQueryRunner.manager.createQueryBuilder().values;
+      values.mockClear();
+
+      await service.portsScanner({ data: realPorts, job: mockJob });
+
+      expect(values).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ port: 443, assetId: 'asset-id' }),
+        ]),
+      );
+    });
+
     it('should rollback transaction on error', async () => {
       const mockPorts: number[] = [80, 43];
 
