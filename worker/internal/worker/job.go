@@ -393,6 +393,65 @@ func runNaabuWithEdgeDetection(
 		handle,
 	)
 	scanResult.stderr = controlResult.stderr + scanResult.stderr
+
+	if scanResult.outcome != executionOutcomeSucceeded {
+		return scanResult
+	}
+
+	// Second gate. The control pass samples an edge that answers
+	// probabilistically, so a host can pass it and still return a port list that
+	// is obviously not a real service inventory. Re-verify only those: an
+	// implausible open-port count is cheap to spot and rare among genuine hosts,
+	// so the common path pays nothing.
+	openPorts := countOpenPorts(scanResult.stdout)
+	if openPorts <= naabuRecheckPortCount {
+		return scanResult
+	}
+
+	remaining = time.Until(deadline)
+	if remaining <= 0 {
+		jobLogGlobal.Warning(
+			"No time left to re-verify %s after it reported %d open ports; keeping the scan result",
+			target, openPorts,
+		)
+		return scanResult
+	}
+
+	// Draw from ports the first pass did not use, so this is independent
+	// evidence rather than a re-run of the probe that just missed.
+	recheckPorts := naabuControlPortsExcluding(naabuControlPortCount, controlPorts)
+	recheckResult := runDirectCommand(
+		ctx,
+		naabuControlInvocation(toolPath, target, recheckPorts),
+		toolPath,
+		remaining,
+		stdoutLimitBytes,
+		stderrLimitBytes,
+		handle,
+	)
+	scanResult.stderr += recheckResult.stderr
+
+	// Fail open again: an inconclusive re-check must not discard real discovery.
+	if recheckResult.outcome != executionOutcomeSucceeded {
+		jobLogGlobal.Warning(
+			"Re-verification of %s did not complete (%s); keeping its %d-port result",
+			target, recheckResult.outcome, openPorts,
+		)
+		return scanResult
+	}
+
+	if hits := countOpenControlPorts(recheckResult.stdout, recheckPorts); hits >= naabuEdgeConfirmThreshold {
+		jobLogGlobal.Warning(
+			"%s reported %d open ports and then answered %d/%d fresh control ports; discarding the scan as edge-absorbed",
+			target, openPorts, hits, len(recheckPorts),
+		)
+		return commandExecutionResult{
+			outcome: executionOutcomeSucceeded,
+			stdout:  "",
+			stderr:  scanResult.stderr,
+		}
+	}
+
 	return scanResult
 }
 

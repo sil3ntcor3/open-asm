@@ -2,6 +2,7 @@ package worker
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 )
@@ -121,6 +122,100 @@ func TestCountOpenControlPortsHandlesEmptyAndMalformedOutput(t *testing.T) {
 	}
 	if got := countOpenControlPorts("not-a-result\nexample.com:notaport\n", controlPorts); got != 0 {
 		t.Fatalf("countOpenControlPorts(malformed) = %d, want 0", got)
+	}
+}
+
+// An edge answers control ports probabilistically, so the sample has to be big
+// enough that a >=2 threshold is not defeated by luck. At the measured answer
+// rate (3/10 and 5/10 on hosts that leaked through a 5-port check) a 5-port
+// sample misses 19-47% of edges; 15 brings that under 4%.
+func TestNaabuControlSampleIsLargeEnoughToSurviveAProbabilisticEdge(t *testing.T) {
+	const measuredWorstCaseAnswerRate = 0.3
+	const maxAcceptableMissRate = 0.05
+
+	missRate := probabilityOfFewerThan(
+		naabuEdgeConfirmThreshold,
+		naabuControlPortCount,
+		measuredWorstCaseAnswerRate,
+	)
+	if missRate > maxAcceptableMissRate {
+		t.Fatalf("with %d control ports and threshold %d, an edge answering %.0f%% of ports is missed %.1f%% of the time; want <= %.0f%%",
+			naabuControlPortCount, naabuEdgeConfirmThreshold,
+			measuredWorstCaseAnswerRate*100, missRate*100, maxAcceptableMissRate*100)
+	}
+}
+
+// probabilityOfFewerThan returns P(X < k) for X ~ Binomial(n, p).
+func probabilityOfFewerThan(k, n int, p float64) float64 {
+	total := 0.0
+	for i := 0; i < k; i++ {
+		total += float64(binomial(n, i)) * math.Pow(p, float64(i)) *
+			math.Pow(1-p, float64(n-i))
+	}
+	return total
+}
+
+func binomial(n, k int) int {
+	result := 1
+	for i := 0; i < k; i++ {
+		result = result * (n - i) / (i + 1)
+	}
+	return result
+}
+
+func TestNaabuControlPoolSupportsTwoNonOverlappingSamples(t *testing.T) {
+	// The re-check draws from ports the first pass did not use, so the pool has
+	// to hold two full samples with room to spare.
+	if len(naabuControlPortPool) < naabuControlPortCount*2 {
+		t.Fatalf("control pool has %d ports; two non-overlapping samples of %d need at least %d",
+			len(naabuControlPortPool), naabuControlPortCount, naabuControlPortCount*2)
+	}
+}
+
+func TestNaabuControlPortsExcludingSkipsAlreadyProbedPorts(t *testing.T) {
+	first := naabuControlPorts(naabuControlPortCount)
+	second := naabuControlPortsExcluding(naabuControlPortCount, first)
+
+	if len(second) != naabuControlPortCount {
+		t.Fatalf("re-check sample has %d ports, want %d", len(second), naabuControlPortCount)
+	}
+
+	used := make(map[int]struct{}, len(first))
+	for _, port := range first {
+		used[port] = struct{}{}
+	}
+	for _, port := range second {
+		if _, reused := used[port]; reused {
+			t.Fatalf("re-check reused port %d from the first pass; it must be independent evidence", port)
+		}
+	}
+}
+
+func TestCountOpenPortsCountsDistinctPorts(t *testing.T) {
+	stdout := strings.Join([]string{
+		"example.com:80",
+		"example.com:443",
+		"example.com:443", // repeated for a second resolved address
+		"garbage",
+	}, "\n")
+
+	if got := countOpenPorts(stdout); got != 2 {
+		t.Fatalf("countOpenPorts = %d, want 2", got)
+	}
+	if got := countOpenPorts(""); got != 0 {
+		t.Fatalf("countOpenPorts(empty) = %d, want 0", got)
+	}
+}
+
+func TestRecheckThresholdIsAbovePlausibleHostPortCounts(t *testing.T) {
+	// The re-check must not fire for ordinary hosts — a web server with
+	// http/https/ssh/mail sits well under this — while still catching the
+	// 6- and 11-port phantom lists that leaked through the first gate.
+	if naabuRecheckPortCount < 5 {
+		t.Fatalf("naabuRecheckPortCount = %d is low enough to re-probe ordinary hosts", naabuRecheckPortCount)
+	}
+	if naabuRecheckPortCount > 20 {
+		t.Fatalf("naabuRecheckPortCount = %d is too permissive to catch phantom port lists", naabuRecheckPortCount)
 	}
 }
 

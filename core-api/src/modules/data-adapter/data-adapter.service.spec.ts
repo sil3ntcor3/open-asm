@@ -1,5 +1,6 @@
 import type { TestingModule } from '@nestjs/testing';
 import { Test } from '@nestjs/testing';
+import * as crypto from 'crypto';
 import type { InsertResult } from 'typeorm';
 import { DataSource } from 'typeorm';
 import {
@@ -22,6 +23,7 @@ describe('DataAdapterService', () => {
   let mockQueryRunner: any;
   let mockDataSource: any;
   let mockWorkspacesService: any;
+  let mockStorageService: any;
 
   beforeEach(async () => {
     mockQueryRunner = {
@@ -99,6 +101,7 @@ describe('DataAdapterService', () => {
     }).compile();
 
     service = module.get<DataAdapterService>(DataAdapterService);
+    mockStorageService = module.get(StorageService);
 
     // Mock validateData method to return true for valid data and false for invalid data
     jest.spyOn(service, 'validateData').mockImplementation((data, cls) => {
@@ -1478,6 +1481,92 @@ describe('DataAdapterService', () => {
     it('is a no-op without an asset service or data', async () => {
       await service.serviceDiscovery({ job: {}, data: [] } as never);
       expect(mockDataSource.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('screenshot', () => {
+    const jobForService = (host: string, port: number) =>
+      ({
+        asset: { id: 'asset-id', value: host },
+        assetService: { id: `svc-${port}`, value: `${host}:${port}`, port },
+        assetServiceId: `svc-${port}`,
+        jobHistory: { id: 'history-id' },
+        tool: { id: 'tool-id', category: ToolCategory.SCREENSHOT },
+      }) as unknown as Job;
+
+    const payload = { screenshot: 'aGVsbG8=', url: 'https://example.com' };
+
+    const uploadedNames = (): string[] =>
+      (mockStorageService.uploadFile.mock.calls as [string][]).map(
+        ([name]) => name,
+      );
+
+    // A screenshot job is created per asset_service, but the object name used to
+    // be derived from the asset, so every service on a host wrote to one key and
+    // all of them pointed at it — 626 services sharing 331 images in the
+    // enerbank.com run. Inspecting :7443 could show you the :80 page.
+    it('gives each service on a host its own object', async () => {
+      mockStorageService.uploadFile.mockClear();
+
+      await service.screenshot({
+        data: payload,
+        job: jobForService('identityserver.test.enerbank.com', 443),
+      } as never);
+      await service.screenshot({
+        data: payload,
+        job: jobForService('identityserver.test.enerbank.com', 7443),
+      } as never);
+
+      const names = uploadedNames();
+      expect(names).toHaveLength(2);
+      expect(names[0]).not.toEqual(names[1]);
+    });
+
+    it('derives the object name from the service endpoint, not the host', async () => {
+      mockStorageService.uploadFile.mockClear();
+      const host = 'identityserver.test.enerbank.com';
+
+      await service.screenshot({
+        data: payload,
+        job: jobForService(host, 7443),
+      } as never);
+
+      const expected = `${crypto
+        .createHash('md5')
+        .update(`${host}:7443`)
+        .digest('hex')}.png`;
+      expect(uploadedNames()[0]).toBe(expected);
+    });
+
+    it('falls back to the asset value when the job carries no service', async () => {
+      mockStorageService.uploadFile.mockClear();
+
+      await service.screenshot({
+        data: payload,
+        job: {
+          asset: { id: 'asset-id', value: 'example.com' },
+          assetServiceId: null,
+          jobHistory: { id: 'history-id' },
+          tool: { id: 'tool-id', category: ToolCategory.SCREENSHOT },
+        } as unknown as Job,
+      } as never);
+
+      const expected = `${crypto
+        .createHash('md5')
+        .update('example.com')
+        .digest('hex')}.png`;
+      expect(uploadedNames()[0]).toBe(expected);
+    });
+
+    it('does not upload when the worker captured no image', async () => {
+      mockStorageService.uploadFile.mockClear();
+
+      await service.screenshot({
+        data: { screenshot: '', url: '' },
+        job: jobForService('example.com', 443),
+      } as never);
+
+      expect(mockStorageService.uploadFile).not.toHaveBeenCalled();
     });
   });
 });

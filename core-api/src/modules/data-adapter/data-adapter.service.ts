@@ -510,9 +510,21 @@ export class DataAdapterService {
       return;
     }
 
+    // Key the object on the endpoint that was actually screenshotted, not on its
+    // host. A screenshot job is created per asset_service, and the row updated
+    // below is that service — but the object name was derived from the asset, so
+    // every service on a host wrote to the SAME key. Last write won, and all of
+    // them ended up pointing at it: in the enerbank.com run 626 services shared
+    // 331 images, e.g. identityserver.test:80, :443, :6788 and :7443 all
+    // resolving to one PNG. An operator inspecting :7443 could be shown the :80
+    // page, which is a correctness problem in a triage view, not a cosmetic one.
+    //
+    // assetService.value is "host:port", so it is unique per endpoint. The
+    // fallback keeps host-level naming for any caller without a service.
+    const screenshotSubject = job.assetService?.value ?? job.asset.value;
     const buffer = Buffer.from(data.screenshot, 'base64');
     const { path } = await this.storageService.uploadFile(
-      `${crypto.createHash('md5').update(job.asset.value).digest('hex')}.png`,
+      `${crypto.createHash('md5').update(screenshotSubject).digest('hex')}.png`,
       buffer,
       'screenshot',
     );

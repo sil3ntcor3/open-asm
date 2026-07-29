@@ -41,14 +41,36 @@ import (
 // threshold is gameable by sitting under it (this WAF answered on 97 against a
 // limit of 100) and cannot catch an edge that only answers on a handful of
 // ports, while a control probe is independent of how many ports are claimed.
+// Sizing note. An edge does not answer every port it is asked — it answers
+// *probabilistically*, which is what a 5-port sample got wrong. Measured against
+// hosts that slipped through a 5-port check and were then re-probed with 10
+// fresh control ports: application-b99.demo.enerbank.com answered 5/10 and
+// appintegration-legacy.integration.enerbank.com 3/10, so their per-port answer
+// rate p sits around 0.3-0.5. With a >=2 threshold the probability of missing
+// such a host is P(0 hits) + P(1 hit):
+//
+//	n=5   p=0.5 -> 18.8%      n=5   p=0.3 -> 52.8%
+//	n=10  p=0.5 ->  1.1%      n=10  p=0.3 -> 14.9%
+//	n=15  p=0.5 ->  0.05%     n=15  p=0.3 ->  3.5%
+//
+// The observed leak (2 of 5 hosts that passed) matched the n=5 prediction, so
+// n=15 it is: ten extra packets against a 1000-port sweep, for roughly a 50x
+// reduction in false negatives.
 const (
 	// Number of control ports probed before the real scan.
-	naabuControlPortCount = 5
+	naabuControlPortCount = 15
 
 	// How many must answer before the host's port list is discarded. Requiring
 	// two keeps a single legitimately-open oddity harmless, while a host
 	// answering indiscriminately trips it with near-certainty.
 	naabuEdgeConfirmThreshold = 2
+
+	// Open-port count above which a *passing* host is re-verified before its
+	// scan is trusted. A genuine internet-facing host exposes a handful of
+	// ports; the hosts that leaked through the 5-port check reported 6 and 11.
+	// Re-checking only above this bound keeps the cost off the common path,
+	// where hosts return few ports and pay nothing.
+	naabuRecheckPortCount = 10
 )
 
 // naabuControlPortPool holds ports that are inside naabu's top-1000 sweep but
@@ -70,19 +92,58 @@ var naabuControlPortPool = []int{
 // job rather than using a fixed set means a host cannot be tuned to answer
 // correctly on one known probe.
 func naabuControlPorts(count int) []int {
+	return naabuControlPortsExcluding(count, nil)
+}
+
+// naabuControlPortsExcluding samples the control pool while skipping ports
+// already used. The re-check draws from what the first pass did not touch, so it
+// is independent evidence rather than a re-run of the probe that just missed.
+func naabuControlPortsExcluding(count int, exclude []int) []int {
 	if count <= 0 || len(naabuControlPortPool) == 0 {
 		return nil
 	}
-	if count > len(naabuControlPortPool) {
-		count = len(naabuControlPortPool)
+
+	excluded := make(map[int]struct{}, len(exclude))
+	for _, port := range exclude {
+		excluded[port] = struct{}{}
 	}
 
-	pool := make([]int, len(naabuControlPortPool))
-	copy(pool, naabuControlPortPool)
+	pool := make([]int, 0, len(naabuControlPortPool))
+	for _, port := range naabuControlPortPool {
+		if _, skip := excluded[port]; !skip {
+			pool = append(pool, port)
+		}
+	}
+	if len(pool) == 0 {
+		return nil
+	}
+	if count > len(pool) {
+		count = len(pool)
+	}
+
 	rand.Shuffle(len(pool), func(i, j int) {
 		pool[i], pool[j] = pool[j], pool[i]
 	})
 	return pool[:count]
+}
+
+// countOpenPorts counts the distinct ports a naabu sweep reported open. Used to
+// decide whether a passing host's result is plausible enough to trust.
+func countOpenPorts(stdout string) int {
+	open := make(map[int]struct{})
+	for _, line := range strings.Split(stdout, "\n") {
+		line = strings.TrimSpace(line)
+		idx := strings.LastIndex(line, ":")
+		if idx < 0 {
+			continue
+		}
+		port, err := strconv.Atoi(line[idx+1:])
+		if err != nil {
+			continue
+		}
+		open[port] = struct{}{}
+	}
+	return len(open)
 }
 
 // naabuControlInvocation builds the control probe. -p replaces -top-ports (naabu
