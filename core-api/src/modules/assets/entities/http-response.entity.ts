@@ -150,6 +150,46 @@ export class HttpResponse extends BaseEntity {
   a: string[];
 
   @ApiProperty()
+  @Column({ array: true, type: 'varchar', nullable: true })
+  aaaa: string[];
+
+  /**
+   * Resolved address httpx actually connected to. The `a` array lists every
+   * address the name resolves to; this is the one that answered, so it is the
+   * key that ties a hostname-anchored probe back to the IP whose ports were
+   * scanned.
+   */
+  @ApiProperty()
+  @Column({ type: 'varchar', nullable: true })
+  host_ip: string;
+
+  @ApiProperty()
+  @Column({ array: true, type: 'varchar', nullable: true })
+  cname: string[];
+
+  /**
+   * CDN/WAF classification from httpx's `-cdn` probe (cdncheck). This is the
+   * signal that distinguishes "the port answered because a service is listening"
+   * from "the port answered because an edge absorbs every connection" — the
+   * difference between a real exposure and a phantom one. cdn_type is the more
+   * useful of the pair: it separates `cdn` from `waf`.
+   *
+   * Coverage is range-based, so it is a positive signal only: cdn=null means
+   * "not in cdncheck's ranges", NOT "not fronted".
+   */
+  @ApiProperty()
+  @Column({ type: 'boolean', nullable: true })
+  cdn: boolean;
+
+  @ApiProperty()
+  @Column({ type: 'varchar', nullable: true })
+  cdn_name: string;
+
+  @ApiProperty()
+  @Column({ type: 'varchar', nullable: true })
+  cdn_type: string;
+
+  @ApiProperty()
   @Index({ fulltext: true }) // For GIN index on array
   @Column({ array: true, type: 'varchar', nullable: true })
   tech: string[];

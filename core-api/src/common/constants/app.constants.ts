@@ -54,3 +54,31 @@ export const TARPIT_OPEN_PORT_THRESHOLD = (() => {
   // 0 disables the guard: no port count can exceed Infinity.
   return configured === 0 ? Number.POSITIVE_INFINITY : configured;
 })();
+
+/**
+ * Ports probed for every resolving asset regardless of what the port scan
+ * returned — the discovery *floor*.
+ *
+ * Coverage must never be a silent function of a step that can fail. naabu is the
+ * single most blockable stage in the pipeline (target-side scan detection, rate
+ * limits, an unreachable worker), and it is also the only writer of
+ * asset_services. So when it is blocked the asset renders as "no services",
+ * which an operator reads as *clean* when it actually means *never checked*. In
+ * the enerbank.com run that was 218 of 338 assets, and only 9 services on port
+ * 443 across the whole target — for a estate that is overwhelmingly HTTPS.
+ *
+ * Seeding these ports unconditionally makes discovery degrade instead of
+ * disappear: a blocked port scan costs depth, never the baseline web check.
+ * These are candidate endpoints, not assertions that anything is listening —
+ * httpx still decides, and records failed=true when nothing answers.
+ *
+ * Override with OASM_WEB_PORT_FLOOR (comma-separated); set it empty to disable.
+ */
+export const WEB_PORT_FLOOR = (() => {
+  const configured = process.env.OASM_WEB_PORT_FLOOR;
+  if (configured === undefined) return [80, 443];
+  return configured
+    .split(',')
+    .map((port) => Number(port.trim()))
+    .filter((port) => Number.isInteger(port) && port > 0 && port <= 65535);
+})();
