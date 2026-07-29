@@ -2,7 +2,11 @@ import type { TestingModule } from '@nestjs/testing';
 import { Test } from '@nestjs/testing';
 import type { InsertResult } from 'typeorm';
 import { DataSource } from 'typeorm';
-import { Severity, ToolCategory } from '../../common/enums/enum';
+import {
+  DnsResolutionStatus,
+  Severity,
+  ToolCategory,
+} from '../../common/enums/enum';
 import { AssetTag } from '../assets/entities/asset-tags.entity';
 import type { Asset } from '../assets/entities/assets.entity';
 import type { HttpResponse } from '../assets/entities/http-response.entity';
@@ -232,6 +236,70 @@ describe('DataAdapterService', () => {
         ['value', 'targetId'],
       );
       expect(result).toEqual(mockInsertResult);
+    });
+
+    // The floor is seeded at discovery time, not only after a port scan, so an
+    // asset whose naabu job never runs (worker outage, target-wide block,
+    // cancelled run) still gets an HTTP probe instead of silently disappearing
+    // from the inventory.
+    it('seeds the web port floor for every newly discovered asset', async () => {
+      const mockInsertResult = {
+        identifiers: [],
+        generatedMaps: [],
+        raw: [
+          { id: 'asset1-id', value: 'sub1.example.com' },
+          { id: 'asset2-id', value: 'sub2.example.com' },
+          // Unresolved names are excluded from HTTP probing, so seeding them
+          // would leave services that are never probed and never cleared —
+          // permanently inflating the target's service count.
+          {
+            id: 'asset3-id',
+            value: 'dead.example.com',
+            dnsResolutionStatus: DnsResolutionStatus.UNRESOLVED,
+          },
+        ],
+      } as unknown as InsertResult;
+
+      mockDataSource.createQueryRunner.mockReturnValue(mockQueryRunner);
+      mockQueryRunner.manager
+        .createQueryBuilder()
+        .execute.mockResolvedValueOnce(undefined) // Update Asset
+        .mockResolvedValueOnce(mockInsertResult) // Insert Assets
+        .mockResolvedValueOnce(undefined); // Floor asset_services
+      mockWorkspacesService.getWorkspaceIdByTargetId.mockResolvedValue(
+        'workspace-id',
+      );
+      mockWorkspacesService.getWorkspaceConfigValue.mockResolvedValue({
+        isAutoEnableAssetAfterDiscovered: true,
+      });
+      const values = mockQueryRunner.manager.createQueryBuilder().values;
+      values.mockClear();
+
+      await service.subdomains({ data: mockAssets, job: mockJob });
+
+      expect(values).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            assetId: 'asset1-id',
+            port: 443,
+            value: 'sub1.example.com:443',
+          }),
+          expect.objectContaining({
+            assetId: 'asset2-id',
+            port: 80,
+            value: 'sub2.example.com:80',
+          }),
+        ]),
+      );
+
+      const floorCall = values.mock.calls.find(
+        ([payload]) =>
+          Array.isArray(payload) &&
+          payload.some((row: { assetId?: string }) => row.assetId === 'asset1-id'),
+      );
+      expect(floorCall?.[0]).not.toContainEqual(
+        expect.objectContaining({ assetId: 'asset3-id' }),
+      );
     });
 
     it('should rollback transaction on error', async () => {
@@ -507,9 +575,73 @@ describe('DataAdapterService', () => {
       expect(values).toHaveBeenCalledWith(
         expect.objectContaining({ ports: tarpitPorts }),
       );
-      // ...but no asset_services rows are derived from it.
-      expect(values).toHaveBeenCalledTimes(1);
+
+      // ...and no asset_services are derived from the 300 bogus ports...
+      const derivedFromScan = values.mock.calls.find(
+        ([payload]) =>
+          Array.isArray(payload) &&
+          payload.some((row: { port: number }) => row.port === 250),
+      );
+      expect(derivedFromScan).toBeUndefined();
+
+      // ...but the web port floor is still seeded. A tarpitted host is exactly
+      // the case the floor exists for: discarding its port list must cost depth,
+      // not the baseline HTTP check that keeps the asset in the inventory.
+      expect(values).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ port: 443, assetId: 'asset-id' }),
+        ]),
+      );
       expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
+    });
+
+    it('seeds the web port floor when the scan returns no open ports', async () => {
+      mockDataSource.createQueryRunner.mockReturnValue(mockQueryRunner);
+      mockQueryRunner.manager
+        .createQueryBuilder()
+        .execute.mockResolvedValue(undefined);
+      const values = mockQueryRunner.manager.createQueryBuilder().values;
+      values.mockClear();
+
+      // An empty result is what a blocked scan — or the worker's edge detection
+      // discarding an untrustworthy port list — produces. Before the floor this
+      // left the asset with zero services and therefore zero HTTP probes, which
+      // the UI rendered as "no services" and an operator reads as "clean".
+      await service.portsScanner({ data: [], job: mockJob });
+
+      expect(values).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            port: 80,
+            assetId: 'asset-id',
+            value: 'example.com:80',
+          }),
+          expect.objectContaining({
+            port: 443,
+            assetId: 'asset-id',
+            value: 'example.com:443',
+          }),
+        ]),
+      );
+    });
+
+    it('does not duplicate a floor port the scan also discovered', async () => {
+      mockDataSource.createQueryRunner.mockReturnValue(mockQueryRunner);
+      mockQueryRunner.manager
+        .createQueryBuilder()
+        .execute.mockResolvedValue(undefined);
+      const orUpdate = mockQueryRunner.manager.createQueryBuilder().orUpdate;
+      orUpdate.mockClear();
+
+      await service.portsScanner({ data: [443], job: mockJob });
+
+      // Both the scan insert and the floor insert must upsert on (assetId, port)
+      // so the overlap collapses instead of violating the unique constraint.
+      expect(orUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conflict_target: ['assetId', 'port'],
+        }),
+      );
     });
 
     it('still creates asset services for a plausible open-port count', async () => {

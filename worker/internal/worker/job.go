@@ -223,6 +223,19 @@ func runToolExecution(
 		}
 	}
 
+	if execution.GetToolName() == "naabu" {
+		return runNaabuWithEdgeDetection(
+			ctx,
+			execution.GetTarget(),
+			invocation,
+			toolPath,
+			timeout,
+			stdoutLimitBytes,
+			stderrLimitBytes,
+			handle,
+		)
+	}
+
 	if execution.GetToolName() != "subfinder" {
 		return runDirectCommand(
 			ctx,
@@ -301,6 +314,88 @@ func runToolExecution(
 	return dnsxResult
 }
 
+// runNaabuWithEdgeDetection probes a few known-closed ports before the real
+// scan and discards the host's port list if it answers on them. See naabu.go for
+// why a control probe beats a fixed open-port threshold.
+//
+// Both failure paths deliberately fail *open* — a control pass that errored or
+// timed out tells us nothing about the host, so the real scan still runs. The
+// check exists to reject confidently-bogus results, never to withhold discovery
+// because a probe was inconclusive.
+func runNaabuWithEdgeDetection(
+	ctx context.Context,
+	target string,
+	invocation toolInvocation,
+	toolPath string,
+	timeout time.Duration,
+	stdoutLimitBytes int64,
+	stderrLimitBytes int64,
+	handle *jobHandle,
+) commandExecutionResult {
+	deadline := time.Now().Add(timeout)
+
+	controlPorts := naabuControlPorts(naabuControlPortCount)
+	controlResult := runDirectCommand(
+		ctx,
+		naabuControlInvocation(toolPath, target, controlPorts),
+		toolPath,
+		timeout,
+		stdoutLimitBytes,
+		stderrLimitBytes,
+		handle,
+	)
+
+	if controlResult.outcome == executionOutcomeCanceled {
+		return controlResult
+	}
+
+	if controlResult.outcome == executionOutcomeSucceeded {
+		if open := countOpenControlPorts(controlResult.stdout, controlPorts); open >= naabuEdgeConfirmThreshold {
+			jobLogGlobal.Warning(
+				"%s answered %d/%d known-closed control ports; treating the port scan as edge-absorbed and skipping the full sweep",
+				target, open, len(controlPorts),
+			)
+			// An empty port list is the honest answer: this host produced no
+			// trustworthy port data. Core still records the scan, and the web
+			// port floor guarantees the asset is HTTP-probed regardless, so the
+			// asset degrades to a baseline check rather than vanishing from the
+			// inventory or filling it with phantom services.
+			return commandExecutionResult{
+				outcome: executionOutcomeSucceeded,
+				stdout:  "",
+				stderr:  controlResult.stderr,
+			}
+		}
+	} else {
+		jobLogGlobal.Warning(
+			"Control-port pass for %s did not complete (%s); running the full scan unchecked",
+			target, controlResult.outcome,
+		)
+	}
+
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return commandExecutionResult{
+			outcome:        executionOutcomeTimedOut,
+			exitCode:       -1,
+			failureMessage: fmt.Sprintf("command exceeded deadline %s", timeout),
+			stderr:         controlResult.stderr,
+		}
+	}
+
+	scanResult := runDirectCommand(
+		ctx,
+		invocation,
+		toolPath,
+		remaining,
+		stdoutLimitBytes,
+		stderrLimitBytes,
+		handle,
+	)
+	scanResult.stderr = controlResult.stderr + scanResult.stderr
+	return scanResult
+}
+
 func subfinderDeadlineExceeded(timeout time.Duration, stderr string) commandExecutionResult {
 	return commandExecutionResult{
 		outcome:        executionOutcomeTimedOut,
@@ -332,6 +427,44 @@ func dnsxEnrichInvocation(toolPath, target, hosts string) toolInvocation {
 	}
 }
 
+// httpxProbeTarget pins an httpx probe to the endpoint it was handed by giving
+// the two default web ports an explicit scheme.
+//
+// Omitting -follow-redirects closed one route by which a probe could wander to a
+// different endpoint and file the result under this service; httpx's default-port
+// normalisation is a second route to the same bug. Given a scheme-less
+// "host:443", httpx treats 443 as the https default, reduces the input to
+// "https://host", and on failure falls back to "http://host" — port *80*. It then
+// reports port:"80" while echoing input:"host:443", so a dead :443 is recorded as
+// a live web service using port 80's response, on a port the scan may never have
+// found open. Observed on 3 services in the enerbank.com run and reproducible with
+// `httpx -u <host>:443` against any host serving plain HTTP on 80.
+//
+// Non-default ports are unaffected — "host:8080" stays on 8080 — so they keep
+// httpx's useful https-then-http fallback and are passed through untouched.
+func httpxProbeTarget(target string, port int) string {
+	if strings.Contains(target, "://") {
+		return target
+	}
+
+	if port == 0 {
+		if idx := strings.LastIndex(target, ":"); idx >= 0 {
+			if parsed, err := strconv.Atoi(target[idx+1:]); err == nil {
+				port = parsed
+			}
+		}
+	}
+
+	switch port {
+	case 443:
+		return "https://" + target
+	case 80:
+		return "http://" + target
+	default:
+		return target
+	}
+}
+
 func buildToolInvocation(toolPath string, execution *jobs_registry.ToolExecution) (toolInvocation, error) {
 	if execution == nil {
 		return toolInvocation{}, errors.New("missing typed execution plan")
@@ -358,7 +491,8 @@ func buildToolInvocation(toolPath string, execution *jobs_registry.ToolExecution
 		return toolInvocation{
 			executable: scannerExecutable(toolPath, "httpx"),
 			args: []string{
-				"-duc", "-u", target, "-status-code", "-favicon", "-asn", "-title",
+				"-duc", "-u", httpxProbeTarget(target, int(execution.GetPort())),
+				"-status-code", "-favicon", "-asn", "-title",
 				"-web-server", "-irr", "-tech-detect", "-ip", "-cname", "-location",
 				"-tls-grab", "-cdn", "-probe", "-json", "-timeout",
 				"10",

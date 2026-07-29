@@ -193,8 +193,10 @@ func TestBuildHttpxInvocationProbesServiceDirectlyWithoutFollowingRedirects(t *t
 		t.Fatalf("httpx args = %q, want no -follow-redirects (per-service probe must not chase cross-endpoint redirects)", invocation.args)
 	}
 
-	if got := argumentValue(t, invocation.args, "-u"); got != "fralan.com:80" {
-		t.Fatalf("httpx target = %q, want %q", got, "fralan.com:80")
+	// Port 80 carries an explicit scheme so httpx cannot renormalise the input
+	// onto a different port — see TestHttpxProbeTargetPinsDefaultPortsToAScheme.
+	if got := argumentValue(t, invocation.args, "-u"); got != "http://fralan.com:80" {
+		t.Fatalf("httpx target = %q, want %q", got, "http://fralan.com:80")
 	}
 
 	// The probe must still capture the signals the Assets page renders.
@@ -202,6 +204,51 @@ func TestBuildHttpxInvocationProbesServiceDirectlyWithoutFollowingRedirects(t *t
 		if !hasArgument(invocation.args, required) {
 			t.Fatalf("httpx args = %q, missing required flag %q", invocation.args, required)
 		}
+	}
+}
+
+func TestHttpxProbeTargetPinsDefaultPortsToAScheme(t *testing.T) {
+	// Given a scheme-less "host:443", httpx treats 443 as the https default,
+	// reduces the input to "https://host", and on failure falls back to
+	// "http://host" — port 80. It then files port 80's response under the :443
+	// service. An explicit scheme removes the normalisation that causes it.
+	for _, testCase := range []struct {
+		name   string
+		target string
+		port   int
+		want   string
+	}{
+		{"https default port", "example.com:443", 443, "https://example.com:443"},
+		{"http default port", "example.com:80", 80, "http://example.com:80"},
+		{"port derived from target when plan omits it", "example.com:443", 0, "https://example.com:443"},
+		{"non-default port keeps httpx fallback", "example.com:8443", 8443, "example.com:8443"},
+		{"non-default port 8080 untouched", "example.com:8080", 8080, "example.com:8080"},
+		{"existing scheme preserved", "https://example.com:443", 443, "https://example.com:443"},
+		{"bare host untouched", "example.com", 0, "example.com"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := httpxProbeTarget(testCase.target, testCase.port); got != testCase.want {
+				t.Fatalf("httpxProbeTarget(%q, %d) = %q, want %q",
+					testCase.target, testCase.port, got, testCase.want)
+			}
+		})
+	}
+}
+
+func TestBuildHttpxInvocationUsesHttpsForPort443(t *testing.T) {
+	httpsPort := int32(443)
+	invocation, err := buildToolInvocation("/scanner-tools", &jobs_registry.ToolExecution{
+		ToolName: "httpx",
+		Target:   "fralan.com:443",
+		Port:     &httpsPort,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := argumentValue(t, invocation.args, "-u"); got != "https://fralan.com:443" {
+		t.Fatalf("httpx target = %q, want %q (a :443 probe must not fall back to port 80)",
+			got, "https://fralan.com:443")
 	}
 }
 

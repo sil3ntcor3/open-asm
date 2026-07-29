@@ -8,7 +8,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import * as crypto from 'crypto';
-import { DataSource, InsertResult } from 'typeorm';
+import { DataSource, EntityManager, InsertResult } from 'typeorm';
 import {
   DnsResolutionStatus,
   IssueSourceType,
@@ -25,7 +25,10 @@ import { StorageService } from '../storage/storage.service';
 import { Vulnerability } from '../vulnerabilities/entities/vulnerability.entity';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import { DataAdapterInput } from './data-adapter.interface';
-import { TARPIT_OPEN_PORT_THRESHOLD } from '@/common/constants/app.constants';
+import {
+  TARPIT_OPEN_PORT_THRESHOLD,
+  WEB_PORT_FLOOR,
+} from '@/common/constants/app.constants';
 
 @Injectable()
 export class DataAdapterService {
@@ -37,6 +40,48 @@ export class DataAdapterService {
     private issuesService: IssuesService,
     private storageService: StorageService,
   ) {}
+
+  /**
+   * Seeds the {@link WEB_PORT_FLOOR} endpoints for the given assets so the HTTP
+   * probe always has a baseline to run, whatever the port scan did or didn't
+   * return. See WEB_PORT_FLOOR for why coverage must not depend on naabu.
+   *
+   * Idempotent: conflicts on (assetId, port) refresh `value` only, so it never
+   * disturbs ports naabu genuinely discovered, and re-running a discovery does
+   * not duplicate rows.
+   *
+   * Takes an EntityManager rather than opening its own connection — callers are
+   * already inside a transaction, and the pg pool is sized to the same value as
+   * the result-processor concurrency, so grabbing a second connection while
+   * holding a transaction can deadlock the pool.
+   */
+  private async ensureWebPortFloor(
+    manager: EntityManager,
+    assets: Array<{ id: string; value: string }>,
+  ): Promise<void> {
+    if (WEB_PORT_FLOOR.length === 0 || assets.length === 0) {
+      return;
+    }
+
+    const floorServices = assets.flatMap((asset) =>
+      WEB_PORT_FLOOR.map((port) => ({
+        value: `${asset.value}:${port}`,
+        port,
+        assetId: asset.id,
+      })),
+    );
+
+    await manager
+      .createQueryBuilder()
+      .insert()
+      .into(AssetService)
+      .values(floorServices)
+      .orUpdate({
+        conflict_target: ['assetId', 'port'],
+        overwrite: ['value'],
+      })
+      .execute();
+  }
 
   public async validateData<T extends object>(
     data: object | object[],
@@ -110,7 +155,34 @@ export class DataAdapterService {
           ['dnsRecords', 'dnsResolutionStatus'],
           ['value', 'targetId'],
         )
+        .returning(['id', 'value', 'dnsResolutionStatus'])
         .execute();
+
+      // Seed the floor at discovery time rather than waiting for the port scan.
+      // portsScanner applies it too, but only for assets whose naabu job actually
+      // ran — an asset whose scan never completed (worker outage, target-wide
+      // block, cancelled run) would otherwise never get an HTTP probe at all.
+      //
+      // Names that do not resolve are skipped: they are excluded from HTTP
+      // probing anyway, so seeding them would add asset_services that are never
+      // probed, never marked isErrorPage, and therefore inflate the target's
+      // service count permanently.
+      const discoveredAssets = (
+        insertResult.raw as Array<{
+          id: string;
+          value: string;
+          dnsResolutionStatus?: DnsResolutionStatus;
+        }>
+      )?.filter(
+        (asset) =>
+          asset?.id &&
+          asset?.value &&
+          asset.dnsResolutionStatus !== DnsResolutionStatus.UNRESOLVED,
+      );
+
+      if (discoveredAssets?.length) {
+        await this.ensureWebPortFloor(queryRunner.manager, discoveredAssets);
+      }
 
       await queryRunner.commitTransaction();
       return insertResult;
@@ -246,6 +318,16 @@ export class DataAdapterService {
           })
           .execute();
       }
+
+      // The floor is applied unconditionally — and deliberately *after* the
+      // branch above, so it still lands in the two cases that most need it: a
+      // scan that returned nothing (blocked, rate-limited, or short-circuited by
+      // the worker's edge detection) and a scan discarded as tarpit noise. Those
+      // are precisely the paths that used to leave an asset with zero services
+      // and therefore zero HTTP probes.
+      await this.ensureWebPortFloor(queryRunner.manager, [
+        { id: job.asset.id, value: job.asset.value },
+      ]);
 
       await queryRunner.commitTransaction();
     } catch (error) {
