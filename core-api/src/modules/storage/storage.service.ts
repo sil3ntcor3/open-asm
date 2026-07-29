@@ -45,6 +45,27 @@ export class StorageService implements OnModuleInit {
     this.downloadSecret = this.configService.get<string>('DEFAULT_ENCRYPTION_KEY', DEFAULT_ENCRYPTION_KEY);
   }
 
+  /**
+   * Buckets confirmed to exist. Purely a cache to keep the happy path free of
+   * extra round trips — a bucket is only added here once it has been observed
+   * or created, never optimistically.
+   */
+  private readonly readyBuckets = new Set<string>();
+
+  /** In-flight provisioning per bucket, so concurrent writes check once. */
+  private readonly bucketProvisioning = new Map<string, Promise<void>>();
+
+  /**
+   * Best-effort warm-up. Provisioning also happens lazily on first use, so a
+   * storage backend that is slow to start, or not up yet, costs nothing here:
+   * the failure is logged and the next write re-attempts it.
+   *
+   * This used to be the ONLY attempt. When storage was unreachable at boot the
+   * error was not a 404, so it fell through to a bare log and the buckets were
+   * never created again for the lifetime of the process — every job result
+   * upload then failed with NoSuchBucket, surfacing to workers as an opaque
+   * "Internal server error" while the container still reported healthy.
+   */
   async onModuleInit() {
     await this.ensureBucketsExist();
   }
@@ -54,27 +75,86 @@ export class StorageService implements OnModuleInit {
   }
 
   private async ensureBucketsExist() {
-    const client = this.rustFsClient.getClient();
-    for (const bucket of this.buckets) {
-      try {
-        await client.send(new HeadBucketCommand({ Bucket: bucket }));
-      } catch (error) {
-        if (error instanceof S3ServiceException && (error.$metadata.httpStatusCode === 404 || error.name === 'NoSuchBucket')) {
-          try {
-            await client.send(new CreateBucketCommand({ Bucket: bucket }));
-            this.logger.log(`Created bucket: ${bucket}`);
-          } catch (createError) {
-            if (createError instanceof S3ServiceException && createError.name === 'BucketAlreadyExists') {
-              this.logger.debug(`Bucket already exists: ${bucket}`);
-            } else {
-              this.logger.error(`Failed to create bucket ${bucket}: ${createError instanceof Error ? createError.message : 'Unknown error'}`);
-            }
-          }
-        } else {
-          this.logger.error(`Failed to check bucket ${bucket}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    await Promise.all(
+      this.buckets.map(async (bucket) => {
+        try {
+          await this.ensureBucket(bucket);
+        } catch (error) {
+          this.logger.warn(
+            `Deferred provisioning of bucket ${bucket}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          );
         }
+      }),
+    );
+  }
+
+  /**
+   * Guarantees the bucket exists before it is written to, retrying on every
+   * call until it succeeds. Resolves immediately once known-good.
+   *
+   * Throws when storage is unreachable rather than marking the bucket ready, so
+   * a transient outage stays retryable instead of being cached as success.
+   */
+  private async ensureBucket(bucket: string): Promise<void> {
+    if (this.readyBuckets.has(bucket)) {
+      return;
+    }
+
+    const inFlight = this.bucketProvisioning.get(bucket);
+    if (inFlight) {
+      return inFlight;
+    }
+
+    const provisioning = this.provisionBucket(bucket).finally(() => {
+      this.bucketProvisioning.delete(bucket);
+    });
+    this.bucketProvisioning.set(bucket, provisioning);
+    return provisioning;
+  }
+
+  private async provisionBucket(bucket: string): Promise<void> {
+    const client = this.rustFsClient.getClient();
+
+    try {
+      await client.send(new HeadBucketCommand({ Bucket: bucket }));
+      this.readyBuckets.add(bucket);
+      return;
+    } catch (error) {
+      // Anything other than "it isn't there" (connection refused, DNS failure,
+      // auth) says nothing about whether the bucket exists. Propagate so the
+      // caller reports a retryable failure and we try again next time.
+      if (!this.isMissingBucketError(error)) {
+        throw error;
       }
     }
+
+    try {
+      await client.send(new CreateBucketCommand({ Bucket: bucket }));
+      this.logger.log(`Created bucket: ${bucket}`);
+    } catch (createError) {
+      // Another replica winning the race is success, not failure.
+      if (!this.isBucketAlreadyPresentError(createError)) {
+        throw createError;
+      }
+      this.logger.debug(`Bucket already exists: ${bucket}`);
+    }
+
+    this.readyBuckets.add(bucket);
+  }
+
+  private isMissingBucketError(error: unknown): boolean {
+    return (
+      error instanceof S3ServiceException &&
+      (error.$metadata.httpStatusCode === 404 || error.name === 'NoSuchBucket')
+    );
+  }
+
+  private isBucketAlreadyPresentError(error: unknown): boolean {
+    return (
+      error instanceof S3ServiceException &&
+      (error.name === 'BucketAlreadyExists' ||
+        error.name === 'BucketAlreadyOwnedByYou')
+    );
   }
 
   public async uploadFile(
@@ -83,6 +163,11 @@ export class StorageService implements OnModuleInit {
     bucket: string = 'default',
   ) {
     try {
+      // Provision on demand. Startup warm-up is best-effort, so this is what
+      // actually guarantees the bucket exists — and what lets the service
+      // recover on its own when storage comes up after the API does.
+      await this.ensureBucket(bucket);
+
       const key = `${bucket}/${fileName}`;
       await this.rustFsClient.getClient().send(
         new PutObjectCommand({

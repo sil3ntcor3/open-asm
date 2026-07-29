@@ -13,12 +13,13 @@ import { IdQueryParamDto } from '@/common/dtos/id-query-param.dto';
 import { GrpcWorkerContext } from '@/common/guards/grpc-worker-context.service';
 import { GrpcWorkerTokenGuard } from '@/common/guards/grpc-worker-token.guard';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
-import { Metadata } from '@grpc/grpc-js';
+import { Metadata, status as GrpcStatus } from '@grpc/grpc-js';
 import {
   Body,
   Controller,
   Delete,
   Get,
+  Logger,
   Param,
   Post,
   Query,
@@ -48,6 +49,8 @@ type WorkerAuthedRequest = { workerInstance?: WorkerInstance };
 
 @Controller('jobs-registry')
 export class JobsRegistryController {
+  private readonly logger = new Logger(JobsRegistryController.name);
+
   constructor(
     private readonly jobsRegistryService: JobsRegistryService,
     private readonly grpcWorkerContext: GrpcWorkerContext,
@@ -430,17 +433,40 @@ export class JobsRegistryController {
       enableImplicitConversion: true,
       excludeExtraneousValues: true,
     });
-    const result = await this.jobsRegistryService.updateResult(
-      workerId,
-      transformedData,
-    );
-    if (!result.jobId)
-      return {
-        success: false,
-      };
+    try {
+      const result = await this.jobsRegistryService.updateResult(
+        workerId,
+        transformedData,
+      );
+      if (!result.jobId)
+        return {
+          success: false,
+        };
 
-    return {
-      success: true,
-    };
+      return {
+        success: true,
+      };
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unknown error occurred';
+
+      // Intake failures used to propagate untouched: the worker received a bare
+      // "Internal server error" and the API logged nothing at all, so the only
+      // visible symptom was a job re-running forever while the container still
+      // reported healthy. updateResult persists the payload to object storage
+      // before anything else, which makes a storage outage the most likely
+      // cause — and an infrastructure problem, not a bad result. Log the cause
+      // here, and answer with a retryable status so the worker can tell
+      // "try again" apart from "this result is unacceptable".
+      this.logger.error(
+        `Failed to accept result for job ${transformedData?.jobId ?? 'unknown'} from worker ${workerId}: ${message}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+
+      throw new RpcException({
+        code: GrpcStatus.UNAVAILABLE,
+        message: `Result intake unavailable: ${message}`,
+      });
+    }
   }
 }
