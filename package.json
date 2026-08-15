@@ -21,7 +21,8 @@
     "shadcn": "^4.1.2"
   },
   "scripts": {
-    "prepare": "husky || true"
+    "prepare": "husky || true",
+    "test:compose-security": "node --test scripts/docker-compose-security.test.mjs"
   },
   "dependencies": {
     "@tanstack/intent": "^0.0.41",
