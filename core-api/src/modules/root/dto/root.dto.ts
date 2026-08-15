@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsString } from 'class-validator';
+import { IsEmail, IsString, MinLength } from 'class-validator';
 
 export class CreateFirstAdminDto {
   @ApiProperty()
@@ -8,6 +8,15 @@ export class CreateFirstAdminDto {
   @IsString()
   @ApiProperty()
   password: string;
+
+  @IsString()
+  @MinLength(32)
+  @ApiProperty({
+    description: 'One-time deployment secret used to initialize the system',
+    minLength: 32,
+    writeOnly: true,
+  })
+  bootstrapToken: string;
 }
 
 export class GetMetadataDto {

@@ -4,16 +4,20 @@ import type { TestingModule } from '@nestjs/testing';
 import { Test } from '@nestjs/testing';
 import { SystemConfigsService } from '../system-configs/system-configs.service';
 import { UsersService } from '../users/users.service';
+import type { CreateFirstAdminDto } from './dto/root.dto';
 import { RootService } from './root.service';
 
 describe('RootService', () => {
   let service: RootService;
   let redisGet: jest.Mock;
+  let createFirstAdmin: jest.Mock;
   let configValues: Record<string, string | undefined>;
 
   beforeEach(async () => {
     redisGet = jest.fn();
+    createFirstAdmin = jest.fn();
     configValues = {
+      ADMIN_BOOTSTRAP_TOKEN: 'a-secure-bootstrap-token-with-32-chars',
       APP_VERSION: '0.1.0-dev.42+abc123',
       APP_CHANNEL: 'dev',
       APP_COMMIT: 'abc123',
@@ -25,7 +29,7 @@ describe('RootService', () => {
         {
           provide: UsersService,
           useValue: {
-            createFirstAdmin: jest.fn(),
+            createFirstAdmin,
             usersRepository: {
               count: jest.fn(),
             },
@@ -60,6 +64,43 @@ describe('RootService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  it('rejects first-admin creation without the configured bootstrap token', async () => {
+    await expect(
+      service.createFirstAdmin({
+        email: 'admin@example.com',
+        password: 'correct horse battery staple',
+      } as CreateFirstAdminDto),
+    ).rejects.toThrow('Invalid bootstrap token');
+    expect(createFirstAdmin).not.toHaveBeenCalled();
+  });
+
+  it('allows first-admin creation with the configured bootstrap token', async () => {
+    await expect(
+      service.createFirstAdmin({
+        email: 'admin@example.com',
+        password: 'correct horse battery staple',
+        bootstrapToken: 'a-secure-bootstrap-token-with-32-chars',
+      } as CreateFirstAdminDto),
+    ).resolves.toEqual({ message: 'Admin user created successfully' });
+    expect(createFirstAdmin).toHaveBeenCalledWith(
+      'admin@example.com',
+      'correct horse battery staple',
+    );
+  });
+
+  it('rejects the documented default bootstrap token', async () => {
+    configValues.ADMIN_BOOTSTRAP_TOKEN = 'change_me';
+
+    await expect(
+      service.createFirstAdmin({
+        email: 'admin@example.com',
+        password: 'correct horse battery staple',
+        bootstrapToken: 'change_me',
+      } as CreateFirstAdminDto),
+    ).rejects.toThrow('Invalid bootstrap token');
+    expect(createFirstAdmin).not.toHaveBeenCalled();
   });
 
   it('returns the installed build identity and cached update status', async () => {

@@ -24,6 +24,9 @@ import { useQueryClient } from '@tanstack/react-query';
 
 const formSchema = z
   .object({
+    bootstrapToken: z
+      .string()
+      .min(32, 'Bootstrap token must be at least 32 characters'),
     email: z.string().email('Invalid email address'),
     password: z.string().min(8, 'Password must be at least 8 characters'),
     confirmPassword: z
@@ -39,6 +42,7 @@ export default function Register() {
   const form = useForm({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      bootstrapToken: '',
       email: '',
       password: '',
       confirmPassword: '',
@@ -85,6 +89,24 @@ export default function Register() {
           </div>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+              <FormField
+                control={form.control}
+                name="bootstrapToken"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Bootstrap token</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="password"
+                        autoComplete="off"
+                        placeholder="Value from ADMIN_BOOTSTRAP_TOKEN"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <FormField
                 control={form.control}
                 name="email"
