@@ -79,9 +79,9 @@ export class AuthGuard implements CanActivate {
       request.user = currentSession.user as UserContextPayload;
     }
 
-    const rolesAccepted = this.reflector.get<Role[]>(
+    const rolesAccepted = this.reflector.getAllAndOverride<Role[]>(
       ROLE_METADATA_KEY,
-      context.getHandler(),
+      [context.getHandler(), context.getClass()],
     );
 
     const userRole = request.user?.role;
