@@ -2,8 +2,9 @@ import { DefaultMessageResponseDto } from '@/common/dtos/default-message-respons
 import { Role } from '@/common/enums/enum';
 import { ReleaseVersion } from '@/common/interfaces/app.interface';
 import { RedisService } from '@/services/redis/redis.service';
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { timingSafeEqual } from 'crypto';
 import { SystemConfigsService } from '../system-configs/system-configs.service';
 import { UsersService } from '../users/users.service';
 import {
@@ -33,7 +34,10 @@ export class RootService {
   public async createFirstAdmin(
     dto: CreateFirstAdminDto,
   ): Promise<DefaultMessageResponseDto> {
-    const { email, password } = dto;
+    const { email, password, bootstrapToken } = dto;
+    if (!this.bootstrapSecretsMatch(bootstrapToken)) {
+      throw new UnauthorizedException('Invalid bootstrap token');
+    }
     await this.usersService.createFirstAdmin(email, password);
     return {
       message: 'Admin user created successfully',
@@ -143,5 +147,24 @@ export class RootService {
   private getCoreSemver(version: string | null): number[] | null {
     const match = version?.match(/^(\d+)\.(\d+)\.(\d+)/);
     return match ? match.slice(1).map(Number) : null;
+  }
+
+  private bootstrapSecretsMatch(actual: string | undefined): boolean {
+    const expected = this.configService.get<string>('ADMIN_BOOTSTRAP_TOKEN');
+    if (
+      !expected ||
+      expected.length < 32 ||
+      expected === 'change_me' ||
+      !actual
+    ) {
+      return false;
+    }
+
+    const expectedBytes = Buffer.from(expected);
+    const actualBytes = Buffer.from(actual);
+    return (
+      expectedBytes.length === actualBytes.length &&
+      timingSafeEqual(expectedBytes, actualBytes)
+    );
   }
 }

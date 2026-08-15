@@ -2,9 +2,11 @@ import { BOT_EMAIL, BOT_ID, BOT_NAME } from '@/common/constants/app.constants';
 import { Role } from '@/common/enums/enum';
 import { ForbiddenException, Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { User } from '../auth/entities/user.entity';
 import { AuthService } from './../auth/auth.service';
+
+const FIRST_ADMIN_LOCK_ID = 725_019_002;
 
 @Injectable()
 export class UsersService implements OnModuleInit {
@@ -12,6 +14,7 @@ export class UsersService implements OnModuleInit {
     @InjectRepository(User)
     public usersRepository: Repository<User>,
     private authService: AuthService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async onModuleInit() {
@@ -39,25 +42,31 @@ export class UsersService implements OnModuleInit {
    * @returns The newly created user object.
    */
   public async createFirstAdmin(email: string, password: string) {
-    if (
-      (await this.usersRepository.count({
-        where: { role: Role.ADMIN },
-      })) > 0
-    ) {
-      throw new ForbiddenException();
-    }
+    await this.dataSource.transaction(async (manager) => {
+      await manager.query('SELECT pg_advisory_xact_lock($1)', [
+        FIRST_ADMIN_LOCK_ID,
+      ]);
+      const usersRepository = manager.getRepository(User);
+      if (
+        (await usersRepository.count({
+          where: { role: Role.ADMIN },
+        })) > 0
+      ) {
+        throw new ForbiddenException();
+      }
 
-    const result = await this.authService.api.signUpEmail({
-      body: {
-        name: 'Admin',
-        email,
-        password,
-      },
-    });
+      const result = await this.authService.api.signUpEmail({
+        body: {
+          name: 'Admin',
+          email,
+          password,
+        },
+      });
 
-    await this.usersRepository.update(result.user.id, {
-      role: Role.ADMIN,
-      emailVerified: true,
+      await usersRepository.update(result.user.id, {
+        role: Role.ADMIN,
+        emailVerified: true,
+      });
     });
 
     return this.authService.api.signInEmail({
