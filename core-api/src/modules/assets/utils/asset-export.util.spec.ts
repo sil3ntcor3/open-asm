@@ -99,8 +99,6 @@ describe('asset export utilities', () => {
         countryCode: 'US',
         ip: '203.0.113.10',
         isp: 'Example ISP',
-        latitude: 41.88,
-        longitude: -87.63,
         organization: 'Example Org',
         region: 'Illinois',
         services: 3,
@@ -217,7 +215,7 @@ describe('asset export utilities', () => {
     expect(sheet.rows).toEqual([expected]);
   });
 
-  it('includes every visible service detail in a Hosts export row', () => {
+  it('includes the selected service details in a Hosts export row', () => {
     const sheet = buildAssetExportSheet(AssetExportView.HOST, [
       {
         assetCount: 2,
@@ -287,6 +285,12 @@ describe('asset export utilities', () => {
         'Certificate Alternative Names',
         'Certificate Issuer Organizations',
         'Certificate Fingerprint SHA-256',
+      ]),
+    );
+    expect(sheet.columns.map(({ header }) => header)).not.toEqual(
+      expect.arrayContaining([
+        'Page Title',
+        'Screenshot',
         'HTTP Response Headers',
         'HTTP Response Body',
       ]),
@@ -299,8 +303,6 @@ describe('asset export utilities', () => {
         certificateIssuerOrganizations: 'Example Trust',
         detectedService: 'https',
         host: 'app.example.com',
-        httpResponseBody: '<html>Example</html>',
-        httpResponseHeaders: 'HTTP/1.1 200 OK',
         ipAddresses: '203.0.113.10; 2001:db8::10',
         port: 443,
         service: 'https://app.example.com',
@@ -309,9 +311,13 @@ describe('asset export utilities', () => {
         technologies: 'nginx:1.27; React:19',
       }),
     );
+    expect(sheet.rows[0]).not.toHaveProperty('title');
+    expect(sheet.rows[0]).not.toHaveProperty('screenshot');
+    expect(sheet.rows[0]).not.toHaveProperty('httpResponseHeaders');
+    expect(sheet.rows[0]).not.toHaveProperty('httpResponseBody');
   });
 
-  it('includes IP context and every related service detail in an IP Addresses export row', () => {
+  it('includes the selected IP context and related service details in an IP Addresses export row', () => {
     const sheet = buildAssetExportSheet(AssetExportView.IP, [
       {
         assetCount: 1,
@@ -365,22 +371,45 @@ describe('asset export utilities', () => {
         'Timezone',
       ]),
     );
+    expect(sheet.columns.map(({ header }) => header)).not.toEqual(
+      expect.arrayContaining([
+        'Geo-IP Lookup Status',
+        'District',
+        'Postal Code',
+        'Latitude',
+        'Longitude',
+        'UTC Offset Seconds',
+        'Currency',
+        'Page Title',
+        'Screenshot',
+        'HTTP Response Headers',
+        'HTTP Response Body',
+      ]),
+    );
     expect(sheet.rows[0]).toEqual(
       expect.objectContaining({
         asn: 'AS64500',
         certificateExpires: '2027-08-17T00:00:00Z',
         city: 'Chicago',
         continent: 'North America',
-        currency: 'USD',
-        district: 'Cook County',
         host: 'app.example.com',
         ip: '203.0.113.10',
         port: 443,
         service: 'https://app.example.com',
         technologies: 'nginx:1.27',
         timezone: 'America/Chicago',
-        zip: '60601',
       }),
     );
+    expect(sheet.rows[0]).not.toHaveProperty('lookupStatus');
+    expect(sheet.rows[0]).not.toHaveProperty('district');
+    expect(sheet.rows[0]).not.toHaveProperty('zip');
+    expect(sheet.rows[0]).not.toHaveProperty('latitude');
+    expect(sheet.rows[0]).not.toHaveProperty('longitude');
+    expect(sheet.rows[0]).not.toHaveProperty('utcOffset');
+    expect(sheet.rows[0]).not.toHaveProperty('currency');
+    expect(sheet.rows[0]).not.toHaveProperty('title');
+    expect(sheet.rows[0]).not.toHaveProperty('screenshot');
+    expect(sheet.rows[0]).not.toHaveProperty('httpResponseHeaders');
+    expect(sheet.rows[0]).not.toHaveProperty('httpResponseBody');
   });
 });
