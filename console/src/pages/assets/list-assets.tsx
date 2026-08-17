@@ -12,10 +12,17 @@ import StatusCodeAssetsTab from './components/status-code-assets-tab';
 import TriggerList from './components/tab-trigger-list';
 import TechnologyAssetsTab from './components/technology-assets-tab';
 import TlsAssetsTab from './components/tls-assets-tab';
+import AssetsExportButton, {
+  type AssetExportView,
+} from './components/assets-export-button';
 
 // Component references (not elements) so only the active tab is instantiated
 // per render, instead of constructing all seven elements on every render.
-const tabList: { value: string; text: string; tab: ComponentType }[] = [
+const tabList: {
+  value: AssetExportView;
+  text: string;
+  tab: ComponentType;
+}[] = [
   { value: 'service', text: 'Services', tab: AssetTabContent },
   { value: 'technology', text: 'Technologies', tab: TechnologyAssetsTab },
   { value: 'ip', text: 'IP Addresses', tab: IpAssetsTab },
@@ -35,6 +42,7 @@ export function ListAssets() {
   const tab = (search as Record<string, string>).tab || 'host';
   const navigate = useNavigate();
 
+  /** Keeps the active asset view in the URL and resets its pagination. */
   const handleTabChange = (value: string) => {
     navigate({
       search: ((prev: Record<string, unknown>) => ({
@@ -47,13 +55,17 @@ export function ListAssets() {
 
   if (workspaces.length === 0) return <CreateWorkspace />;
 
-  const ActiveTab = tabList.find((t) => t.value === tab)?.tab;
+  const activeTabDefinition = tabList.find((item) => item.value === tab);
+  const ActiveTab = activeTabDefinition?.tab;
+  const activeView = activeTabDefinition?.value ?? 'host';
 
   return (
     <div className="w-full space-y-2">
-      <div className="flex justify-between items-center">
-        <FilterFormInfinite />
-        {/* <ExportDataButton api="api/assets/services/export" prefix="assets" /> */}
+      <div className="flex flex-col gap-2 xl:flex-row xl:items-start">
+        <div className="min-w-0 flex-1">
+          <FilterFormInfinite />
+        </div>
+        <AssetsExportButton view={activeView} />
       </div>
       <Tabs value={tab} onValueChange={handleTabChange}>
         <TriggerList tabTriggerList={tabList} />

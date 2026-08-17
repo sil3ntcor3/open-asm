@@ -1,5 +1,6 @@
 import { WorkspaceId } from '@/common/decorators/workspace-id.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
+import { WORKSPACE_HEADER_NAME } from '@/common/constants/app.constants';
 import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
 import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
@@ -13,7 +14,13 @@ import {
   Query,
   Res,
 } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import {
+  ApiHeader,
+  ApiOperation,
+  ApiProduces,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Response } from 'express';
 import { AssetsService } from './assets.service';
 import { GetAssetsQueryDto, GetAssetsResponseDto } from './dto/assets.dto';
@@ -25,6 +32,14 @@ import { SwitchAssetDto } from './dto/switch-asset.dto';
 import { GetTlsResponseDto, GetTlsQueryDto } from './dto/tls.dto';
 import { UpdateAssetDto } from './dto/update-asset.dto';
 import { GetHostAssetsDTO } from './dto/get-host-assets.dto';
+import {
+  AssetExportFormat,
+  ExportAssetsQueryDto,
+} from './dto/export-assets.dto';
+import { buildCsvExport, buildXlsxExport } from './utils/asset-export.util';
+
+const XLSX_CONTENT_TYPE =
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 @ApiTags('Assets')
 @Controller('assets')
@@ -165,6 +180,55 @@ export class AssetsController {
     return this.assetsService.getManyTls(query, workspaceId);
   }
 
+  @ApiOperation({
+    summary: 'Export assets',
+    description:
+      'Exports all filtered rows from the selected Assets view as CSV or XLSX.',
+  })
+  @ApiHeader({
+    name: WORKSPACE_HEADER_NAME,
+    description: 'Workspace ID',
+  })
+  @ApiProduces('text/csv', XLSX_CONTENT_TYPE)
+  @ApiResponse({
+    status: 200,
+    description: 'Assets export file',
+    content: {
+      'text/csv': { schema: { type: 'string', format: 'binary' } },
+      [XLSX_CONTENT_TYPE]: {
+        schema: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
+  @Get('/export')
+  async exportAssets(
+    @Query() query: ExportAssetsQueryDto,
+    @WorkspaceId() workspaceId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const sheet = await this.assetsService.getAssetsForExport(
+      query,
+      workspaceId,
+    );
+    const isXlsx = query.format === AssetExportFormat.XLSX;
+    const file = isXlsx
+      ? buildXlsxExport(sheet.sheetName, sheet.columns, sheet.rows)
+      : buildCsvExport(sheet.columns, sheet.rows);
+    const extension = isXlsx ? 'xlsx' : 'csv';
+
+    res.setHeader(
+      'Content-Type',
+      isXlsx ? XLSX_CONTENT_TYPE : 'text/csv; charset=utf-8',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="assets-${query.view}-${workspaceId}.${extension}"`,
+    );
+    res.setHeader('Content-Length', file.length);
+    res.send(file);
+  }
+
   @Doc({
     summary: 'Get asset by ID',
     description: 'Retrieves a single asset by its ID.',
@@ -250,34 +314,35 @@ export class AssetsController {
       return `${day}-${month}-${year}`;
     };
 
-    // Get services data for CSV export
     const services = await this.assetsService.exportServicesForCSV(workspaceId);
-
-    // Create CSV content
-    const csvRows: string[] = [];
-    // Add header row
-    csvRows.push(
-      'value,ports,techs,tls_host,tls_sni,tls_subject_dn,tls_not_after,tls_not_before,tls_connection',
+    const file = buildCsvExport(
+      [
+        { key: 'value', header: 'value' },
+        { key: 'ports', header: 'ports' },
+        { key: 'techs', header: 'techs' },
+        { key: 'tlsHost', header: 'tls_host' },
+        { key: 'tlsSni', header: 'tls_sni' },
+        { key: 'tlsSubjectDn', header: 'tls_subject_dn' },
+        { key: 'tlsNotAfter', header: 'tls_not_after' },
+        { key: 'tlsNotBefore', header: 'tls_not_before' },
+        { key: 'tlsConnection', header: 'tls_connection' },
+      ],
+      services.map((service) => ({
+        ports: service.ports?.join(',') ?? '',
+        techs: service.techs?.join(',') ?? '',
+        tlsConnection: service.tls?.tls_connection ?? '',
+        tlsHost: service.tls?.host ?? '',
+        tlsNotAfter: service.tls?.not_after
+          ? formatDate(new Date(service.tls.not_after))
+          : '',
+        tlsNotBefore: service.tls?.not_before
+          ? formatDate(new Date(service.tls.not_before))
+          : '',
+        tlsSni: service.tls?.sni ?? '',
+        tlsSubjectDn: service.tls?.subject_dn ?? '',
+        value: service.value,
+      })),
     );
-
-    // Add data rows
-    for (const service of services) {
-      const portsFormatted = service.ports ? service.ports.join(',') : '';
-      const techsFormatted = service.techs ? service.techs.join(',') : '';
-      const tlsHost = service.tls?.host || '';
-      const tlsSni = service.tls?.sni || '';
-      const tlsSubjectDn = service.tls?.subject_dn || '';
-      const tlsNotAfter = service.tls?.not_after
-        ? formatDate(new Date(service.tls.not_after))
-        : '';
-      const tlsNotBefore = service.tls?.not_before
-        ? formatDate(new Date(service.tls.not_before))
-        : '';
-      const tlsConnection = service.tls?.tls_connection || '';
-
-      const row = `"${service.value.replace(/"/g, '""')}","${portsFormatted}","${techsFormatted}","${tlsHost}","${tlsSni}","${tlsSubjectDn}","${tlsNotAfter}","${tlsNotBefore}","${tlsConnection}"`;
-      csvRows.push(row);
-    }
 
     // Set response headers for CSV download
     res.setHeader('Content-Type', 'text/csv');
@@ -285,9 +350,8 @@ export class AssetsController {
       'Content-Disposition',
       `attachment; filename="services_${workspaceId}.csv"`,
     );
-    res.setHeader('Content-Length', Buffer.byteLength(csvRows.join('\n')));
+    res.setHeader('Content-Length', file.length);
 
-    // Send CSV content
-    res.send(csvRows.join('\n'));
+    res.send(file);
   }
 }
