@@ -1219,6 +1219,7 @@ export type GetAssetsResponseDtoScreenshotPath = { [key: string]: unknown };
 export type GetAssetsResponseDto = {
   id: string;
   value: string;
+  hostname?: string;
   targetId: string;
   isPrimary?: boolean;
   createdAt: string;
@@ -1230,6 +1231,9 @@ export type GetAssetsResponseDto = {
   port?: number;
   isEnabled: boolean;
   screenshotPath?: GetAssetsResponseDtoScreenshotPath;
+  detectedService?: string;
+  product?: string;
+  scheme?: string;
 };
 
 export type GetManyGetAssetsResponseDtoDto = {

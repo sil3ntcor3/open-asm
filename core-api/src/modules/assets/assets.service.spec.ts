@@ -18,6 +18,7 @@ import {
   AssetExportView,
   ExportAssetsQueryDto,
 } from './dto/export-assets.dto';
+import { GetAssetsQueryDto } from './dto/assets.dto';
 
 describe('AssetsService', () => {
   let service: AssetsService;
@@ -50,6 +51,9 @@ describe('AssetsService', () => {
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
       getOne: jest.fn(),
       getOneOrFail: jest.fn(),
       getMany: jest.fn(),
@@ -172,7 +176,226 @@ describe('AssetsService', () => {
     });
   });
 
+  describe('getManyAsssetServices', () => {
+    it('returns the host, tags, and detected service metadata used by detailed exports', async () => {
+      (mockAssetServiceRepository as any).getManyAndCount.mockResolvedValue([
+        [
+          {
+            asset: {
+              ipAssets: [{ ipAddress: '203.0.113.10' }],
+              isEnabled: true,
+              targetId: 'target-id',
+              value: 'app.example.com',
+            },
+            createdAt: new Date('2026-08-17T12:00:00.000Z'),
+            httpResponses: [
+              {
+                status_code: 200,
+                tech: ['nginx:1.27'],
+                tls: { subject_cn: 'app.example.com' },
+              },
+            ],
+            id: 'service-id',
+            port: 443,
+            product: 'nginx 1.27',
+            scheme: 'https',
+            service: 'https',
+            tags: [{ id: 'tag-id', tag: 'production' }],
+            value: 'https://app.example.com',
+          } as AssetService,
+        ],
+        1,
+      ]);
+      jest
+        .spyOn(mockTechnologyForwarderService, 'enrichTechnologies')
+        .mockResolvedValue([
+          {
+            categoryNames: ['Web servers'],
+            description: 'High performance web server',
+            name: 'nginx',
+            website: 'https://nginx.org',
+          },
+        ] as never);
+      const query = Object.assign(new GetAssetsQueryDto(), {
+        limit: 10,
+        page: 1,
+        sortBy: 'createdAt',
+        sortOrder: 'ASC',
+      });
+
+      const result = await service.getManyAsssetServices(query, 'workspace-id');
+
+      expect(result.data[0]).toEqual(
+        expect.objectContaining({
+          detectedService: 'https',
+          hostname: 'app.example.com',
+          product: 'nginx 1.27',
+          scheme: 'https',
+          tags: [{ id: 'tag-id', tag: 'production' }],
+        }),
+      );
+    });
+  });
+
   describe('getAssetsForExport', () => {
+    it('expands each IP into its related service details and preserves IPs without services', async () => {
+      const query = Object.assign(new ExportAssetsQueryDto(), {
+        format: AssetExportFormat.CSV,
+        sortBy: 'ip',
+        sortOrder: 'ASC',
+        value: '203.0.113',
+        view: AssetExportView.IP,
+      });
+      jest.spyOn(service, 'getIpAssets').mockResolvedValue({
+        data: [
+          {
+            assetCount: 1,
+            geoIp: { city: 'Chicago', country: 'United States' } as never,
+            ip: '203.0.113.10',
+          },
+          {
+            assetCount: 0,
+            geoIp: { city: 'Dallas', country: 'United States' } as never,
+            ip: '203.0.113.20',
+          },
+        ],
+        hasNextPage: false,
+        limit: 100,
+        page: 1,
+        pageCount: 1,
+        total: 2,
+      });
+      const getServices = jest
+        .spyOn(service, 'getManyAsssetServices')
+        .mockResolvedValue({
+          data: [
+            {
+              createdAt: new Date('2026-08-17T12:00:00.000Z'),
+              hostname: 'app.example.com',
+              httpResponses: {
+                tech: ['nginx:1.27'],
+                tls: { subject_cn: 'app.example.com' },
+              } as never,
+              id: 'service-id',
+              ipAddresses: ['203.0.113.10', '192.0.2.5'],
+              isEnabled: true,
+              port: 443,
+              targetId: 'target-id',
+              value: 'https://app.example.com',
+            },
+          ],
+          hasNextPage: false,
+          limit: 100,
+          page: 1,
+          pageCount: 1,
+          total: 1,
+        });
+
+      const result = await service.getAssetsForExport(query, 'workspace-id');
+
+      expect(getServices).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ipAddresses: ['203.0.113.10', '203.0.113.20'],
+          limit: 100,
+          page: 1,
+          value: undefined,
+        }),
+        'workspace-id',
+      );
+      expect(result.rows).toEqual([
+        expect.objectContaining({
+          city: 'Chicago',
+          host: 'app.example.com',
+          ip: '203.0.113.10',
+          port: 443,
+          service: 'https://app.example.com',
+          services: 1,
+        }),
+        expect.objectContaining({
+          city: 'Dallas',
+          ip: '203.0.113.20',
+          service: undefined,
+          services: 0,
+        }),
+      ]);
+    });
+
+    it('expands each host into its related service details and preserves hosts without services', async () => {
+      const query = Object.assign(new ExportAssetsQueryDto(), {
+        format: AssetExportFormat.CSV,
+        sortBy: 'host',
+        sortOrder: 'ASC',
+        value: 'example',
+        view: AssetExportView.HOST,
+      });
+      jest.spyOn(service, 'getHostAssets').mockResolvedValue({
+        data: [
+          { host: 'app.example.com', assetCount: 1 },
+          { host: 'idle.example.com', assetCount: 0 },
+        ],
+        hasNextPage: false,
+        limit: 100,
+        page: 1,
+        pageCount: 1,
+        total: 2,
+      });
+      const getServices = jest
+        .spyOn(service, 'getManyAsssetServices')
+        .mockResolvedValue({
+          data: [
+            {
+              createdAt: new Date('2026-08-17T12:00:00.000Z'),
+              detectedService: 'https',
+              hostname: 'app.example.com',
+              httpResponses: {
+                status_code: 200,
+                tech: ['nginx:1.27'],
+                tls: { subject_cn: 'app.example.com' },
+              } as never,
+              id: 'service-id',
+              ipAddresses: ['203.0.113.10'],
+              isEnabled: true,
+              port: 443,
+              product: 'nginx 1.27',
+              scheme: 'https',
+              targetId: 'target-id',
+              value: 'https://app.example.com',
+            },
+          ],
+          hasNextPage: false,
+          limit: 100,
+          page: 1,
+          pageCount: 1,
+          total: 1,
+        });
+
+      const result = await service.getAssetsForExport(query, 'workspace-id');
+
+      expect(getServices).toHaveBeenCalledWith(
+        expect.objectContaining({
+          hosts: ['app.example.com', 'idle.example.com'],
+          limit: 100,
+          page: 1,
+          value: undefined,
+        }),
+        'workspace-id',
+      );
+      expect(result.rows).toEqual([
+        expect.objectContaining({
+          host: 'app.example.com',
+          port: 443,
+          service: 'https://app.example.com',
+          services: 1,
+          technologies: 'nginx:1.27',
+        }),
+        expect.objectContaining({
+          host: 'idle.example.com',
+          service: undefined,
+          services: 0,
+        }),
+      ]);
+    });
+
     it('collects every page from the filtered active asset view', async () => {
       const query = Object.assign(new ExportAssetsQueryDto(), {
         format: AssetExportFormat.CSV,
@@ -202,6 +425,14 @@ describe('AssetsService', () => {
           pageCount: 2,
           total: 101,
         });
+      jest.spyOn(service, 'getManyAsssetServices').mockResolvedValue({
+        data: [],
+        hasNextPage: false,
+        limit: 100,
+        page: 1,
+        pageCount: 0,
+        total: 0,
+      });
 
       const result = await service.getAssetsForExport(query, 'workspace-id');
 
@@ -222,17 +453,19 @@ describe('AssetsService', () => {
         expect.objectContaining({ limit: 100, page: 2 }),
         'workspace-id',
       );
-      expect(result).toEqual({
-        columns: [
-          { key: 'host', header: 'Host' },
+      expect(result.columns).toEqual(
+        expect.arrayContaining([
+          { key: 'host', header: 'Host Name' },
           { key: 'services', header: 'Services' },
-        ],
-        rows: [
-          { host: 'api.example.com', services: 2 },
-          { host: 'www.example.com', services: 1 },
-        ],
-        sheetName: 'Hosts',
-      });
+          { key: 'service', header: 'Service' },
+          { key: 'technologies', header: 'Technologies' },
+        ]),
+      );
+      expect(result.rows).toEqual([
+        expect.objectContaining({ host: 'api.example.com', services: 2 }),
+        expect.objectContaining({ host: 'www.example.com', services: 1 }),
+      ]);
+      expect(result.sheetName).toBe('Hosts');
     });
   });
 });
