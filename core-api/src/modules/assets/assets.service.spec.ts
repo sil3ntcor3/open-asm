@@ -13,6 +13,11 @@ import { AssetsService } from './assets.service';
 import { AssetService } from './entities/asset-services.entity';
 import { Asset } from './entities/assets.entity';
 import { TlsAssetsView } from './entities/tls-assets.entity';
+import {
+  AssetExportFormat,
+  AssetExportView,
+  ExportAssetsQueryDto,
+} from './dto/export-assets.dto';
 
 describe('AssetsService', () => {
   let service: AssetsService;
@@ -141,9 +146,7 @@ describe('AssetsService', () => {
   describe('switchAsset', () => {
     it('scopes the asset lookup to the selected workspace', async () => {
       const asset = { id: 'asset-id', isEnabled: true } as Asset;
-      jest
-        .spyOn(mockAssetRepository, 'findOne')
-        .mockResolvedValue(asset);
+      jest.spyOn(mockAssetRepository, 'findOne').mockResolvedValue(asset);
       jest.spyOn(mockAssetRepository, 'save').mockResolvedValue(asset);
 
       await service.switchAsset('asset-id', false, 'workspace-id');
@@ -166,6 +169,70 @@ describe('AssetsService', () => {
         service.switchAsset('asset-id', false, 'workspace-id'),
       ).rejects.toThrow(NotFoundException);
       expect(mockAssetRepository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getAssetsForExport', () => {
+    it('collects every page from the filtered active asset view', async () => {
+      const query = Object.assign(new ExportAssetsQueryDto(), {
+        format: AssetExportFormat.CSV,
+        hosts: ['example.com'],
+        limit: 5,
+        page: 7,
+        sortBy: 'host',
+        sortOrder: 'ASC',
+        value: 'example',
+        view: AssetExportView.HOST,
+      });
+      const getHostAssets = jest
+        .spyOn(service, 'getHostAssets')
+        .mockResolvedValueOnce({
+          data: [{ host: 'api.example.com', assetCount: 2 }],
+          hasNextPage: true,
+          limit: 100,
+          page: 1,
+          pageCount: 2,
+          total: 101,
+        })
+        .mockResolvedValueOnce({
+          data: [{ host: 'www.example.com', assetCount: 1 }],
+          hasNextPage: false,
+          limit: 100,
+          page: 2,
+          pageCount: 2,
+          total: 101,
+        });
+
+      const result = await service.getAssetsForExport(query, 'workspace-id');
+
+      expect(getHostAssets).toHaveBeenCalledTimes(2);
+      expect(getHostAssets).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          hosts: ['example.com'],
+          limit: 100,
+          page: 1,
+          sortBy: 'host',
+          value: 'example',
+        }),
+        'workspace-id',
+      );
+      expect(getHostAssets).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ limit: 100, page: 2 }),
+        'workspace-id',
+      );
+      expect(result).toEqual({
+        columns: [
+          { key: 'host', header: 'Host' },
+          { key: 'services', header: 'Services' },
+        ],
+        rows: [
+          { host: 'api.example.com', services: 2 },
+          { host: 'www.example.com', services: 1 },
+        ],
+        sheetName: 'Hosts',
+      });
     });
   });
 });

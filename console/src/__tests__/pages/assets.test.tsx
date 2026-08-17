@@ -1,8 +1,10 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders, screen, waitFor } from '@/test/utils';
 import Assets from '@/pages/assets/assets';
+import userEvent from '@testing-library/user-event';
 
 const mockWorkspaces = [{ id: 'ws-1', name: 'Test Workspace' }];
+const mockExportAssets = vi.hoisted(() => vi.fn());
 // The Assets page defaults to the Hosts tab, which lists every discovered host
 // (including subdomains with no live service yet).
 const mockHostAssets = [
@@ -45,11 +47,11 @@ vi.mock('@/hooks/useWorkspaceSelector', () => ({
 }));
 
 vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import('@/services/apis/gen/queries')
-  >();
+  const actual =
+    await importOriginal<typeof import('@/services/apis/gen/queries')>();
   return {
     ...actual,
+    assetsControllerExportAssets: mockExportAssets,
     useAssetsControllerGetAssetsInWorkspace: () => ({
       data: { data: mockAssets, total: mockAssets.length },
       isLoading: false,
@@ -106,6 +108,20 @@ vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
 });
 
 describe('Assets Page', () => {
+  beforeEach(() => {
+    mockExportAssets.mockReset();
+    mockExportAssets.mockResolvedValue(new Blob(['export']));
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:asset-export');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(
+      () => undefined,
+    );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('renders discovered hosts on the default Hosts tab', async () => {
     renderWithProviders(<Assets />);
 
@@ -115,6 +131,28 @@ describe('Assets Page', () => {
       // listed — that visibility is the core of the discovery fix.
       expect(screen.getByText('example.com')).toBeInTheDocument();
       expect(screen.getByText('api.example.com')).toBeInTheDocument();
+    });
+  });
+
+  it('offers CSV and Excel exports for the active assets view', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Assets />);
+
+    await user.click(await screen.findByRole('button', { name: /export/i }));
+
+    expect(
+      await screen.findByRole('menuitem', { name: /csv \(\.csv\)/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('menuitem', { name: /excel \(\.xlsx\)/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('menuitem', { name: /csv \(\.csv\)/i }));
+
+    await waitFor(() => {
+      expect(mockExportAssets).toHaveBeenCalledWith(
+        expect.objectContaining({ format: 'csv', view: 'host' }),
+      );
     });
   });
 });

@@ -241,14 +241,16 @@ export type GetApiKeyResponseDto = {
 
 export type SwaggerPropertyMetadataValue = { [key: string]: unknown };
 
+export type SwaggerPropertyMetadataExample = { [key: string]: unknown };
+
 export type SwaggerPropertyMetadataDescription = { [key: string]: unknown };
 
 export type SwaggerPropertyMetadata = {
   value: SwaggerPropertyMetadataValue;
   type: string;
+  example: SwaggerPropertyMetadataExample;
   description: SwaggerPropertyMetadataDescription;
   title: string;
-  examples?: unknown;
 };
 
 export type GetWorkspaceConfigsDto = {
@@ -1122,7 +1124,7 @@ export type JobHistoryDetailResponseDto = {
   jobHistoryName: string;
 };
 
-export type PickTypeClass = {
+export type PickToolIdName = {
   id: string;
   name: string;
 };
@@ -1132,7 +1134,7 @@ export type AssetTag = {
   createdAt: string;
   updatedAt: string;
   tag: string;
-  tool: PickTypeClass;
+  tool: PickToolIdName;
 };
 
 export type TlsInfoFingerprintHash = { [key: string]: unknown };
@@ -2950,6 +2952,51 @@ export type AssetsControllerGetTlsAssetsParams = {
    */
   endDate?: string;
 };
+
+export type AssetsControllerExportAssetsParams = {
+  search?: string;
+  sortBy?: string;
+  sortOrder?: string;
+  value?: string;
+  targetIds?: string[];
+  ipAddresses?: string[];
+  ports?: string[];
+  hosts?: string[];
+  techs?: string[];
+  statusCodes?: string[];
+  tlsHosts?: string[];
+  /**
+   * Filter assets created on or after this date (YYYY-MM-DD)
+   */
+  startDate?: string;
+  /**
+   * Filter assets created on or before this date (YYYY-MM-DD)
+   */
+  endDate?: string;
+  format: AssetsControllerExportAssetsFormat;
+  view: AssetsControllerExportAssetsView;
+};
+
+export type AssetsControllerExportAssetsFormat =
+  (typeof AssetsControllerExportAssetsFormat)[keyof typeof AssetsControllerExportAssetsFormat];
+
+export const AssetsControllerExportAssetsFormat = {
+  csv: 'csv',
+  xlsx: 'xlsx',
+} as const;
+
+export type AssetsControllerExportAssetsView =
+  (typeof AssetsControllerExportAssetsView)[keyof typeof AssetsControllerExportAssetsView];
+
+export const AssetsControllerExportAssetsView = {
+  host: 'host',
+  ip: 'ip',
+  port: 'port',
+  service: 'service',
+  'status-code': 'status-code',
+  technology: 'technology',
+  tls: 'tls',
+} as const;
 
 export type WorkersControllerGetWorkersParams = {
   search?: string;
@@ -14198,6 +14245,180 @@ export function useAssetsControllerGetTlsAssets<
   queryKey: DataTag<QueryKey, TData, TError>;
 } {
   const queryOptions = getAssetsControllerGetTlsAssetsQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Exports all filtered rows from the selected Assets view as CSV or XLSX.
+ * @summary Export assets
+ */
+export const assetsControllerExportAssets = (
+  params: AssetsControllerExportAssetsParams,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<Blob>(
+    {
+      url: `/api/assets/export`,
+      method: 'GET',
+      params,
+      responseType: 'blob',
+      signal,
+    },
+    options,
+  );
+};
+
+export const getAssetsControllerExportAssetsQueryKey = (
+  params?: AssetsControllerExportAssetsParams,
+) => {
+  return [`/api/assets/export`, ...(params ? [params] : [])] as const;
+};
+
+export const getAssetsControllerExportAssetsQueryOptions = <
+  TData = Awaited<ReturnType<typeof assetsControllerExportAssets>>,
+  TError = unknown,
+>(
+  params: AssetsControllerExportAssetsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof assetsControllerExportAssets>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getAssetsControllerExportAssetsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof assetsControllerExportAssets>>
+  > = ({ signal }) =>
+    assetsControllerExportAssets(params, requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof assetsControllerExportAssets>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type AssetsControllerExportAssetsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof assetsControllerExportAssets>>
+>;
+export type AssetsControllerExportAssetsQueryError = unknown;
+
+export function useAssetsControllerExportAssets<
+  TData = Awaited<ReturnType<typeof assetsControllerExportAssets>>,
+  TError = unknown,
+>(
+  params: AssetsControllerExportAssetsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof assetsControllerExportAssets>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof assetsControllerExportAssets>>,
+          TError,
+          Awaited<ReturnType<typeof assetsControllerExportAssets>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useAssetsControllerExportAssets<
+  TData = Awaited<ReturnType<typeof assetsControllerExportAssets>>,
+  TError = unknown,
+>(
+  params: AssetsControllerExportAssetsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof assetsControllerExportAssets>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof assetsControllerExportAssets>>,
+          TError,
+          Awaited<ReturnType<typeof assetsControllerExportAssets>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useAssetsControllerExportAssets<
+  TData = Awaited<ReturnType<typeof assetsControllerExportAssets>>,
+  TError = unknown,
+>(
+  params: AssetsControllerExportAssetsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof assetsControllerExportAssets>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Export assets
+ */
+
+export function useAssetsControllerExportAssets<
+  TData = Awaited<ReturnType<typeof assetsControllerExportAssets>>,
+  TError = unknown,
+>(
+  params: AssetsControllerExportAssetsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof assetsControllerExportAssets>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getAssetsControllerExportAssetsQueryOptions(
     params,
     options,
   );

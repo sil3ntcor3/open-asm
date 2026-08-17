@@ -23,11 +23,18 @@ import { GetPortAssetsDTO } from './dto/get-port-assets.dto';
 import { GetStatusCodeAssetsDTO } from './dto/get-status-code-assets.dto';
 import { GetTechnologyAssetsDTO } from './dto/get-technology-assets.dto';
 import { GetTlsQueryDto, GetTlsResponseDto } from './dto/tls.dto';
+import { AssetExportView, ExportAssetsQueryDto } from './dto/export-assets.dto';
 import { UpdateAssetDto } from './dto/update-asset.dto';
 import { AssetService } from './entities/asset-services.entity';
 import { AssetTag } from './entities/asset-tags.entity';
 import { Asset } from './entities/assets.entity';
 import { TlsAssetsView } from './entities/tls-assets.entity';
+import {
+  buildAssetExportSheet,
+  type AssetExportSheet,
+} from './utils/asset-export.util';
+
+const ASSET_EXPORT_BATCH_SIZE = 100;
 
 // Type cho raw database response từ TLS query
 // interface TlsRawData {
@@ -301,6 +308,7 @@ export class AssetsService {
       asset.id = item.id;
       asset.value = item.value;
       asset.targetId = item.asset?.targetId;
+      asset.port = item.port;
       asset.createdAt = item.createdAt;
       asset.dnsRecords = item.asset?.dnsRecords;
       asset.isEnabled = item.asset?.isEnabled;
@@ -470,9 +478,10 @@ export class AssetsService {
       .where('"assetServiceId" = :assetServiceId', { assetServiceId: item.id })
       .getRawMany<{ tag: string; id: string }>();
 
-    asset.tags = tagsResult.map(
-      (t) => ({ id: t.id, tag: t.tag }),
-    ) as AssetTag[];
+    asset.tags = tagsResult.map((t) => ({
+      id: t.id,
+      tag: t.tag,
+    })) as AssetTag[];
 
     asset.ipAddresses = item.asset?.ipAssets
       ? item.asset.ipAssets.map((e) => e.ipAddress)
@@ -1062,6 +1071,72 @@ export class AssetsService {
 
     // Save and return the updated asset
     return this.assetRepo.save(asset);
+  }
+
+  /** Fetches one bounded page for the selected Assets export view. */
+  private async getAssetsExportPage(
+    query: GetAssetsQueryDto,
+    view: AssetExportView,
+    workspaceId: string,
+  ): Promise<GetManyBaseResponseDto<unknown>> {
+    switch (view) {
+      case AssetExportView.HOST:
+        return this.getHostAssets(query, workspaceId);
+      case AssetExportView.IP:
+        return this.getIpAssets(query, workspaceId);
+      case AssetExportView.PORT:
+        return this.getPortAssets(query, workspaceId);
+      case AssetExportView.SERVICE:
+        return this.getManyAsssetServices(query, workspaceId);
+      case AssetExportView.STATUS_CODE:
+        return this.getStatusCodeAssets(query, workspaceId);
+      case AssetExportView.TECHNOLOGY:
+        return this.getTechnologyAssets(query, workspaceId);
+      case AssetExportView.TLS: {
+        const tlsQuery = Object.assign(new GetTlsQueryDto(), {
+          endDate: query.endDate,
+          hosts: query.tlsHosts,
+          limit: query.limit,
+          page: query.page,
+          search: query.value,
+          sortBy: query.sortBy,
+          sortOrder: query.sortOrder,
+          startDate: query.startDate,
+          targetIds: query.targetIds,
+        });
+        return this.getManyTls(tlsQuery, workspaceId);
+      }
+    }
+  }
+
+  /**
+   * Collects all filtered rows for the active Assets view in bounded database
+   * pages, then maps them into a stable export schema.
+   */
+  public async getAssetsForExport(
+    query: ExportAssetsQueryDto,
+    workspaceId: string,
+  ): Promise<AssetExportSheet> {
+    const rows: unknown[] = [];
+    let page = 1;
+    let pageCount = 1;
+
+    do {
+      const pageQuery = Object.assign(new GetAssetsQueryDto(), query, {
+        limit: ASSET_EXPORT_BATCH_SIZE,
+        page,
+      });
+      const result = await this.getAssetsExportPage(
+        pageQuery,
+        query.view,
+        workspaceId,
+      );
+      rows.push(...result.data);
+      pageCount = Math.max(result.pageCount, 1);
+      page += 1;
+    } while (page <= pageCount);
+
+    return buildAssetExportSheet(query.view, rows);
   }
 
   public async exportServicesForCSV(workspaceId: string): Promise<
