@@ -59,14 +59,39 @@ describe('asset export utilities', () => {
     expect(sheet).not.toContain('<f>');
   });
 
+  it('removes XML-invalid response bytes from XLSX text cells', () => {
+    const workbook = buildXlsxExport('Hosts', columns, [
+      { host: 'HTTP\u0000response\u000Bbody', services: 1 },
+    ]);
+    const files = unzipSync(new Uint8Array(workbook));
+    const sheet = strFromU8(files['xl/worksheets/sheet1.xml']);
+
+    expect(sheet).toContain('<t>HTTPresponsebody</t>');
+    expect(sheet).not.toContain('\u0000');
+    expect(sheet).not.toContain('\u000B');
+  });
+
+  it('keeps oversized response bodies within the Excel cell limit', () => {
+    const workbook = buildXlsxExport('Hosts', columns, [
+      { host: 'x'.repeat(40_000), services: 1 },
+    ]);
+    const files = unzipSync(new Uint8Array(workbook));
+    const sheet = strFromU8(files['xl/worksheets/sheet1.xml']);
+    const cellText = sheet.match(/<c r="A2"[^>]*><is><t>(.*?)<\/t>/s)?.[1];
+
+    expect(cellText).toBeDefined();
+    expect(cellText?.length).toBeLessThanOrEqual(32_767);
+    expect(cellText).toContain('[Truncated for Excel]');
+  });
+
   it.each([
     {
-      expected: { host: 'example.com', services: 0 },
+      expected: expect.objectContaining({ host: 'example.com', services: 0 }),
       source: { host: 'example.com', assetCount: 0 },
       view: AssetExportView.HOST,
     },
     {
-      expected: {
+      expected: expect.objectContaining({
         asn: 'AS64500',
         asnName: 'Example ASN',
         city: 'Chicago',
@@ -79,20 +104,29 @@ describe('asset export utilities', () => {
         organization: 'Example Org',
         region: 'Illinois',
         services: 3,
-      },
+      }),
       source: {
         assetCount: 3,
         geoIp: {
           as: 'AS64500',
           asname: 'Example ASN',
           city: 'Chicago',
+          continent: 'North America',
+          continentCode: 'NA',
           country: 'United States',
           countryCode: 'US',
+          currency: 'USD',
+          district: 'Cook County',
           isp: 'Example ISP',
           lat: 41.88,
           lon: -87.63,
+          offset: -18000,
           org: 'Example Org',
+          region: 'IL',
           regionName: 'Illinois',
+          status: 'success',
+          timezone: 'America/Chicago',
+          zip: '60601',
         },
         ip: '203.0.113.10',
       },
@@ -181,5 +215,172 @@ describe('asset export utilities', () => {
     const sheet = buildAssetExportSheet(view, [source]);
 
     expect(sheet.rows).toEqual([expected]);
+  });
+
+  it('includes every visible service detail in a Hosts export row', () => {
+    const sheet = buildAssetExportSheet(AssetExportView.HOST, [
+      {
+        assetCount: 2,
+        createdAt: '2026-08-17T12:00:00.000Z',
+        detectedService: 'https',
+        host: 'app.example.com',
+        httpResponses: {
+          body: '<html>Example</html>',
+          raw_header: 'HTTP/1.1 200 OK',
+          status_code: 200,
+          tech: ['nginx:1.27', 'React:19'],
+          techList: [
+            {
+              categoryNames: ['Web servers'],
+              description: 'High performance web server',
+              name: 'nginx',
+              website: 'https://nginx.org',
+            },
+          ],
+          title: 'Example application',
+          tls: {
+            cipher: 'TLS_AES_256_GCM_SHA384',
+            fingerprint_hash: {
+              md5: 'md5-value',
+              sha1: 'sha1-value',
+              sha256: 'sha256-value',
+            },
+            host: 'app.example.com',
+            issuer_cn: 'Example Issuing CA',
+            issuer_dn: 'CN=Example Issuing CA,O=Example Trust',
+            issuer_org: ['Example Trust'],
+            not_after: '2027-08-17T00:00:00Z',
+            not_before: '2026-08-17T00:00:00Z',
+            port: '443',
+            probe_status: true,
+            serial: '01:23:45',
+            sni: 'app.example.com',
+            subject_an: ['app.example.com', 'www.example.com'],
+            subject_cn: 'app.example.com',
+            subject_dn: 'CN=app.example.com',
+            tls_connection: 'ctls',
+            tls_version: 'tls13',
+            wildcard_certificate: false,
+          },
+          url: 'https://app.example.com',
+          webserver: 'nginx',
+        },
+        ipAddresses: ['203.0.113.10', '2001:db8::10'],
+        isEnabled: true,
+        port: 443,
+        product: 'nginx 1.27',
+        scheme: 'https',
+        screenshotPath: 'http://localhost/screenshots/app.png',
+        tags: [{ tag: 'internet-facing' }, { tag: 'production' }],
+        value: 'https://app.example.com',
+      },
+    ]);
+
+    expect(sheet.columns.map(({ header }) => header)).toEqual(
+      expect.arrayContaining([
+        'Host Name',
+        'Service',
+        'Port',
+        'IP Addresses',
+        'Technologies',
+        'Certificate Common Name',
+        'Certificate Alternative Names',
+        'Certificate Issuer Organizations',
+        'Certificate Fingerprint SHA-256',
+        'HTTP Response Headers',
+        'HTTP Response Body',
+      ]),
+    );
+    expect(sheet.rows[0]).toEqual(
+      expect.objectContaining({
+        certificateAlternativeNames: 'app.example.com; www.example.com',
+        certificateCommonName: 'app.example.com',
+        certificateFingerprintSha256: 'sha256-value',
+        certificateIssuerOrganizations: 'Example Trust',
+        detectedService: 'https',
+        host: 'app.example.com',
+        httpResponseBody: '<html>Example</html>',
+        httpResponseHeaders: 'HTTP/1.1 200 OK',
+        ipAddresses: '203.0.113.10; 2001:db8::10',
+        port: 443,
+        service: 'https://app.example.com',
+        services: 2,
+        tags: 'internet-facing; production',
+        technologies: 'nginx:1.27; React:19',
+      }),
+    );
+  });
+
+  it('includes IP context and every related service detail in an IP Addresses export row', () => {
+    const sheet = buildAssetExportSheet(AssetExportView.IP, [
+      {
+        assetCount: 1,
+        geoIp: {
+          as: 'AS64500',
+          asname: 'Example ASN',
+          city: 'Chicago',
+          continent: 'North America',
+          continentCode: 'NA',
+          country: 'United States',
+          countryCode: 'US',
+          currency: 'USD',
+          district: 'Cook County',
+          isp: 'Example ISP',
+          lat: 41.88,
+          lon: -87.63,
+          offset: -18000,
+          org: 'Example Org',
+          region: 'IL',
+          regionName: 'Illinois',
+          status: 'success',
+          timezone: 'America/Chicago',
+          zip: '60601',
+        },
+        host: 'app.example.com',
+        httpResponses: {
+          status_code: 200,
+          tech: ['nginx:1.27'],
+          tls: {
+            issuer_org: ['Example Trust'],
+            not_after: '2027-08-17T00:00:00Z',
+            subject_cn: 'app.example.com',
+          },
+        },
+        ip: '203.0.113.10',
+        ipAddresses: ['203.0.113.10'],
+        port: 443,
+        value: 'https://app.example.com',
+      },
+    ]);
+
+    expect(sheet.columns.map(({ header }) => header)).toEqual(
+      expect.arrayContaining([
+        'IP Address',
+        'Continent',
+        'Host Name',
+        'Service',
+        'Port',
+        'Technologies',
+        'Certificate Expires',
+        'Timezone',
+      ]),
+    );
+    expect(sheet.rows[0]).toEqual(
+      expect.objectContaining({
+        asn: 'AS64500',
+        certificateExpires: '2027-08-17T00:00:00Z',
+        city: 'Chicago',
+        continent: 'North America',
+        currency: 'USD',
+        district: 'Cook County',
+        host: 'app.example.com',
+        ip: '203.0.113.10',
+        port: 443,
+        service: 'https://app.example.com',
+        technologies: 'nginx:1.27',
+        timezone: 'America/Chicago',
+        zip: '60601',
+      }),
+    );
   });
 });

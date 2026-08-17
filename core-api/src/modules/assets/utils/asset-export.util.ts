@@ -17,24 +17,95 @@ export interface AssetExportSheet {
   sheetName: string;
 }
 
+const serviceDetailColumns: AssetExportColumn[] = [
+  { key: 'service', header: 'Service' },
+  { key: 'detectedService', header: 'Detected Service' },
+  { key: 'product', header: 'Detected Product' },
+  { key: 'scheme', header: 'Scheme' },
+  { key: 'port', header: 'Port' },
+  { key: 'ipAddresses', header: 'IP Addresses' },
+  { key: 'statusCode', header: 'HTTP Status' },
+  { key: 'title', header: 'Page Title' },
+  { key: 'responseUrl', header: 'HTTP URL' },
+  { key: 'webServer', header: 'Web Server' },
+  { key: 'technologies', header: 'Technologies' },
+  { key: 'technologyDetails', header: 'Technology Details' },
+  { key: 'certificateHost', header: 'Certificate Host' },
+  { key: 'certificatePort', header: 'Certificate Port' },
+  { key: 'certificateSni', header: 'Certificate SNI' },
+  { key: 'certificateTlsVersion', header: 'Certificate TLS Version' },
+  { key: 'certificateCipher', header: 'Certificate Cipher' },
+  { key: 'certificateValidFrom', header: 'Certificate Valid From' },
+  { key: 'certificateExpires', header: 'Certificate Expires' },
+  { key: 'certificateSubjectDn', header: 'Certificate Subject DN' },
+  { key: 'certificateCommonName', header: 'Certificate Common Name' },
+  {
+    key: 'certificateAlternativeNames',
+    header: 'Certificate Alternative Names',
+  },
+  { key: 'certificateIssuerDn', header: 'Certificate Issuer DN' },
+  {
+    key: 'certificateIssuerCommonName',
+    header: 'Certificate Issuer Common Name',
+  },
+  {
+    key: 'certificateIssuerOrganizations',
+    header: 'Certificate Issuer Organizations',
+  },
+  { key: 'certificateSerialNumber', header: 'Certificate Serial Number' },
+  {
+    key: 'certificateFingerprintMd5',
+    header: 'Certificate Fingerprint MD5',
+  },
+  {
+    key: 'certificateFingerprintSha1',
+    header: 'Certificate Fingerprint SHA-1',
+  },
+  {
+    key: 'certificateFingerprintSha256',
+    header: 'Certificate Fingerprint SHA-256',
+  },
+  { key: 'certificateWildcard', header: 'Certificate Wildcard' },
+  { key: 'certificateConnection', header: 'Certificate Connection' },
+  { key: 'certificateProbeStatus', header: 'Certificate Probe Status' },
+  { key: 'tags', header: 'Tags' },
+  { key: 'enabled', header: 'Enabled' },
+  { key: 'discoveredAt', header: 'Discovered At' },
+  { key: 'screenshot', header: 'Screenshot' },
+  { key: 'httpResponseHeaders', header: 'HTTP Response Headers' },
+  { key: 'httpResponseBody', header: 'HTTP Response Body' },
+];
+
 const exportColumns: Record<AssetExportView, AssetExportColumn[]> = {
   [AssetExportView.HOST]: [
-    { key: 'host', header: 'Host' },
+    { key: 'host', header: 'Host Name' },
     { key: 'services', header: 'Services' },
+    ...serviceDetailColumns,
   ],
   [AssetExportView.IP]: [
     { key: 'ip', header: 'IP Address' },
+    { key: 'lookupStatus', header: 'Geo-IP Lookup Status' },
+    { key: 'continent', header: 'Continent' },
+    { key: 'continentCode', header: 'Continent Code' },
     { key: 'country', header: 'Country' },
     { key: 'countryCode', header: 'Country Code' },
     { key: 'region', header: 'Region' },
+    { key: 'regionCode', header: 'Region Code' },
     { key: 'city', header: 'City' },
+    { key: 'district', header: 'District' },
+    { key: 'zip', header: 'Postal Code' },
     { key: 'asn', header: 'ASN' },
     { key: 'asnName', header: 'ASN Name' },
     { key: 'organization', header: 'Organization' },
     { key: 'isp', header: 'ISP' },
     { key: 'latitude', header: 'Latitude' },
     { key: 'longitude', header: 'Longitude' },
+    { key: 'timezone', header: 'Timezone' },
+    { key: 'utcOffset', header: 'UTC Offset Seconds' },
+    { key: 'currency', header: 'Currency' },
+    { key: 'host', header: 'Host Name' },
     { key: 'services', header: 'Services' },
+    ...serviceDetailColumns,
   ],
   [AssetExportView.PORT]: [
     { key: 'port', header: 'Port' },
@@ -93,10 +164,96 @@ const sheetNames: Record<AssetExportView, string> = {
 };
 
 const FORMULA_PREFIX_PATTERN = /^[=+\-@]/;
+const XLSX_CELL_CHARACTER_LIMIT = 32_767;
+const XLSX_TRUNCATION_SUFFIX = '\n[Truncated for Excel]';
 
 /** Joins a list into a stable spreadsheet cell value. */
 function joinValues(value: unknown): string {
   return Array.isArray(value) ? value.join('; ') : '';
+}
+
+/** Joins a list of record properties into a stable spreadsheet cell value. */
+function joinRecordValues(value: unknown, key: string): string {
+  if (!Array.isArray(value)) return '';
+
+  return value
+    .map((item) => {
+      if (typeof item !== 'object' || item === null) return '';
+      const field = (item as Record<string, unknown>)[key];
+      return typeof field === 'string' ? field : '';
+    })
+    .filter(Boolean)
+    .join('; ');
+}
+
+/** Formats enriched technology metadata without discarding tooltip details. */
+function formatTechnologyDetails(value: unknown): string {
+  if (!Array.isArray(value)) return '';
+
+  return value
+    .map((item) => {
+      if (typeof item !== 'object' || item === null) return '';
+      const technology = item as Record<string, unknown>;
+      const details = [
+        typeof technology.name === 'string' ? technology.name : '',
+        joinValues(technology.categoryNames),
+        typeof technology.description === 'string'
+          ? technology.description
+          : '',
+        typeof technology.website === 'string' ? technology.website : '',
+      ].filter(Boolean);
+      return details.join(' | ');
+    })
+    .filter(Boolean)
+    .join(' || ');
+}
+
+/** Maps the service row and its latest HTTP/TLS response into flat fields. */
+function mapServiceDetails(row: Record<string, unknown>): AssetExportRow {
+  const response = (row.httpResponses ?? {}) as Record<string, unknown>;
+  const tls = (response.tls ?? {}) as Record<string, unknown>;
+  const fingerprints = (tls.fingerprint_hash ?? {}) as Record<string, unknown>;
+
+  return {
+    certificateAlternativeNames: joinValues(tls.subject_an),
+    certificateCipher: tls.cipher as string,
+    certificateCommonName: tls.subject_cn as string,
+    certificateConnection: tls.tls_connection as string,
+    certificateExpires: tls.not_after as string,
+    certificateFingerprintMd5: fingerprints.md5 as string,
+    certificateFingerprintSha1: fingerprints.sha1 as string,
+    certificateFingerprintSha256: fingerprints.sha256 as string,
+    certificateHost: tls.host as string,
+    certificateIssuerCommonName: tls.issuer_cn as string,
+    certificateIssuerDn: tls.issuer_dn as string,
+    certificateIssuerOrganizations: joinValues(tls.issuer_org),
+    certificatePort: tls.port as string,
+    certificateProbeStatus: tls.probe_status as boolean,
+    certificateSerialNumber: tls.serial as string,
+    certificateSni: tls.sni as string,
+    certificateSubjectDn: tls.subject_dn as string,
+    certificateTlsVersion: tls.tls_version as string,
+    certificateValidFrom: tls.not_before as string,
+    certificateWildcard: tls.wildcard_certificate as boolean,
+    detectedService: row.detectedService as string,
+    discoveredAt: row.createdAt as Date | string,
+    enabled: row.isEnabled as boolean,
+    httpResponseBody: response.body as string,
+    httpResponseHeaders: response.raw_header as string,
+    ipAddresses: joinValues(row.ipAddresses),
+    port: row.port as number,
+    product: row.product as string,
+    responseUrl: response.url as string,
+    scheme: row.scheme as string,
+    screenshot: row.screenshotPath as string,
+    service: row.value as string,
+    statusCode: response.status_code as number,
+    tags: joinRecordValues(row.tags, 'tag'),
+    technologies: joinValues(response.tech),
+    technologyDetails: formatTechnologyDetails(response.techList),
+    title: response.title as string,
+    webServer: response.webserver as string,
+  };
 }
 
 /** Maps one API result into the flat columns for its active asset view. */
@@ -108,22 +265,37 @@ function mapAssetExportRow(
 
   switch (view) {
     case AssetExportView.HOST:
-      return { host: row.host as string, services: row.assetCount as number };
+      return {
+        host: row.host as string,
+        services: row.assetCount as number,
+        ...mapServiceDetails(row),
+      };
     case AssetExportView.IP: {
       const geoIp = (row.geoIp ?? {}) as Record<string, unknown>;
       return {
         asn: geoIp.as as string,
         asnName: geoIp.asname as string,
         city: geoIp.city as string,
+        continent: geoIp.continent as string,
+        continentCode: geoIp.continentCode as string,
         country: geoIp.country as string,
         countryCode: geoIp.countryCode as string,
+        currency: geoIp.currency as string,
+        district: geoIp.district as string,
+        host: row.host as string,
         ip: row.ip as string,
         isp: geoIp.isp as string,
         latitude: geoIp.lat as number,
         longitude: geoIp.lon as number,
+        lookupStatus: geoIp.status as string,
         organization: geoIp.org as string,
         region: geoIp.regionName as string,
+        regionCode: geoIp.region as string,
         services: row.assetCount as number,
+        timezone: geoIp.timezone as string,
+        utcOffset: geoIp.offset as number,
+        zip: geoIp.zip as string,
+        ...mapServiceDetails(row),
       };
     }
     case AssetExportView.PORT:
@@ -194,7 +366,21 @@ export function buildAssetExportSheet(
 
 /** Escapes text for safe use in XML element and attribute values. */
 function escapeXml(value: string): string {
-  return value
+  const xmlSafeValue = Array.from(value)
+    .filter((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return (
+        codePoint === 0x09 ||
+        codePoint === 0x0a ||
+        codePoint === 0x0d ||
+        (codePoint >= 0x20 && codePoint <= 0xd7ff) ||
+        (codePoint >= 0xe000 && codePoint <= 0xfffd) ||
+        (codePoint >= 0x10000 && codePoint <= 0x10ffff)
+      );
+    })
+    .join('');
+
+  return xmlSafeValue
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -210,6 +396,16 @@ function formatSpreadsheetValue(value: AssetExportRow[string]): string {
 
   const text = value instanceof Date ? value.toISOString() : String(value);
   return FORMULA_PREFIX_PATTERN.test(text.trimStart()) ? `'${text}` : text;
+}
+
+/** Fits text within Excel's fixed per-cell character limit. */
+function fitXlsxCellValue(value: string): string {
+  if (value.length <= XLSX_CELL_CHARACTER_LIMIT) return value;
+
+  return `${value.slice(
+    0,
+    XLSX_CELL_CHARACTER_LIMIT - XLSX_TRUNCATION_SUFFIX.length,
+  )}${XLSX_TRUNCATION_SUFFIX}`;
 }
 
 /**
@@ -263,7 +459,7 @@ function buildWorksheetCell(
     return `<c r="${reference}" t="b"${styleAttribute}><v>${value ? 1 : 0}</v></c>`;
   }
 
-  const text = formatSpreadsheetValue(value);
+  const text = fitXlsxCellValue(formatSpreadsheetValue(value));
   const preserveWhitespace = /^\s|\s$/.test(text)
     ? ' xml:space="preserve"'
     : '';

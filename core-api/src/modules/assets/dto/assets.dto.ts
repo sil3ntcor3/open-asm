@@ -22,6 +22,8 @@ export class GetAssetsResponseDto {
   id: string;
   @ApiProperty()
   value: string;
+  @ApiProperty({ required: false })
+  hostname?: string;
   @ApiProperty()
   targetId: string;
   @ApiProperty({ required: false })
@@ -44,6 +46,12 @@ export class GetAssetsResponseDto {
   isEnabled?: boolean;
   @ApiProperty({ required: false })
   screenshotPath?: string | null;
+  @ApiProperty({ required: false })
+  detectedService?: string;
+  @ApiProperty({ required: false })
+  product?: string;
+  @ApiProperty({ required: false })
+  scheme?: string;
 }
 
 export class GetAssetsQueryDto extends GetManyBaseQueryParams {
@@ -123,12 +131,18 @@ export class GetAssetsQueryDto extends GetManyBaseQueryParams {
   )
   tlsHosts?: string[];
 
-  @ApiProperty({ required: false, description: 'Filter assets created on or after this date (YYYY-MM-DD)' })
+  @ApiProperty({
+    required: false,
+    description: 'Filter assets created on or after this date (YYYY-MM-DD)',
+  })
   @IsOptional()
   @IsDateString()
   startDate?: string;
 
-  @ApiProperty({ required: false, description: 'Filter assets created on or before this date (YYYY-MM-DD)' })
+  @ApiProperty({
+    required: false,
+    description: 'Filter assets created on or before this date (YYYY-MM-DD)',
+  })
   @IsOptional()
   @IsDateString()
   endDate?: string;

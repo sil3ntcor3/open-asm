@@ -290,6 +290,7 @@ export class AssetsService {
     const offset = (query.page - 1) * query.limit;
 
     const queryBuilder = this.buildBaseQuery(query, workspaceId);
+    queryBuilder.leftJoinAndSelect('asset_service.tags', 'asset_tags');
 
     if (query.value) {
       queryBuilder.andWhere('asset_service.value ILIKE :value', {
@@ -307,14 +308,18 @@ export class AssetsService {
       const asset = new GetAssetsResponseDto();
       asset.id = item.id;
       asset.value = item.value;
+      asset.hostname = item.asset?.value;
       asset.targetId = item.asset?.targetId;
       asset.port = item.port;
+      asset.detectedService = item.service;
+      asset.product = item.product;
+      asset.scheme = item.scheme;
       asset.createdAt = item.createdAt;
       asset.dnsRecords = item.asset?.dnsRecords;
       asset.isEnabled = item.asset?.isEnabled;
       asset.screenshotPath =
         item.screenshotPath && `${STORAGE_BASE_PATH}/${item.screenshotPath}`;
-      // asset.tags = item.asset.tags || [];
+      asset.tags = item.tags ?? [];
       asset.ipAddresses = item.asset?.ipAssets
         ? item.asset.ipAssets.map((e) => e.ipAddress)
         : [];
@@ -461,11 +466,15 @@ export class AssetsService {
     const asset = new GetAssetsResponseDto();
     asset.id = item.id;
     asset.value = item.value;
+    asset.hostname = item.asset?.value;
     asset.targetId = item.asset?.targetId;
     asset.createdAt = item.createdAt;
     asset.dnsRecords = item.asset?.dnsRecords;
     asset.isEnabled = item.asset?.isEnabled;
     asset.port = item.port;
+    asset.detectedService = item.service;
+    asset.product = item.product;
+    asset.scheme = item.scheme;
     asset.screenshotPath = item.screenshotPath
       ? `${STORAGE_BASE_PATH}/${item.screenshotPath}`
       : null;
@@ -1110,6 +1119,135 @@ export class AssetsService {
   }
 
   /**
+   * Expands host summary rows into the service records shown when each host is
+   * opened in the Assets table. Hosts without services remain in the export.
+   */
+  private async expandHostExportRows(
+    query: ExportAssetsQueryDto,
+    rows: unknown[],
+    workspaceId: string,
+  ): Promise<unknown[]> {
+    const groups = rows as { assetCount: number; host: string }[];
+    const servicesByHost = new Map<string, GetAssetsResponseDto[]>();
+
+    for (
+      let offset = 0;
+      offset < groups.length;
+      offset += ASSET_EXPORT_BATCH_SIZE
+    ) {
+      const hosts = groups
+        .slice(offset, offset + ASSET_EXPORT_BATCH_SIZE)
+        .map((group) => group.host);
+      let page = 1;
+      let pageCount = 1;
+
+      do {
+        const detailQuery = Object.assign(new GetAssetsQueryDto(), query, {
+          hosts,
+          limit: ASSET_EXPORT_BATCH_SIZE,
+          page,
+          sortBy: 'createdAt',
+          value: undefined,
+        });
+        const result = await this.getManyAsssetServices(
+          detailQuery,
+          workspaceId,
+        );
+
+        for (const service of result.data) {
+          if (!service.hostname) continue;
+          const hostServices = servicesByHost.get(service.hostname) ?? [];
+          hostServices.push(service);
+          servicesByHost.set(service.hostname, hostServices);
+        }
+
+        pageCount = Math.max(result.pageCount, 1);
+        page += 1;
+      } while (page <= pageCount);
+    }
+
+    return groups.flatMap((group) => {
+      const services = servicesByHost.get(group.host);
+      if (!services || services.length === 0) return [group];
+
+      return services.map((service) => ({
+        ...service,
+        assetCount: group.assetCount,
+        host: group.host,
+      }));
+    });
+  }
+
+  /**
+   * Expands IP summary rows into the service records shown when each IP is
+   * opened in the Assets table. IPs without services remain in the export.
+   */
+  private async expandIpExportRows(
+    query: ExportAssetsQueryDto,
+    rows: unknown[],
+    workspaceId: string,
+  ): Promise<unknown[]> {
+    const groups = rows as {
+      assetCount: number;
+      geoIp: unknown;
+      ip: string;
+    }[];
+    const servicesByIp = new Map<string, GetAssetsResponseDto[]>();
+
+    for (
+      let offset = 0;
+      offset < groups.length;
+      offset += ASSET_EXPORT_BATCH_SIZE
+    ) {
+      const ipAddresses = groups
+        .slice(offset, offset + ASSET_EXPORT_BATCH_SIZE)
+        .map((group) => group.ip);
+      const selectedIps = new Set(ipAddresses);
+      let page = 1;
+      let pageCount = 1;
+
+      do {
+        const detailQuery = Object.assign(new GetAssetsQueryDto(), query, {
+          ipAddresses,
+          limit: ASSET_EXPORT_BATCH_SIZE,
+          page,
+          sortBy: 'createdAt',
+          value: undefined,
+        });
+        const result = await this.getManyAsssetServices(
+          detailQuery,
+          workspaceId,
+        );
+
+        for (const service of result.data) {
+          for (const ipAddress of service.ipAddresses ?? []) {
+            if (!selectedIps.has(ipAddress)) continue;
+            const ipServices = servicesByIp.get(ipAddress) ?? [];
+            ipServices.push(service);
+            servicesByIp.set(ipAddress, ipServices);
+          }
+        }
+
+        pageCount = Math.max(result.pageCount, 1);
+        page += 1;
+      } while (page <= pageCount);
+    }
+
+    return groups.flatMap((group) => {
+      const services = servicesByIp.get(group.ip);
+      if (!services || services.length === 0) return [group];
+
+      return services.map((service) => ({
+        ...service,
+        assetCount: group.assetCount,
+        geoIp: group.geoIp,
+        host: service.hostname,
+        ip: group.ip,
+      }));
+    });
+  }
+
+  /**
    * Collects all filtered rows for the active Assets view in bounded database
    * pages, then maps them into a stable export schema.
    */
@@ -1136,7 +1274,14 @@ export class AssetsService {
       page += 1;
     } while (page <= pageCount);
 
-    return buildAssetExportSheet(query.view, rows);
+    let exportRows = rows;
+    if (query.view === AssetExportView.HOST) {
+      exportRows = await this.expandHostExportRows(query, rows, workspaceId);
+    } else if (query.view === AssetExportView.IP) {
+      exportRows = await this.expandIpExportRows(query, rows, workspaceId);
+    }
+
+    return buildAssetExportSheet(query.view, exportRows);
   }
 
   public async exportServicesForCSV(workspaceId: string): Promise<
