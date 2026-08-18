@@ -18,6 +18,14 @@ describe('builtInTools static assets', () => {
 describe('builtInTools subfinder parser', () => {
   const subfinder = builtInTools.find((tool) => tool.name === 'subfinder');
 
+  it('shows that every available Subfinder source is enabled', () => {
+    expect(subfinder?.command).toContain('subfinder -duc -all -d');
+  });
+
+  it('advertises the bundled Subfinder version', () => {
+    expect(subfinder?.version).toBe('2.14.0');
+  });
+
   it('marks SOA-only DNS output as unresolved', () => {
     const parsed = subfinder!.parser!(
       'www.remote.example.com [SOA] [ns-1.example.net]',

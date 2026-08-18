@@ -92,7 +92,7 @@ export const builtInTools: Tool[] = [
       'Subfinder is a subdomain discovery tool that returns valid subdomains for websites, using passive online sources.',
     logoUrl: '/static/images/subfinder.png',
     command:
-      '(echo {{value}} && subfinder -duc -d {{value}}) | dnsx -duc -a -aaaa -cname -mx -ns -soa -txt -resp',
+      '(echo {{value}} && subfinder -duc -all -d {{value}}) | dnsx -duc -a -aaaa -cname -mx -ns -soa -txt -resp',
     parser: (result: string) => {
       const parsed = {};
       result.split('\n').forEach((line) => {
@@ -117,7 +117,7 @@ export const builtInTools: Tool[] = [
             : DnsResolutionStatus.UNRESOLVED,
       })) as Asset[];
     },
-    version: '2.8.0',
+    version: '2.14.0',
     priority: JobPriority.MEDIUM,
   },
   {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -259,6 +260,7 @@ func runToolExecution(
 		stderrLimitBytes,
 		handle,
 	)
+	subfinderResult.stderr = suppressSubfinderDiagnostics(subfinderResult.stderr)
 	if subfinderResult.outcome != executionOutcomeSucceeded {
 		return subfinderResult
 	}
@@ -312,6 +314,16 @@ func runToolExecution(
 	)
 	dnsxResult.stderr = subfinderResult.stderr + filterResult.stderr + dnsxResult.stderr
 	return dnsxResult
+}
+
+// suppressSubfinderDiagnostics prevents provider credentials from crossing the
+// worker trust boundary. Some Subfinder providers place API keys in request
+// URLs, and upstream non-200 diagnostics can include the complete URL.
+func suppressSubfinderDiagnostics(stderr string) string {
+	if stderr == "" {
+		return ""
+	}
+	return "Subfinder diagnostics suppressed to protect provider credentials.\n"
 }
 
 // runNaabuWithEdgeDetection probes a few known-closed ports before the real
@@ -619,9 +631,14 @@ func buildToolInvocation(toolPath string, execution *jobs_registry.ToolExecution
 			args:       []string{"-duc", "-t", templatePath, "-u", target, "-j", "--silent"},
 		}, nil
 	case "subfinder":
+		args := []string{"-duc", "-all"}
+		if providerConfig := os.Getenv("SUBFINDER_PROVIDER_CONFIG"); providerConfig != "" {
+			args = append(args, "-pc", providerConfig)
+		}
+		args = append(args, "-d", target)
 		return toolInvocation{
 			executable: scannerExecutable(toolPath, "subfinder"),
-			args:       []string{"-duc", "-d", target},
+			args:       args,
 		}, nil
 	default:
 		return toolInvocation{}, fmt.Errorf("tool %q is not allowlisted for worker execution", execution.GetToolName())
