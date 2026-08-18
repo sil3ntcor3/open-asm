@@ -145,6 +145,10 @@ To quickly get started with OASM using Docker:
 
 This will launch the entire system, including the console, core API, workers, PostgreSQL, Redis, Geo-IP proxy, and Rustfs storage. Access the console at `http://localhost:3000`.
 
+Subfinder uses every available passive source. To enable sources that require
+credentials, configure a worker-local provider file as described in
+[Subfinder provider credentials](docs/subfinder-provider-credentials.md).
+
 ### Pre-built Images
 
 You can also use pre-built images from Docker Hub:
