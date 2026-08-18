@@ -1,5 +1,19 @@
 import type { Vulnerability } from '@/modules/vulnerabilities/entities/vulnerability.entity';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { builtInTools } from './built-in-tools';
+
+describe('builtInTools static assets', () => {
+  it('ships the configured Nmap logo used by the tools and workers pages', () => {
+    const nmap = builtInTools.find((tool) => tool.name === 'nmap');
+    const relativeLogoPath = nmap?.logoUrl?.replace(/^\/static\//, '');
+
+    expect(relativeLogoPath).toBe('images/nmap.png');
+    expect(
+      existsSync(join(process.cwd(), 'public', relativeLogoPath!)),
+    ).toBe(true);
+  });
+});
 
 describe('builtInTools subfinder parser', () => {
   const subfinder = builtInTools.find((tool) => tool.name === 'subfinder');
