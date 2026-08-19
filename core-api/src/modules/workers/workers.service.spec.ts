@@ -11,7 +11,7 @@ import { NetworkInterface } from '../internal-networks/entities/network-interfac
 import { WorkspaceTool } from '../tools/entities/workspace_tools.entity';
 import { ToolsService } from '../tools/tools.service';
 import { RedisService } from '@/services/redis/redis.service';
-import { WorkerScope } from '@/common/enums/enum';
+import { WorkerScope, WorkerType } from '@/common/enums/enum';
 import { AliveStreamManager } from './alive-stream-manager.service';
 import { WorkerInstance } from './entities/worker.entity';
 import { WorkersService } from './workers.service';
@@ -173,6 +173,39 @@ describe('WorkersService', () => {
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('"completedAt" = CASE'),
     );
+  });
+
+  describe('getNucleiTemplateVersions', () => {
+    it('returns unique sorted versions reported by workspace and cloud workers', async () => {
+      (mockWorkerInstanceRepository.find as jest.Mock).mockResolvedValue([
+        { nucleiTemplateVersion: 'v10.4.7' },
+        { nucleiTemplateVersion: null },
+        { nucleiTemplateVersion: 'v10.4.6' },
+        { nucleiTemplateVersion: 'v10.4.7' },
+      ]);
+
+      const getVersions = (
+        service as unknown as {
+          getNucleiTemplateVersions(workspaceId: string): Promise<string[]>;
+        }
+      ).getNucleiTemplateVersions.bind(service);
+
+      await expect(getVersions('workspace-1')).resolves.toEqual([
+        'v10.4.6',
+        'v10.4.7',
+      ]);
+      expect(mockWorkerInstanceRepository.find).toHaveBeenCalledWith({
+        select: { nucleiTemplateVersion: true },
+        where: [
+          {
+            type: WorkerType.BUILT_IN,
+            scope: WorkerScope.WORKSPACE,
+            workspaceId: 'workspace-1',
+          },
+          { type: WorkerType.BUILT_IN, scope: WorkerScope.CLOUD },
+        ],
+      });
+    });
   });
 
   describe('autoCleanupWorkersAndJobs', () => {

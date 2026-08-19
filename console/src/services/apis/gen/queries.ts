@@ -939,6 +939,8 @@ export type Tool = {
   type: string;
   providerId: string;
   availableWorkersCount?: number;
+  /** Distinct runtime template versions reported for tools that use templates. */
+  templateVersions?: string[];
 };
 
 export type AssetService = {

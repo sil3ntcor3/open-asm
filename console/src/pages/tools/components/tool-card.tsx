@@ -17,8 +17,18 @@ interface ToolCardProps {
   button?: React.ReactNode;
 }
 
+/** Formats worker-reported template versions for the compact tool badge. */
+function formatTemplateVersions(templateVersions?: string[]): string {
+  if (!templateVersions?.length) return 'Not reported';
+  if (templateVersions.length === 1) return templateVersions[0];
+  return 'Mixed';
+}
+
+/** Renders one navigable marketplace tool with availability and version metadata. */
 const ToolCard = ({ tool, button }: ToolCardProps) => {
   const navigateWithParams = useNavigateWithParams();
+
+  /** Opens the tool detail unless an embedded action button was selected. */
   const handleCardClick = (e: React.MouseEvent) => {
     // Don't navigate if clicking on the button
     if ((e.target as HTMLElement).closest('button')) {
@@ -90,10 +100,7 @@ const ToolCard = ({ tool, button }: ToolCardProps) => {
           </div>
           <div className="shrink-0">{button}</div>
         </div>
-        <div className="flex items-center gap-2">
-          {/* <Badge variant="secondary" className="text-xs font-normal px-2 py-1">
-                        {tool.version || 'N/A'}
-                    </Badge> */}
+        <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary" className="text-xs font-normal px-2 py-1">
             {tool.category
               ? tool.category
@@ -102,6 +109,14 @@ const ToolCard = ({ tool, button }: ToolCardProps) => {
                   .join(' ')
               : 'N/A'}
           </Badge>
+          <Badge variant="outline" className="text-xs font-normal px-2 py-1">
+            Version: {tool.version?.trim() || 'Not reported'}
+          </Badge>
+          {tool.name.toLowerCase() === 'nuclei' && (
+            <Badge variant="outline" className="text-xs font-normal px-2 py-1">
+              Templates: {formatTemplateVersions(tool.templateVersions)}
+            </Badge>
+          )}
         </div>
         <TooltipProvider>
           <Tooltip>

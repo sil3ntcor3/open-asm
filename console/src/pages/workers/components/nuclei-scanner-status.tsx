@@ -61,7 +61,7 @@ function formatScannerTimestamp(value?: string | null): string | undefined {
     : undefined;
 }
 
-/** Displays Nuclei engine, template, freshness, validation, and update health. */
+/** Displays Nuclei template freshness, validation, and update health. */
 export function NucleiScannerStatus({ worker }: NucleiScannerStatusProps) {
   const reportTimestamp = worker.scannerStatusUpdatedAt
     ? dayjs(worker.scannerStatusUpdatedAt)
@@ -93,7 +93,6 @@ export function NucleiScannerStatus({ worker }: NucleiScannerStatusProps) {
 
   const StatusIcon = presentation.icon;
   const validatedAt = formatScannerTimestamp(worker.nucleiTemplateValidatedAt);
-  const updatedAt = formatScannerTimestamp(worker.nucleiTemplateLastSuccessAt);
 
   return (
     <section
@@ -114,17 +113,6 @@ export function NucleiScannerStatus({ worker }: NucleiScannerStatusProps) {
           </span>
         )}
       </div>
-
-      <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
-        <span>Nuclei {worker.nucleiEngineVersion || 'unknown'}</span>
-        <span>Templates {worker.nucleiTemplateVersion || 'unknown'}</span>
-      </div>
-
-      {updatedAt && (
-        <p className="text-[11px] text-muted-foreground">
-          Templates updated {updatedAt}
-        </p>
-      )}
 
       {worker.nucleiTemplateLastError && (
         <p
