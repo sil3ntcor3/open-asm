@@ -78,6 +78,7 @@ core-api/public/tools/*
 .qwen/
 .agents/plans/*
 worker/.configs.json
+worker/provider-config.yaml
 worker/agent-sessions/*
 console/sw.js
 .omo

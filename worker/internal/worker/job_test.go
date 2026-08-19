@@ -172,6 +172,97 @@ func TestBuildToolInvocationKeepsTargetMetacharactersInOneArgument(t *testing.T)
 	}
 }
 
+func TestBuildSubfinderInvocationUsesAllSources(t *testing.T) {
+	t.Setenv("SUBFINDER_PROVIDER_CONFIG", "")
+	invocation, err := buildToolInvocation("/scanner-tools", &jobs_registry.ToolExecution{
+		ToolName: "subfinder",
+		Target:   "example.com",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !hasArgument(invocation.args, "-all") {
+		t.Fatalf("subfinder args = %q, want -all to enable every available source", invocation.args)
+	}
+}
+
+func TestBuildSubfinderInvocationUsesConfiguredProviderKeys(t *testing.T) {
+	providerConfig := "/run/secrets/subfinder-provider-config.yaml"
+	t.Setenv("SUBFINDER_PROVIDER_CONFIG", providerConfig)
+
+	invocation, err := buildToolInvocation("/scanner-tools", &jobs_registry.ToolExecution{
+		ToolName: "subfinder",
+		Target:   "example.com",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := argumentValue(t, invocation.args, "-pc"); got != providerConfig {
+		t.Fatalf("subfinder provider config = %q, want %q", got, providerConfig)
+	}
+}
+
+func TestRunSubfinderDoesNotForwardProviderDiagnostics(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is exercised by Unix worker builds")
+	}
+
+	const providerSecret = "sentinel-provider-secret"
+	for _, testCase := range []struct {
+		name        string
+		exitCommand string
+		wantOutcome executionOutcome
+	}{
+		{name: "failed command", exitCommand: "exit 1\n", wantOutcome: executionOutcomeFailed},
+		{name: "successful command", exitCommand: "exit 0\n", wantOutcome: executionOutcomeSucceeded},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			toolPath := t.TempDir()
+			subfinderPath := filepath.Join(toolPath, "subfinder")
+			if err := os.WriteFile(
+				subfinderPath,
+				[]byte("#!/bin/sh\nprintf 'sub.example.com\\n'\nprintf 'request failed: https://provider.invalid/?key="+providerSecret+"\\n' >&2\n"+testCase.exitCommand),
+				0o700,
+			); err != nil {
+				t.Fatal(err)
+			}
+
+			if testCase.wantOutcome == executionOutcomeSucceeded {
+				dnsxPath := filepath.Join(toolPath, "dnsx")
+				if err := os.WriteFile(
+					dnsxPath,
+					[]byte("#!/bin/sh\ncat >/dev/null\nprintf 'sub.example.com [A] [192.0.2.1]\\n'\n"),
+					0o700,
+				); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			result := runToolExecution(
+				context.Background(),
+				&jobs_registry.ToolExecution{ToolName: "subfinder", Target: "example.com"},
+				toolPath,
+				time.Second,
+				1024,
+				1024,
+				nil,
+			)
+
+			if result.outcome != testCase.wantOutcome {
+				t.Fatalf("outcome = %q, want %q", result.outcome, testCase.wantOutcome)
+			}
+			if strings.Contains(result.stderr, providerSecret) {
+				t.Fatalf("subfinder stderr exposed provider secret: %q", result.stderr)
+			}
+			if !strings.Contains(result.stderr, "suppressed") {
+				t.Fatalf("subfinder stderr = %q, want a safe suppression notice", result.stderr)
+			}
+		})
+	}
+}
+
 func TestBuildHttpxInvocationProbesServiceDirectlyWithoutFollowingRedirects(t *testing.T) {
 	// Each asset_service is a distinct (host, port) discovered by naabu, and httpx
 	// probes it individually. Following redirects makes httpx chase the request to
