@@ -281,21 +281,29 @@ export class ToolsService implements OnModuleInit {
         },
       });
 
-      // Get installed tools for this workspace
-      const installedTools = await this.workspaceToolRepository.find({
-        where: {
-          workspace: { id: workspaceId },
-        },
-        relations: ['tool'],
-      });
+      const [installedTools, nucleiTemplateVersions] = await Promise.all([
+        this.workspaceToolRepository.find({
+          where: {
+            workspace: { id: workspaceId },
+          },
+          relations: ['tool'],
+        }),
+        this.workersService.getNucleiTemplateVersions(workspaceId),
+      ]);
 
       // Add isInstalled flag and availableWorkersCount to each tool
       const toolsWithInstalledFlag = await Promise.all(
         data.map(async (tool) => {
+          const templateMetadata =
+            tool.name.toLowerCase() === 'nuclei'
+              ? { templateVersions: nucleiTemplateVersions }
+              : {};
+
           // Skip tools without ID or type
           if (!tool.id || !tool.type) {
             return {
               ...tool,
+              ...templateMetadata,
               isInstalled: false,
               availableWorkersCount: 0,
             };
@@ -312,6 +320,7 @@ export class ToolsService implements OnModuleInit {
           if (tool.type === WorkerType.BUILT_IN) {
             return {
               ...tool,
+              ...templateMetadata,
               isInstalled: true,
               availableWorkersCount,
             };
@@ -322,6 +331,7 @@ export class ToolsService implements OnModuleInit {
           );
           return {
             ...tool,
+            ...templateMetadata,
             isInstalled: !!workspaceTool?.isEnabled,
             availableWorkersCount,
           };

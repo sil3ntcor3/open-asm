@@ -69,6 +69,14 @@ export class Tool {
   @Column({ nullable: true })
   version?: string;
 
+  @ApiProperty({
+    type: [String],
+    required: false,
+    description:
+      'Distinct runtime template versions reported for tools that use templates.',
+  })
+  templateVersions?: string[];
+
   @ApiProperty({ nullable: true, required: false })
   @IsOptional()
   @IsString()

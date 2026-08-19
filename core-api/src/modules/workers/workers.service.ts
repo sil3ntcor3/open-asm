@@ -159,6 +159,31 @@ export class WorkersService {
     return value;
   }
 
+  /** Returns distinct Nuclei template versions visible to a workspace. */
+  public async getNucleiTemplateVersions(
+    workspaceId: string,
+  ): Promise<string[]> {
+    const workers = await this.repo.find({
+      select: { nucleiTemplateVersion: true },
+      where: [
+        {
+          type: WorkerType.BUILT_IN,
+          scope: WorkerScope.WORKSPACE,
+          workspaceId,
+        },
+        { type: WorkerType.BUILT_IN, scope: WorkerScope.CLOUD },
+      ],
+    });
+
+    return [
+      ...new Set(
+        workers
+          .map((worker) => worker.nucleiTemplateVersion)
+          .filter((version): version is string => Boolean(version)),
+      ),
+    ].sort();
+  }
+
   /** Parses an optional worker timestamp and rejects malformed status data. */
   private scannerTimestamp(value?: string): Date | null {
     if (!value) {

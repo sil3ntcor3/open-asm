@@ -7,7 +7,7 @@ describe('NucleiScannerStatus', () => {
     vi.useRealTimers();
   });
 
-  it('shows the installed engine and template versions when scanner health is ready', () => {
+  it('shows template health without duplicating the Nuclei tool version', () => {
     render(
       <NucleiScannerStatus
         worker={{
@@ -22,12 +22,13 @@ describe('NucleiScannerStatus', () => {
     );
 
     expect(screen.getByText('Scanner healthy')).toBeInTheDocument();
-    expect(screen.getByText('Nuclei v3.11.0')).toBeInTheDocument();
-    expect(screen.getByText('Templates v10.4.6')).toBeInTheDocument();
+    expect(screen.queryByText('Nuclei v3.11.0')).not.toBeInTheDocument();
+    expect(screen.queryByText('Templates v10.4.6')).not.toBeInTheDocument();
     expect(screen.getByText(/Validated/)).toBeInTheDocument();
+    expect(screen.queryByText(/Last update/)).not.toBeInTheDocument();
   });
 
-  it('shows a delayed-update warning while retaining the installed versions', () => {
+  it('shows a delayed-update warning without template version text', () => {
     render(
       <NucleiScannerStatus
         worker={{
@@ -44,7 +45,7 @@ describe('NucleiScannerStatus', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'template upstream unavailable',
     );
-    expect(screen.getByText('Templates v10.4.5')).toBeInTheDocument();
+    expect(screen.queryByText(/Templates/)).not.toBeInTheDocument();
   });
 
   it('shows a neutral pending state before a worker reports scanner health', () => {
@@ -53,7 +54,7 @@ describe('NucleiScannerStatus', () => {
     expect(screen.getByText('Waiting for scanner status')).toBeInTheDocument();
   });
 
-  it('labels unavailable versions as unknown instead of leaving blank values', () => {
+  it('does not show an unavailable template version', () => {
     render(
       <NucleiScannerStatus
         worker={{
@@ -65,8 +66,8 @@ describe('NucleiScannerStatus', () => {
       />,
     );
 
-    expect(screen.getByText('Nuclei unknown')).toBeInTheDocument();
-    expect(screen.getByText('Templates unknown')).toBeInTheDocument();
+    expect(screen.queryByText('Nuclei unknown')).not.toBeInTheDocument();
+    expect(screen.queryByText('Templates unknown')).not.toBeInTheDocument();
   });
 
   it('does not leave an old worker report looking healthy', () => {
