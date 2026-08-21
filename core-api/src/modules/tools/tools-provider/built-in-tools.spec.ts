@@ -9,9 +9,9 @@ describe('builtInTools static assets', () => {
     const relativeLogoPath = nmap?.logoUrl?.replace(/^\/static\//, '');
 
     expect(relativeLogoPath).toBe('images/nmap.png');
-    expect(
-      existsSync(join(process.cwd(), 'public', relativeLogoPath!)),
-    ).toBe(true);
+    expect(existsSync(join(process.cwd(), 'public', relativeLogoPath!))).toBe(
+      true,
+    );
   });
 });
 
@@ -40,9 +40,7 @@ describe('builtInTools subfinder parser', () => {
   });
 
   it('marks DNS output containing an address record as resolved', () => {
-    const parsed = subfinder!.parser!(
-      'remote.example.com [A] [192.0.2.10]',
-    );
+    const parsed = subfinder!.parser!('remote.example.com [A] [192.0.2.10]');
 
     expect(parsed).toEqual([
       expect.objectContaining({
@@ -144,5 +142,38 @@ describe('builtInTools nuclei parser', () => {
         },
       ],
     });
+  });
+
+  it('escapes null characters that PostgreSQL JSONB cannot persist', () => {
+    const nuclei = builtInTools.find((tool) => tool.name === 'nuclei');
+    expect(nuclei?.parser).toBeDefined();
+
+    const raw = JSON.stringify({
+      'template-id': 'vsftpd-detect',
+      type: 'network',
+      host: 'security.pentest-ground.com',
+      port: '21',
+      'matched-at': 'security.pentest-ground.com:21',
+      request: 'USER anonymous\r\nPASS scanner\u0000\u0000\u0000\u0000',
+      info: {
+        name: 'VSFTPD Detection',
+        severity: 'info',
+        metadata: {
+          probes: ['ftp', 'nested\u0000probe'],
+        },
+      },
+    });
+
+    const parsed = nuclei!.parser!(raw) as Vulnerability[];
+    const evidence = parsed[0].evidence![0];
+
+    expect(evidence.request).toBe(
+      'USER anonymous\r\nPASS scanner\\u0000\\u0000\\u0000\\u0000',
+    );
+    expect(evidence.metadata).toEqual({
+      probes: ['ftp', 'nested\\u0000probe'],
+    });
+    expect(evidence.raw?.request).toBe(evidence.request);
+    expect(JSON.stringify(parsed[0].evidence)).toContain('\\\\u0000');
   });
 });
