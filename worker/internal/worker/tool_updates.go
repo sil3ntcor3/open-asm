@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"debug/buildinfo"
 	"errors"
 	"fmt"
 	"io"
@@ -28,6 +29,7 @@ const toolUpdatePollInterval = 15 * time.Second
 var (
 	toolUpdateVersionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 	toolOutputVersionPattern = regexp.MustCompile(`(?i)\bv?([0-9]+\.[0-9]+\.[0-9]+)\b`)
+	toolBuildVersionPattern  = regexp.MustCompile(`(?:^|\s)-X(?:=|\s+)main\.version=v?([0-9]+\.[0-9]+\.[0-9]+)(?:\s|$)`)
 	runtimeVersionPattern    = regexp.MustCompile(`(?i)\bv?([0-9]+\.[0-9]+(?:\.[0-9]+){0,2})\b`)
 	toolUpdateDigestPattern  = regexp.MustCompile(`^[a-f0-9]{64}$`)
 	toolUpdateRequestPattern = regexp.MustCompile(`^[a-f0-9-]{36}$`)
@@ -204,6 +206,8 @@ func applyArtifactToolUpdate(
 	return activatedVersion, rollbackVersion, nil
 }
 
+// readManagedToolVersion smoke-tests a managed scanner and prefers the release
+// version embedded by GoReleaser when the scanner's display banner is stale.
 func readManagedToolVersion(ctx context.Context, binaryPath string, run commandOutputRunner) (string, error) {
 	output, err := run(ctx, binaryPath, "-version")
 	if err != nil {
@@ -213,7 +217,29 @@ func readManagedToolVersion(ctx context.Context, binaryPath string, run commandO
 	if len(matches) != 2 {
 		return "", fmt.Errorf("unrecognized version output%s", formatBootstrapOutput(output))
 	}
+	if buildVersion := readManagedToolBuildVersion(binaryPath); buildVersion != "" {
+		return buildVersion, nil
+	}
 	return string(matches[1]), nil
+}
+
+// readManagedToolBuildVersion extracts the main.version linker value recorded
+// in Go build metadata, returning an empty string for binaries without it.
+func readManagedToolBuildVersion(binaryPath string) string {
+	info, err := buildinfo.ReadFile(binaryPath)
+	if err != nil {
+		return ""
+	}
+	for _, setting := range info.Settings {
+		if setting.Key != "-ldflags" {
+			continue
+		}
+		matches := toolBuildVersionPattern.FindStringSubmatch(setting.Value)
+		if len(matches) == 2 {
+			return matches[1]
+		}
+	}
+	return ""
 }
 
 func readRuntimeToolVersion(
