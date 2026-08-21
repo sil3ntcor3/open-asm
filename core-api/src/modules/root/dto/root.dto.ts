@@ -8,15 +8,12 @@ export class CreateFirstAdminDto {
   @IsString()
   @ApiProperty()
   password: string;
+}
 
+export class AuthorizeFirstAdminDto {
   @IsString()
-  @MinLength(32)
-  @ApiProperty({
-    description: 'One-time deployment secret used to initialize the system',
-    minLength: 32,
-    writeOnly: true,
-  })
-  bootstrapToken: string;
+  @MinLength(64)
+  ticket: string;
 }
 
 export class GetMetadataDto {

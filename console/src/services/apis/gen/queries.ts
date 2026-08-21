@@ -786,11 +786,6 @@ export type SetUserBannedDto = {
 export type CreateFirstAdminDto = {
   email: string;
   password: string;
-  /**
-   * One-time deployment secret used to initialize the system
-   * @minLength 32
-   */
-  bootstrapToken: string;
 };
 
 export type GetMetadataDto = {
@@ -931,6 +926,8 @@ export type Tool = {
   command: string;
   category: ToolCategory;
   version: string;
+  /** Distinct runtime template versions reported for tools that use templates. */
+  templateVersions?: string[];
   /** @nullable */
   logoUrl?: string | null;
   isBuiltIn: boolean;
@@ -939,8 +936,6 @@ export type Tool = {
   type: string;
   providerId: string;
   availableWorkersCount?: number;
-  /** Distinct runtime template versions reported for tools that use templates. */
-  templateVersions?: string[];
 };
 
 export type AssetService = {
@@ -1126,7 +1121,7 @@ export type JobHistoryDetailResponseDto = {
   jobHistoryName: string;
 };
 
-export type PickToolIdName = {
+export type PickTypeClass = {
   id: string;
   name: string;
 };
@@ -1136,7 +1131,7 @@ export type AssetTag = {
   createdAt: string;
   updatedAt: string;
   tag: string;
-  tool: PickToolIdName;
+  tool: PickTypeClass;
 };
 
 export type TlsInfoFingerprintHash = { [key: string]: unknown };
