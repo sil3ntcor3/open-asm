@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -124,6 +125,18 @@ func TestReadRuntimeToolVersionSupportsWorkerImageVersionFormats(t *testing.T) {
 	}
 }
 
+func TestReadManagedToolVersionPrefersEmbeddedReleaseVersionOverStaleBanner(t *testing.T) {
+	binaryPath := buildTestManagedToolBinary(t, "1.2.3", "1.3.0")
+
+	got, err := readManagedToolVersion(context.Background(), binaryPath, runCommandOutput)
+	if err != nil {
+		t.Fatalf("readManagedToolVersion() error = %v", err)
+	}
+	if got != "1.3.0" {
+		t.Fatalf("readManagedToolVersion() = %q, want embedded release version 1.3.0", got)
+	}
+}
+
 func testToolUpdateDirective(t *testing.T, component string, version string, archive []byte) toolUpdateDirective {
 	t.Helper()
 	platformOS := runtime.GOOS
@@ -190,4 +203,39 @@ func testToolVersionRunner(_ context.Context, name string, _ ...string) ([]byte,
 	}
 	version := strings.TrimPrefix(string(contents), "version=")
 	return []byte("Current Version: v" + version), nil
+}
+
+func buildTestManagedToolBinary(t *testing.T, bannerVersion string, releaseVersion string) string {
+	t.Helper()
+	directory := t.TempDir()
+	sourcePath := filepath.Join(directory, "main.go")
+	binaryPath := filepath.Join(directory, platformExecutableName("managed-tool", runtime.GOOS))
+	source := fmt.Sprintf(`package main
+
+import "fmt"
+
+var version = "development"
+
+func main() {
+	_ = version
+	fmt.Print("Current Version: %s")
+}
+`, bannerVersion)
+	if err := os.WriteFile(sourcePath, []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(
+		"go",
+		"build",
+		"-ldflags",
+		"-X main.version="+releaseVersion,
+		"-o",
+		binaryPath,
+		sourcePath,
+	)
+	command.Env = append(os.Environ(), "GOCACHE="+filepath.Join(directory, "go-build-cache"))
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("build managed tool fixture: %v: %s", err, output)
+	}
+	return binaryPath
 }
