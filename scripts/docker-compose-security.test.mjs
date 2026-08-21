@@ -48,6 +48,7 @@ after(() => {
 });
 
 const managedSecrets = [
+  "BETTER_AUTH_SECRET",
   "POSTGRES_PASSWORD",
   "REDIS_PASSWORD",
   "RUSTFS_ACCESS_KEY",
@@ -55,6 +56,7 @@ const managedSecrets = [
 ];
 
 const generatedCredentials = {
+  BETTER_AUTH_SECRET: "b".repeat(40),
   POSTGRES_PASSWORD: "p".repeat(40),
   REDIS_PASSWORD: "r".repeat(40),
   RUSTFS_ACCESS_KEY: "access-key-unique-2026",
@@ -113,6 +115,29 @@ test("primary Compose keeps stateful services off host interfaces", () => {
   }
 });
 
+test("first-admin provisioner is an explicit private one-shot service", () => {
+  const config = requireRenderedCompose(
+    [primaryCompose],
+    testEnvironment({ ...generatedCredentials, COMPOSE_PROFILES: "setup" }),
+  );
+  const provisioner = config.services["admin-provisioner"];
+
+  assert.ok(provisioner, "admin-provisioner service is missing");
+  assert.deepEqual(provisioner.ports ?? [], []);
+  assert.deepEqual(provisioner.profiles, ["setup"]);
+  assert.deepEqual(provisioner.command, ["node", "dist/provision-admin.js"]);
+  assert.equal(provisioner.restart, "no");
+  assert.equal(
+    provisioner.environment.BETTER_AUTH_SECRET,
+    generatedCredentials.BETTER_AUTH_SECRET,
+  );
+  assert.equal(provisioner.environment.RUSTFS_SECRET_KEY, undefined);
+  assert.equal(
+    provisioner.depends_on.migration.condition,
+    "service_completed_successfully",
+  );
+});
+
 test("Compose requires deployment-specific stateful-service credentials", () => {
   for (const name of managedSecrets) {
     const incompleteCredentials = { ...generatedCredentials };
@@ -129,6 +154,7 @@ test("Compose requires deployment-specific stateful-service credentials", () => 
 
 test("credential policy rejects shipped defaults and accepts generated values", () => {
   const formerDefaults = {
+    BETTER_AUTH_SECRET: "change_me",
     POSTGRES_PASSWORD: "postgres",
     REDIS_PASSWORD: "password",
     RUSTFS_ACCESS_KEY: "rustfsadmin",
@@ -159,6 +185,10 @@ test("Compose shares injected credentials across legitimate service clients", ()
   );
   const services = config.services;
 
+  assert.equal(
+    services["core-api"].environment.BETTER_AUTH_SECRET,
+    generatedCredentials.BETTER_AUTH_SECRET,
+  );
   assert.equal(
     services.postgres.environment.POSTGRES_PASSWORD,
     generatedCredentials.POSTGRES_PASSWORD,

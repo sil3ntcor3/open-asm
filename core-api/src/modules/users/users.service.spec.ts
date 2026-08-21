@@ -41,6 +41,7 @@ describe('UsersService', () => {
 
     mockAuthService = {
       api: {
+        createUser: jest.fn(),
         signUpEmail: jest.fn(),
         signInEmail: jest.fn(),
       } as any,
@@ -71,23 +72,48 @@ describe('UsersService', () => {
     expect(service).toBeDefined();
   });
 
+  it('creates the first admin through the server-only admin API without signing in', async () => {
+    const createUser = jest
+      .spyOn(mockAuthService.api!, 'createUser' as never)
+      .mockResolvedValue({ user: { id: 'first-admin-id' } } as never);
+    const signUpEmail = jest
+      .spyOn(mockAuthService.api!, 'signUpEmail')
+      .mockResolvedValue({ user: { id: 'first-admin-id' } } as never);
+    const signInEmail = jest
+      .spyOn(mockAuthService.api!, 'signInEmail')
+      .mockResolvedValue({ token: 'unused-session' } as never);
+    jest.spyOn(mockUserRepository, 'count').mockResolvedValue(0);
+
+    await service.createFirstAdmin(
+      'Admin@Example.com',
+      'correct horse battery staple',
+    );
+
+    expect(createUser).toHaveBeenCalledWith({
+      body: {
+        name: 'Admin',
+        email: 'admin@example.com',
+        password: 'correct horse battery staple',
+        role: Role.ADMIN,
+        data: { emailVerified: true },
+      },
+    });
+    expect(signUpEmail).not.toHaveBeenCalled();
+    expect(signInEmail).not.toHaveBeenCalled();
+  });
+
   it('serializes concurrent first-admin creation before checking for an administrator', async () => {
     let adminExists = false;
     const countAdmins = jest
       .spyOn(mockUserRepository, 'count')
       .mockImplementation(() => Promise.resolve(adminExists ? 1 : 0));
-    const promoteAdmin = jest
-      .spyOn(mockUserRepository, 'update')
-      .mockImplementation(() => {
-        adminExists = true;
-        return Promise.resolve({ affected: 1, generatedMaps: [], raw: [] });
-      });
-    const signUpEmail = jest
-      .spyOn(mockAuthService.api!, 'signUpEmail')
-      .mockResolvedValue({ user: { id: 'first-admin-id' } } as never);
-    jest
-      .spyOn(mockAuthService.api!, 'signInEmail')
-      .mockResolvedValue({ token: 'session-token' } as never);
+    const createUser = (
+      mockAuthService.api as unknown as { createUser: jest.Mock }
+    ).createUser;
+    createUser.mockImplementation(() => {
+      adminExists = true;
+      return Promise.resolve({ user: { id: 'first-admin-id' } });
+    });
 
     const results = await Promise.allSettled([
       service.createFirstAdmin(
@@ -106,7 +132,7 @@ describe('UsersService', () => {
     expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(
       1,
     );
-    expect(signUpEmail).toHaveBeenCalledTimes(1);
+    expect(createUser).toHaveBeenCalledTimes(1);
     expect(mockEntityManager.query).toHaveBeenCalledTimes(2);
     expect(mockEntityManager.query).toHaveBeenCalledWith(
       expect.stringContaining('pg_advisory_xact_lock'),
@@ -120,10 +146,7 @@ describe('UsersService', () => {
       countAdmins.mock.invocationCallOrder[0],
     );
     expect(countAdmins.mock.invocationCallOrder[0]).toBeLessThan(
-      signUpEmail.mock.invocationCallOrder[0],
-    );
-    expect(signUpEmail.mock.invocationCallOrder[0]).toBeLessThan(
-      promoteAdmin.mock.invocationCallOrder[0],
+      createUser.mock.invocationCallOrder[0],
     );
   });
 });

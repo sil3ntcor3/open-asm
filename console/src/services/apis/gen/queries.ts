@@ -241,16 +241,14 @@ export type GetApiKeyResponseDto = {
 
 export type SwaggerPropertyMetadataValue = { [key: string]: unknown };
 
-export type SwaggerPropertyMetadataExample = { [key: string]: unknown };
-
 export type SwaggerPropertyMetadataDescription = { [key: string]: unknown };
 
 export type SwaggerPropertyMetadata = {
   value: SwaggerPropertyMetadataValue;
   type: string;
-  example: SwaggerPropertyMetadataExample;
   description: SwaggerPropertyMetadataDescription;
   title: string;
+  examples?: unknown;
 };
 
 export type GetWorkspaceConfigsDto = {
@@ -783,11 +781,6 @@ export type SetUserBannedDto = {
   banned: boolean;
 };
 
-export type CreateFirstAdminDto = {
-  email: string;
-  password: string;
-};
-
 export type GetMetadataDto = {
   isInit: boolean;
   isAssistant: boolean;
@@ -1121,7 +1114,7 @@ export type JobHistoryDetailResponseDto = {
   jobHistoryName: string;
 };
 
-export type PickTypeClass = {
+export type PickToolIdName = {
   id: string;
   name: string;
 };
@@ -1131,7 +1124,7 @@ export type AssetTag = {
   createdAt: string;
   updatedAt: string;
   tag: string;
-  tool: PickTypeClass;
+  tool: PickToolIdName;
 };
 
 export type TlsInfoFingerprintHash = { [key: string]: unknown };
@@ -8784,100 +8777,6 @@ export function useRootControllerGetHealth<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
-
-/**
- * Creates the first admin user in the system.
- * @summary Creates the first admin user in the system.
- */
-export const rootControllerCreateFirstAdmin = (
-  createFirstAdminDto: CreateFirstAdminDto,
-  options?: SecondParameter<typeof orvalClient>,
-  signal?: AbortSignal,
-) => {
-  return orvalClient<DefaultMessageResponseDto>(
-    {
-      url: `/api/init-admin`,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      data: createFirstAdminDto,
-      signal,
-    },
-    options,
-  );
-};
-
-export const getRootControllerCreateFirstAdminMutationOptions = <
-  TError = unknown,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof rootControllerCreateFirstAdmin>>,
-    TError,
-    { data: CreateFirstAdminDto },
-    TContext
-  >;
-  request?: SecondParameter<typeof orvalClient>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof rootControllerCreateFirstAdmin>>,
-  TError,
-  { data: CreateFirstAdminDto },
-  TContext
-> => {
-  const mutationKey = ['rootControllerCreateFirstAdmin'];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      'mutationKey' in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof rootControllerCreateFirstAdmin>>,
-    { data: CreateFirstAdminDto }
-  > = (props) => {
-    const { data } = props ?? {};
-
-    return rootControllerCreateFirstAdmin(data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type RootControllerCreateFirstAdminMutationResult = NonNullable<
-  Awaited<ReturnType<typeof rootControllerCreateFirstAdmin>>
->;
-export type RootControllerCreateFirstAdminMutationBody = CreateFirstAdminDto;
-export type RootControllerCreateFirstAdminMutationError = unknown;
-
-/**
- * @summary Creates the first admin user in the system.
- */
-export const useRootControllerCreateFirstAdmin = <
-  TError = unknown,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof rootControllerCreateFirstAdmin>>,
-      TError,
-      { data: CreateFirstAdminDto },
-      TContext
-    >;
-    request?: SecondParameter<typeof orvalClient>;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof rootControllerCreateFirstAdmin>>,
-  TError,
-  { data: CreateFirstAdminDto },
-  TContext
-> => {
-  return useMutation(
-    getRootControllerCreateFirstAdminMutationOptions(options),
-    queryClient,
-  );
-};
 
 /**
  * Returns metadata about the system state, like whether it has been initialized.

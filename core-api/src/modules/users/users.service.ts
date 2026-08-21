@@ -6,6 +6,20 @@ import { DataSource, Repository } from 'typeorm';
 import { User } from '../auth/entities/user.entity';
 import { AuthService } from './../auth/auth.service';
 
+type AdminAuth = {
+  api: {
+    createUser(args: {
+      body: {
+        name: string;
+        email: string;
+        password: string;
+        role: Role.ADMIN;
+        data: { emailVerified: boolean };
+      };
+    }): Promise<{ user: { id: string } }>;
+  };
+};
+
 const FIRST_ADMIN_LOCK_ID = 725_019_002;
 
 @Injectable()
@@ -13,7 +27,7 @@ export class UsersService implements OnModuleInit {
   constructor(
     @InjectRepository(User)
     public usersRepository: Repository<User>,
-    private authService: AuthService,
+    private authService: AuthService<AdminAuth>,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -55,25 +69,15 @@ export class UsersService implements OnModuleInit {
         throw new ForbiddenException();
       }
 
-      const result = await this.authService.api.signUpEmail({
+      await this.authService.api.createUser({
         body: {
           name: 'Admin',
-          email,
+          email: email.trim().toLowerCase(),
           password,
+          role: Role.ADMIN,
+          data: { emailVerified: true },
         },
       });
-
-      await usersRepository.update(result.user.id, {
-        role: Role.ADMIN,
-        emailVerified: true,
-      });
-    });
-
-    return this.authService.api.signInEmail({
-      body: {
-        email,
-        password,
-      },
     });
   }
 }

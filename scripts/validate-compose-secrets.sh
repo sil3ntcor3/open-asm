@@ -30,6 +30,7 @@ require_credential 'POSTGRES_PASSWORD' "${POSTGRES_PASSWORD:-}" 32
 require_credential 'REDIS_PASSWORD' "${REDIS_PASSWORD:-}" 32
 require_credential 'RUSTFS_ACCESS_KEY' "${RUSTFS_ACCESS_KEY:-}" 16
 require_credential 'RUSTFS_SECRET_KEY' "${RUSTFS_SECRET_KEY:-}" 32
+require_credential 'BETTER_AUTH_SECRET' "${BETTER_AUTH_SECRET:-}" 32
 
 case "$REDIS_PASSWORD" in
   *[!A-Za-z0-9._~-]*)
