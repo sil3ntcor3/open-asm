@@ -145,11 +145,13 @@ func Start(ctx context.Context, cfg *config.Config) {
 	defer workerCancel()
 
 	var (
-		stateMu          sync.Mutex
-		sessionCtx       context.Context
-		sessionCancel    context.CancelFunc
-		schedulerStarted bool
-		updatesStarted   bool
+		stateMu              sync.Mutex
+		sessionCtx           context.Context
+		sessionCancel        context.CancelFunc
+		schedulerStarted     bool
+		scannerStatusStarted bool
+		updatesStarted       bool
+		initialScannerStatus nucleiScannerStatus
 	)
 
 	// Concurrency limit and worker-level pause are runtime-controllable from
@@ -158,6 +160,7 @@ func Start(ctx context.Context, cfg *config.Config) {
 	var dispatchPaused atomic.Bool
 	scheduler := gocron.NewScheduler(time.UTC)
 	var wg sync.WaitGroup
+	var scannerStatusWG sync.WaitGroup
 	var toolUpdateWG sync.WaitGroup
 
 	prepareScanners := func(prepareCtx context.Context, synchronizeTools bool) (nucleiScannerStatus, bool, error) {
@@ -254,6 +257,7 @@ func Start(ctx context.Context, cfg *config.Config) {
 						defaultWorkerReadinessOptions,
 						func(attemptCtx context.Context) error {
 							status, toolsReady, prepareErr := prepareScanners(attemptCtx, true)
+							initialScannerStatus = status
 							if reportErr := reportNucleiScannerStatus(attemptCtx, client, status); reportErr != nil {
 								sysLog.Warning("Unable to report Nuclei scanner status: %v", reportErr)
 							}
@@ -281,6 +285,23 @@ func Start(ctx context.Context, cfg *config.Config) {
 						scheduler.StartAsync()
 						jobLog.Success("Gocron poller started (Max Concurrency: %d)", cfg.MaxConcurrency)
 						schedulerStarted = true
+					}
+					if !scannerStatusStarted {
+						scannerStatusStarted = true
+						loadScannerStatus := newNucleiScannerStatusLoader(toolPath, initialScannerStatus)
+						scannerStatusWG.Go(func() {
+							runNucleiScannerStatusReportLoop(
+								ctx,
+								nucleiScannerStatusReportInterval,
+								loadScannerStatus,
+								func(reportCtx context.Context, status nucleiScannerStatus) error {
+									return reportNucleiScannerStatus(reportCtx, client, status)
+								},
+								func(reportErr error) {
+									sysLog.Warning("Unable to report Nuclei scanner status: %v", reportErr)
+								},
+							)
+						})
 					}
 					if !updatesStarted {
 						updatesStarted = true
@@ -374,6 +395,7 @@ func Start(ctx context.Context, cfg *config.Config) {
 	workerCancel()
 	<-connectorDone
 	<-connectionLifecycleDone
+	scannerStatusWG.Wait()
 	toolUpdateWG.Wait()
 	shutLog.Success("Worker shut down safely")
 }
