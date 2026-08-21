@@ -55,6 +55,34 @@ function asStringArray(value: unknown): string[] {
   return [];
 }
 
+/**
+ * Escapes U+0000 recursively from string values because PostgreSQL JSONB
+ * cannot represent it. Nuclei schema keys stay unchanged to avoid collisions.
+ * The literal escape keeps binary scanner evidence visible without dropping
+ * the surrounding request, response, metadata, or raw finding.
+ */
+function escapePostgresJsonbNullCharacters(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return value.replace(/\u0000/g, '\\u0000');
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => escapePostgresJsonbNullCharacters(item));
+  }
+
+  const record = asRecord(value);
+  if (record) {
+    return Object.fromEntries(
+      Object.entries(record).map(([key, item]) => [
+        key,
+        escapePostgresJsonbNullCharacters(item),
+      ]),
+    );
+  }
+
+  return value;
+}
+
 function createNucleiEvidence(finding: NucleiFinding): VulnerabilityEvidence {
   const info = asRecord(finding.info);
   const metadata = asRecord(info?.metadata);
@@ -111,8 +139,7 @@ export const builtInTools: Tool[] = [
         value: i,
         dnsRecords: parsed[i],
         dnsResolutionStatus:
-          (parsed[i].A?.length ?? 0) > 0 ||
-          (parsed[i].AAAA?.length ?? 0) > 0
+          (parsed[i].A?.length ?? 0) > 0 || (parsed[i].AAAA?.length ?? 0) > 0
             ? DnsResolutionStatus.RESOLVED
             : DnsResolutionStatus.UNRESOLVED,
       })) as Asset[];
@@ -169,7 +196,8 @@ export const builtInTools: Tool[] = [
     logoUrl: '/static/images/nmap.png',
     // Display only; the worker runs nmap against the (host, port) of each
     // asset_service and returns parsed service JSON.
-    command: 'nmap -sV -Pn -T3 --version-intensity 2 -oG - -p {{port}} {{value}}',
+    command:
+      'nmap -sV -Pn -T3 --version-intensity 2 -oG - -p {{port}} {{value}}',
     parser: JSON.parse,
     version: '7.99',
     priority: JobPriority.MEDIUM,
@@ -186,7 +214,9 @@ export const builtInTools: Tool[] = [
         .split('\n')
         .filter((line) => line.trim())
         .map((line) => {
-          const finding = JSON.parse(line.trim()) as NucleiFinding;
+          const finding = escapePostgresJsonbNullCharacters(
+            JSON.parse(line.trim()),
+          ) as NucleiFinding;
           const info = asRecord(finding.info) ?? {};
           const classification = asRecord(info.classification);
           const port = asString(finding.port);
