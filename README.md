@@ -134,30 +134,29 @@ To quickly get started with OASM using Docker:
    ```bash
    cp core-api/example.env core-api/.env
    cp console/example.env console/.env
-   cp worker/example.env worker/.env
+   cp worker/.example.env worker/.env
    ```
 
-3. In `core-api/.env`, set `OASM_CONSOLE_URL` to the public console origin and
-   replace `ADMIN_BOOTSTRAP_TOKEN=change_me` with a random secret of at least
-   32 characters. This secret signs setup links and is never entered in the
-   browser.
+3. Configure the required authentication, PostgreSQL, Redis, RustFS, and worker
+   enrollment secrets in `core-api/.env`. Use unique generated values; the
+   comments in the example file describe the minimum lengths.
 
-4. Start the services:
+4. Run the installer:
 
    ```bash
-   docker compose up -d --build
+   ./scripts/install.sh
    ```
 
-5. Generate the short-lived first-admin setup link from the API container:
-
-   ```bash
-   docker compose exec core-api node dist/bootstrap-admin-link.js
-   ```
-
-   Open the generated link within 15 minutes, then enter only the administrator
-   email and password.
+   The installer builds the images, starts the state services, applies database
+   migrations, and prompts privately for the first administrator email and
+   password. It then starts the complete stack. No bootstrap token or setup URL
+   is required.
 
 This will launch the entire system, including the console, core API, workers, PostgreSQL, Redis, Geo-IP proxy, and Rustfs storage. Access the console at `http://localhost:3000`.
+
+See [Administrator provisioning](docs/administrator-provisioning.md) for the
+complete installation process, pre-built image workflow, security model,
+verification, repeat-run behavior, and recovery guidance.
 
 Subfinder uses every available passive source. To enable sources that require
 credentials, configure a worker-local provider file as described in
@@ -168,7 +167,8 @@ credentials, configure a worker-local provider file as described in
 You can also use pre-built images from Docker Hub:
 
 ```bash
-docker compose -f docker-compose.yml up -d
+docker compose --env-file core-api/.env pull
+./scripts/install.sh --no-build
 ```
 
 Images: `oasm/oasm-console`, `oasm/oasm-api`, `oasm/oasm-worker`

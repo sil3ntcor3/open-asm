@@ -1,167 +1,39 @@
 import AuthLayout from '@/components/common/layout/auth-layout';
 import { Button } from '@/components/ui/button';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import type { HttpError } from '@/services/apis/axios-client';
-import {
-  getRootControllerGetMetadataQueryKey,
-  useRootControllerCreateFirstAdmin,
-  type CreateFirstAdminDto,
-} from '@/services/apis/gen/queries';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { Loader2Icon } from 'lucide-react';
-import { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { useNavigate } from '@tanstack/react-router';
-import { z } from 'zod';
-import { useQueryClient } from '@tanstack/react-query';
-
-const formSchema = z
-  .object({
-    email: z.string().email('Invalid email address'),
-    password: z.string().min(8, 'Password must be at least 8 characters'),
-    confirmPassword: z
-      .string()
-      .min(8, 'Confirm password must be at least 8 characters'),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: 'Passwords do not match.',
-    path: ['confirmPassword'],
-  });
 
 export default function Register() {
-  const form = useForm({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      email: '',
-      password: '',
-      confirmPassword: '',
-    },
-  });
-
-  const { mutate } = useRootControllerCreateFirstAdmin();
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const [loading, setLoading] = useState(false);
-
-  async function onSubmit(values: z.infer<typeof formSchema>) {
-    setLoading(true);
-    mutate(
-      {
-        data: {
-          email: values.email,
-          password: values.password,
-        } satisfies CreateFirstAdminDto,
-      },
-      {
-        onSuccess: async () => {
-          queryClient.removeQueries({
-            queryKey: getRootControllerGetMetadataQueryKey(),
-          });
-          await navigate({ to: '/login' });
-        },
-        onError: (error) => {
-          if ((error as HttpError).response?.status === 401) {
-            form.setError('root', {
-              message:
-                'Setup authorization expired. Generate and open a new setup link on the server.',
-            });
-          } else {
-            form.setError('email', { message: 'Invalid email or password' });
-          }
-        },
-        onSettled: () => {
-          setLoading(false);
-        },
-      },
-    );
-  }
-
   return (
     <AuthLayout>
       <div className="flex w-full items-center justify-center bg-background px-6 py-12 lg:w-1/2">
-        <div className="w-full max-w-sm space-y-8">
+        <div className="w-full max-w-md space-y-8">
           <div className="space-y-2 text-center lg:text-left">
             <h1 className="text-balance text-2xl font-semibold tracking-tight">
-              Create your first admin
+              Administrator setup required
             </h1>
-            <p className="text-pretty text-sm text-muted-foreground">
-              Open the short-lived setup link generated on the server, then
-              choose the workspace administrator credentials.
+            <p className="text-pretty text-sm leading-relaxed text-muted-foreground">
+              Administrator setup must be completed on the host before anyone
+              can sign in. The installer creates the account through a private,
+              one-time provisioning service.
             </p>
           </div>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email</FormLabel>
-                    <FormControl>
-                      <Input placeholder="email@example.com" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="password"
-                        placeholder="••••••••"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="confirmPassword"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Confirm password</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="password"
-                        placeholder="••••••••"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              {form.formState.errors.root?.message ? (
-                <p className="text-sm text-destructive" role="alert">
-                  {form.formState.errors.root.message}
-                </p>
-              ) : null}
-              <Button
-                disabled={loading}
-                type="submit"
-                className="w-full"
-                size="lg"
-              >
-                {loading && <Loader2Icon className="animate-spin" />}
-                Create account
-              </Button>
-            </form>
-          </Form>
+          <div className="space-y-3 rounded-lg border bg-muted/40 p-4">
+            <p className="text-sm font-medium">Run from the Open-ASM directory:</p>
+            <code className="block overflow-x-auto rounded-md border bg-background px-3 py-2 text-sm">
+              ./scripts/install.sh
+            </code>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Enter the administrator email and password in the host terminal.
+              They cannot be submitted through this public page.
+            </p>
+          </div>
+          <Button
+            type="button"
+            className="w-full"
+            size="lg"
+            onClick={() => window.location.reload()}
+          >
+            Check setup status
+          </Button>
         </div>
       </div>
     </AuthLayout>

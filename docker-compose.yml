@@ -3,6 +3,7 @@ services:
     image: alpine:3.22.1
     network_mode: none
     environment:
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET to a generated secret of at least 32 characters}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to a generated secret of at least 32 characters}
       REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD to a generated URI-safe secret of at least 32 characters}
       RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:?Set RUSTFS_ACCESS_KEY to a unique access key of at least 16 characters}
@@ -57,6 +58,7 @@ services:
     ports:
       - '6276:6276'
     environment:
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET to a generated secret of at least 32 characters}
       - POSTGRES_HOST=postgres
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to a generated secret of at least 32 characters}
       - REDIS_URL=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD to a generated URI-safe secret of at least 32 characters}@redis:6379/0
@@ -93,6 +95,36 @@ services:
       interval: 1s
       timeout: 30s
       retries: 10
+
+  admin-provisioner:
+    profiles: ['setup']
+    image: oasm/oasm-api:latest
+    networks:
+      - oasm
+    environment:
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET to a generated secret of at least 32 characters}
+      - BETTER_AUTH_URL=${BETTER_AUTH_URL:-http://admin-provisioner}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_USERNAME=${POSTGRES_USERNAME:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to a generated secret of at least 32 characters}
+      - POSTGRES_DB=${POSTGRES_DB:-open_asm}
+      - POSTGRES_SSL=${POSTGRES_SSL:-false}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD to a generated URI-safe secret of at least 32 characters}@redis:6379/0
+    command: ['node', 'dist/provision-admin.js']
+    restart: 'no'
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   oasm-worker:
     image: oasm/oasm-worker:latest

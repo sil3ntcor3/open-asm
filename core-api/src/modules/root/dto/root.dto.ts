@@ -1,20 +1,4 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsString, MinLength } from 'class-validator';
-
-export class CreateFirstAdminDto {
-  @ApiProperty()
-  @IsEmail()
-  email: string;
-  @IsString()
-  @ApiProperty()
-  password: string;
-}
-
-export class AuthorizeFirstAdminDto {
-  @IsString()
-  @MinLength(64)
-  ticket: string;
-}
 
 export class GetMetadataDto {
   @ApiProperty()
