@@ -460,6 +460,111 @@ describe('WorkersService', () => {
     });
   });
 
+  describe('reportToolStatus', () => {
+    it('merges bounded component status for the authenticated worker', async () => {
+      (mockWorkerInstanceRepository.findOne as jest.Mock).mockResolvedValue({
+        id: 'worker-1',
+        toolStatuses: {
+          nmap: { installedVersion: '7.93', state: 'ready' },
+        },
+      });
+      (mockWorkerInstanceRepository.update as jest.Mock).mockResolvedValue({
+        affected: 1,
+      });
+
+      await (
+        service as unknown as {
+          reportToolStatus(
+            workerId: string,
+            status: {
+              component: string;
+              installedVersion: string;
+              state: string;
+              requestId?: string;
+              targetVersion?: string;
+            },
+          ): Promise<{ message: string }>;
+        }
+      ).reportToolStatus('worker-1', {
+        component: 'httpx',
+        installedVersion: '1.10.0',
+        state: 'succeeded',
+        requestId: '019ca5a9-2bc5-7fc0-bf20-1975d6ac7002',
+        targetVersion: '1.10.0',
+      });
+
+      expect(mockWorkerInstanceRepository.update).toHaveBeenCalledWith(
+        { id: 'worker-1' },
+        {
+          toolStatuses: {
+            nmap: { installedVersion: '7.93', state: 'ready' },
+            httpx: expect.objectContaining({
+              installedVersion: '1.10.0',
+              state: 'succeeded',
+              requestId: '019ca5a9-2bc5-7fc0-bf20-1975d6ac7002',
+              targetVersion: '1.10.0',
+            }),
+          },
+        },
+      );
+    });
+
+    it('rejects unknown components and unbounded worker errors', async () => {
+      const report = (
+        service as unknown as {
+          reportToolStatus(
+            workerId: string,
+            status: {
+              component: string;
+              installedVersion: string;
+              state: string;
+              error?: string;
+            },
+          ): Promise<{ message: string }>;
+        }
+      ).reportToolStatus.bind(service);
+
+      await expect(
+        report('worker-1', {
+          component: 'shell',
+          installedVersion: '1.0.0',
+          state: 'ready',
+        }),
+      ).rejects.toThrow('Unknown tool component');
+      await expect(
+        report('worker-1', {
+          component: 'httpx',
+          installedVersion: '1.10.0',
+          state: 'failed',
+          error: 'x'.repeat(2049),
+        }),
+      ).rejects.toThrow('exceeds 2048 characters');
+      expect(mockWorkerInstanceRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('accepts worker-image runtime versions with two or four segments', async () => {
+      (mockWorkerInstanceRepository.findOne as jest.Mock)
+        .mockResolvedValueOnce({ id: 'worker-1', toolStatuses: {} })
+        .mockResolvedValueOnce({ id: 'worker-1', toolStatuses: {} });
+      (mockWorkerInstanceRepository.update as jest.Mock).mockResolvedValue({
+        affected: 1,
+      });
+
+      await service.reportToolStatus('worker-1', {
+        component: 'nmap',
+        installedVersion: '7.93',
+        state: 'ready',
+      });
+      await service.reportToolStatus('worker-1', {
+        component: 'screenshot',
+        installedVersion: '151.0.7777.129',
+        state: 'ready',
+      });
+
+      expect(mockWorkerInstanceRepository.update).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('getWorkerManagementScope', () => {
     it('returns the scope of a global worker', async () => {
       (mockWorkerInstanceRepository.findOne as jest.Mock).mockResolvedValue({

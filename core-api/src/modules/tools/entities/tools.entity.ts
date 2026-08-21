@@ -21,6 +21,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { WorkspaceTool } from './workspace_tools.entity';
+import { ToolUpdateComponentDto } from '../dto/tool-update.dto';
 
 @Entity('tools')
 @Unique(['name'])
@@ -139,4 +140,7 @@ export class Tool {
 
   @ApiProperty({ required: false })
   availableWorkersCount?: number;
+
+  @ApiProperty({ type: () => [ToolUpdateComponentDto], required: false })
+  updateComponents?: ToolUpdateComponentDto[];
 }

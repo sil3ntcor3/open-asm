@@ -239,6 +239,111 @@ export interface ScannerStatusReportResponse {
      */
     message: string;
 }
+/**
+ * @generated from protobuf message workers.ToolUpdatePlanRequest
+ */
+export interface ToolUpdatePlanRequest {
+    /**
+     * @generated from protobuf field: string os = 1
+     */
+    os: string;
+    /**
+     * @generated from protobuf field: string arch = 2
+     */
+    arch: string;
+}
+/**
+ * @generated from protobuf message workers.ToolUpdateDirective
+ */
+export interface ToolUpdateDirective {
+    /**
+     * @generated from protobuf field: string request_id = 1
+     */
+    requestId: string;
+    /**
+     * @generated from protobuf field: string component = 2
+     */
+    component: string;
+    /**
+     * @generated from protobuf field: string target_version = 3
+     */
+    targetVersion: string;
+    /**
+     * @generated from protobuf field: string kind = 4
+     */
+    kind: string;
+    /**
+     * @generated from protobuf field: optional string artifact_name = 5
+     */
+    artifactName?: string;
+    /**
+     * @generated from protobuf field: optional string artifact_url = 6
+     */
+    artifactUrl?: string;
+    /**
+     * @generated from protobuf field: optional string sha256 = 7
+     */
+    sha256?: string;
+}
+/**
+ * @generated from protobuf message workers.ToolUpdatePlanResponse
+ */
+export interface ToolUpdatePlanResponse {
+    /**
+     * @generated from protobuf field: repeated workers.ToolUpdateDirective updates = 1
+     */
+    updates: ToolUpdateDirective[];
+}
+/**
+ * @generated from protobuf message workers.ToolStatusReportRequest
+ */
+export interface ToolStatusReportRequest {
+    /**
+     * @generated from protobuf field: string component = 1
+     */
+    component: string;
+    /**
+     * @generated from protobuf field: optional string installed_version = 2
+     */
+    installedVersion?: string;
+    /**
+     * @generated from protobuf field: string state = 3
+     */
+    state: string;
+    /**
+     * @generated from protobuf field: optional string request_id = 4
+     */
+    requestId?: string;
+    /**
+     * @generated from protobuf field: optional string target_version = 5
+     */
+    targetVersion?: string;
+    /**
+     * @generated from protobuf field: optional string rollback_version = 6
+     */
+    rollbackVersion?: string;
+    /**
+     * @generated from protobuf field: optional string last_attempt_at = 7
+     */
+    lastAttemptAt?: string;
+    /**
+     * @generated from protobuf field: optional string last_success_at = 8
+     */
+    lastSuccessAt?: string;
+    /**
+     * @generated from protobuf field: optional string error = 9
+     */
+    error?: string;
+}
+/**
+ * @generated from protobuf message workers.ToolStatusReportResponse
+ */
+export interface ToolStatusReportResponse {
+    /**
+     * @generated from protobuf field: string message = 1
+     */
+    message: string;
+}
 // @generated message type with reflection information, may provide speed optimized methods
 class JoinRequest$Type extends MessageType<JoinRequest> {
     constructor() {
@@ -1150,6 +1255,351 @@ class ScannerStatusReportResponse$Type extends MessageType<ScannerStatusReportRe
  * @generated MessageType for protobuf message workers.ScannerStatusReportResponse
  */
 export const ScannerStatusReportResponse = new ScannerStatusReportResponse$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ToolUpdatePlanRequest$Type extends MessageType<ToolUpdatePlanRequest> {
+    constructor() {
+        super("workers.ToolUpdatePlanRequest", [
+            { no: 1, name: "os", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "arch", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<ToolUpdatePlanRequest>): ToolUpdatePlanRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.os = "";
+        message.arch = "";
+        if (value !== undefined)
+            reflectionMergePartial<ToolUpdatePlanRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ToolUpdatePlanRequest): ToolUpdatePlanRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string os */ 1:
+                    message.os = reader.string();
+                    break;
+                case /* string arch */ 2:
+                    message.arch = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ToolUpdatePlanRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string os = 1; */
+        if (message.os !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.os);
+        /* string arch = 2; */
+        if (message.arch !== "")
+            writer.tag(2, WireType.LengthDelimited).string(message.arch);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message workers.ToolUpdatePlanRequest
+ */
+export const ToolUpdatePlanRequest = new ToolUpdatePlanRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ToolUpdateDirective$Type extends MessageType<ToolUpdateDirective> {
+    constructor() {
+        super("workers.ToolUpdateDirective", [
+            { no: 1, name: "request_id", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "component", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 3, name: "target_version", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 4, name: "kind", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 5, name: "artifact_name", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
+            { no: 6, name: "artifact_url", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
+            { no: 7, name: "sha256", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<ToolUpdateDirective>): ToolUpdateDirective {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.requestId = "";
+        message.component = "";
+        message.targetVersion = "";
+        message.kind = "";
+        if (value !== undefined)
+            reflectionMergePartial<ToolUpdateDirective>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ToolUpdateDirective): ToolUpdateDirective {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string request_id */ 1:
+                    message.requestId = reader.string();
+                    break;
+                case /* string component */ 2:
+                    message.component = reader.string();
+                    break;
+                case /* string target_version */ 3:
+                    message.targetVersion = reader.string();
+                    break;
+                case /* string kind */ 4:
+                    message.kind = reader.string();
+                    break;
+                case /* optional string artifact_name */ 5:
+                    message.artifactName = reader.string();
+                    break;
+                case /* optional string artifact_url */ 6:
+                    message.artifactUrl = reader.string();
+                    break;
+                case /* optional string sha256 */ 7:
+                    message.sha256 = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ToolUpdateDirective, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string request_id = 1; */
+        if (message.requestId !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.requestId);
+        /* string component = 2; */
+        if (message.component !== "")
+            writer.tag(2, WireType.LengthDelimited).string(message.component);
+        /* string target_version = 3; */
+        if (message.targetVersion !== "")
+            writer.tag(3, WireType.LengthDelimited).string(message.targetVersion);
+        /* string kind = 4; */
+        if (message.kind !== "")
+            writer.tag(4, WireType.LengthDelimited).string(message.kind);
+        /* optional string artifact_name = 5; */
+        if (message.artifactName !== undefined)
+            writer.tag(5, WireType.LengthDelimited).string(message.artifactName);
+        /* optional string artifact_url = 6; */
+        if (message.artifactUrl !== undefined)
+            writer.tag(6, WireType.LengthDelimited).string(message.artifactUrl);
+        /* optional string sha256 = 7; */
+        if (message.sha256 !== undefined)
+            writer.tag(7, WireType.LengthDelimited).string(message.sha256);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message workers.ToolUpdateDirective
+ */
+export const ToolUpdateDirective = new ToolUpdateDirective$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ToolUpdatePlanResponse$Type extends MessageType<ToolUpdatePlanResponse> {
+    constructor() {
+        super("workers.ToolUpdatePlanResponse", [
+            { no: 1, name: "updates", kind: "message", repeat: 2 /*RepeatType.UNPACKED*/, T: () => ToolUpdateDirective }
+        ]);
+    }
+    create(value?: PartialMessage<ToolUpdatePlanResponse>): ToolUpdatePlanResponse {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.updates = [];
+        if (value !== undefined)
+            reflectionMergePartial<ToolUpdatePlanResponse>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ToolUpdatePlanResponse): ToolUpdatePlanResponse {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* repeated workers.ToolUpdateDirective updates */ 1:
+                    message.updates.push(ToolUpdateDirective.internalBinaryRead(reader, reader.uint32(), options));
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ToolUpdatePlanResponse, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* repeated workers.ToolUpdateDirective updates = 1; */
+        for (let i = 0; i < message.updates.length; i++)
+            ToolUpdateDirective.internalBinaryWrite(message.updates[i], writer.tag(1, WireType.LengthDelimited).fork(), options).join();
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message workers.ToolUpdatePlanResponse
+ */
+export const ToolUpdatePlanResponse = new ToolUpdatePlanResponse$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ToolStatusReportRequest$Type extends MessageType<ToolStatusReportRequest> {
+    constructor() {
+        super("workers.ToolStatusReportRequest", [
+            { no: 1, name: "component", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "installed_version", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
+            { no: 3, name: "state", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 4, name: "request_id", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
+            { no: 5, name: "target_version", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
+            { no: 6, name: "rollback_version", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
+            { no: 7, name: "last_attempt_at", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
+            { no: 8, name: "last_success_at", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
+            { no: 9, name: "error", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<ToolStatusReportRequest>): ToolStatusReportRequest {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.component = "";
+        message.state = "";
+        if (value !== undefined)
+            reflectionMergePartial<ToolStatusReportRequest>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ToolStatusReportRequest): ToolStatusReportRequest {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string component */ 1:
+                    message.component = reader.string();
+                    break;
+                case /* optional string installed_version */ 2:
+                    message.installedVersion = reader.string();
+                    break;
+                case /* string state */ 3:
+                    message.state = reader.string();
+                    break;
+                case /* optional string request_id */ 4:
+                    message.requestId = reader.string();
+                    break;
+                case /* optional string target_version */ 5:
+                    message.targetVersion = reader.string();
+                    break;
+                case /* optional string rollback_version */ 6:
+                    message.rollbackVersion = reader.string();
+                    break;
+                case /* optional string last_attempt_at */ 7:
+                    message.lastAttemptAt = reader.string();
+                    break;
+                case /* optional string last_success_at */ 8:
+                    message.lastSuccessAt = reader.string();
+                    break;
+                case /* optional string error */ 9:
+                    message.error = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ToolStatusReportRequest, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string component = 1; */
+        if (message.component !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.component);
+        /* optional string installed_version = 2; */
+        if (message.installedVersion !== undefined)
+            writer.tag(2, WireType.LengthDelimited).string(message.installedVersion);
+        /* string state = 3; */
+        if (message.state !== "")
+            writer.tag(3, WireType.LengthDelimited).string(message.state);
+        /* optional string request_id = 4; */
+        if (message.requestId !== undefined)
+            writer.tag(4, WireType.LengthDelimited).string(message.requestId);
+        /* optional string target_version = 5; */
+        if (message.targetVersion !== undefined)
+            writer.tag(5, WireType.LengthDelimited).string(message.targetVersion);
+        /* optional string rollback_version = 6; */
+        if (message.rollbackVersion !== undefined)
+            writer.tag(6, WireType.LengthDelimited).string(message.rollbackVersion);
+        /* optional string last_attempt_at = 7; */
+        if (message.lastAttemptAt !== undefined)
+            writer.tag(7, WireType.LengthDelimited).string(message.lastAttemptAt);
+        /* optional string last_success_at = 8; */
+        if (message.lastSuccessAt !== undefined)
+            writer.tag(8, WireType.LengthDelimited).string(message.lastSuccessAt);
+        /* optional string error = 9; */
+        if (message.error !== undefined)
+            writer.tag(9, WireType.LengthDelimited).string(message.error);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message workers.ToolStatusReportRequest
+ */
+export const ToolStatusReportRequest = new ToolStatusReportRequest$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ToolStatusReportResponse$Type extends MessageType<ToolStatusReportResponse> {
+    constructor() {
+        super("workers.ToolStatusReportResponse", [
+            { no: 1, name: "message", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<ToolStatusReportResponse>): ToolStatusReportResponse {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.message = "";
+        if (value !== undefined)
+            reflectionMergePartial<ToolStatusReportResponse>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ToolStatusReportResponse): ToolStatusReportResponse {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string message */ 1:
+                    message.message = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ToolStatusReportResponse, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string message = 1; */
+        if (message.message !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.message);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message workers.ToolStatusReportResponse
+ */
+export const ToolStatusReportResponse = new ToolStatusReportResponse$Type();
 /**
  * @generated ServiceType for protobuf service workers.WorkersService
  */
@@ -1160,5 +1610,7 @@ export const WorkersService = new ServiceType("workers.WorkersService", [
     { name: "Storage", serverStreaming: true, options: {}, I: StorageRequest, O: StorageResponse },
     { name: "ConnectInternalNetwork", options: {}, I: ConnectInternalNetworkRequest, O: ConnectInternalNetworkResponse },
     { name: "BuiltinToolRegistry", options: {}, I: BuiltinToolRegistryRequest, O: BuiltinToolRegistryResponse },
-    { name: "ReportScannerStatus", options: {}, I: ScannerStatusReportRequest, O: ScannerStatusReportResponse }
+    { name: "ReportScannerStatus", options: {}, I: ScannerStatusReportRequest, O: ScannerStatusReportResponse },
+    { name: "GetToolUpdatePlan", options: {}, I: ToolUpdatePlanRequest, O: ToolUpdatePlanResponse },
+    { name: "ReportToolStatus", options: {}, I: ToolStatusReportRequest, O: ToolStatusReportResponse }
 ]);

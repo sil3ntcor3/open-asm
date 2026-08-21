@@ -35,6 +35,7 @@ import { AliveStreamManager } from './alive-stream-manager.service';
 import {
   GetManyWorkersDto,
   ScannerStatusReportDto,
+  ToolStatusReportDto,
   UpdateWorkerSettingsDto,
   WorkerAliveDto,
   WorkerJoinDto,
@@ -144,6 +145,87 @@ export class WorkersService {
       throw new RpcException('Worker not found');
     }
     return { message: 'Scanner status recorded' };
+  }
+
+  /** Persists one allowlisted tool component status for an authenticated worker. */
+  public async reportToolStatus(
+    workerId: string,
+    status: ToolStatusReportDto,
+  ): Promise<{ message: string }> {
+    const allowedComponents = new Set([
+      'subfinder',
+      'dnsx',
+      'httpx',
+      'naabu',
+      'nuclei',
+      'nuclei-templates',
+      'nmap',
+      'screenshot',
+    ]);
+    const allowedStates = new Set([
+      'ready',
+      'pending',
+      'updating',
+      'succeeded',
+      'failed',
+    ]);
+    if (!allowedComponents.has(status.component)) {
+      throw new RpcException('Unknown tool component');
+    }
+    if (!allowedStates.has(status.state)) {
+      throw new RpcException('Unknown tool update status');
+    }
+    if (status.error && status.error.length > 2048) {
+      throw new RpcException('Tool update error exceeds 2048 characters');
+    }
+    if (
+      status.installedVersion &&
+      (status.installedVersion.length > 64 ||
+        !/^v?\d+\.\d+(?:\.\d+){0,2}(?:[-+][0-9A-Za-z.-]+)?$/.test(
+          status.installedVersion,
+        ))
+    ) {
+      throw new RpcException('Invalid installed tool version');
+    }
+    for (const version of [status.targetVersion, status.rollbackVersion]) {
+      if (
+        version &&
+        (version.length > 64 ||
+          !/^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version))
+      ) {
+        throw new RpcException('Invalid requested tool version');
+      }
+    }
+
+    const worker = await this.repo.findOne({ where: { id: workerId } });
+    if (!worker) {
+      throw new RpcException('Worker not found');
+    }
+    const componentStatus = {
+      installedVersion: status.installedVersion,
+      state: status.state as
+        | 'ready'
+        | 'pending'
+        | 'updating'
+        | 'succeeded'
+        | 'failed',
+      requestId: status.requestId,
+      targetVersion: status.targetVersion,
+      rollbackVersion: status.rollbackVersion,
+      lastAttemptAt: status.lastAttemptAt,
+      lastSuccessAt: status.lastSuccessAt,
+      error: status.error,
+    };
+    await this.repo.update(
+      { id: workerId },
+      {
+        toolStatuses: {
+          ...(worker.toolStatuses ?? {}),
+          [status.component]: componentStatus,
+        },
+      },
+    );
+    return { message: 'Tool status recorded' };
   }
 
   private scannerVersion(field: string, value: string): string | null {

@@ -120,6 +120,78 @@ export class ScannerStatusReportDto {
   lastError?: string;
 }
 
+export class ToolStatusReportDto {
+  @ApiProperty()
+  @IsString()
+  @MaxLength(64)
+  component: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @MaxLength(64)
+  @Matches(/^$|^v?\d+\.\d+(?:\.\d+){0,2}(?:[-+][0-9A-Za-z.-]+)?$/)
+  @IsOptional()
+  installedVersion?: string;
+
+  @ApiProperty({
+    enum: ['ready', 'pending', 'updating', 'succeeded', 'failed'],
+  })
+  @IsString()
+  @IsIn(['ready', 'pending', 'updating', 'succeeded', 'failed'])
+  state: string;
+
+  @ApiProperty({ required: false })
+  @IsUUID()
+  @IsOptional()
+  requestId?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @MaxLength(64)
+  @Matches(/^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/)
+  @IsOptional()
+  targetVersion?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @MaxLength(64)
+  @Matches(/^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/)
+  @IsOptional()
+  rollbackVersion?: string;
+
+  @ApiProperty({ required: false })
+  @IsDateString()
+  @MaxLength(64)
+  @IsOptional()
+  lastAttemptAt?: string;
+
+  @ApiProperty({ required: false })
+  @IsDateString()
+  @MaxLength(64)
+  @IsOptional()
+  lastSuccessAt?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @MaxLength(2048)
+  @IsOptional()
+  error?: string;
+}
+
+export class ToolUpdatePlanRequestDto {
+  @ApiProperty()
+  @IsString()
+  @MaxLength(16)
+  @Matches(/^[a-z0-9_]+$/)
+  os: string;
+
+  @ApiProperty()
+  @IsString()
+  @MaxLength(16)
+  @Matches(/^[a-z0-9_]+$/)
+  arch: string;
+}
+
 export class GetManyWorkersDto extends GetManyBaseQueryParams {
   @ApiProperty({ required: false })
   @IsUUID('4')

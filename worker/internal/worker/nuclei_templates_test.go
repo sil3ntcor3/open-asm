@@ -70,6 +70,48 @@ func TestEnsureNucleiTemplatesBootstrapsIntoToolCache(t *testing.T) {
 	assertNoNucleiStagingDirectories(t, toolPath)
 }
 
+func TestPrepareNucleiTemplatesDoesNotAutoUpdateExistingTemplates(t *testing.T) {
+	toolPath := t.TempDir()
+	now := time.Date(2026, time.August, 18, 12, 0, 0, 0, time.UTC)
+	prepareExistingNucleiInstallation(t, toolPath)
+	writeTestNucleiTemplateState(t, toolPath, nucleiTemplateState{
+		EngineVersion:   "v3.11.0",
+		TemplateVersion: "v10.4.5",
+		TemplateSource:  nucleiTemplateSource,
+		LastSuccessAt:   now.Add(-30 * 24 * time.Hour),
+	})
+	updateCalled := false
+	remoteVersionRead := false
+	run := func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		switch {
+		case slices.Contains(args, "-ut"):
+			updateCalled = true
+			return nil, errors.New("automatic updates are forbidden")
+		case slices.Contains(args, "-version"):
+			return []byte("Nuclei Engine Version: v3.11.0"), nil
+		case slices.Contains(args, "-tv"):
+			remoteVersionRead = true
+			return []byte("Public nuclei-templates version: v10.4.7"), nil
+		default:
+			return []byte("templates valid"), nil
+		}
+	}
+
+	status, err := prepareNucleiTemplates(context.Background(), toolPath, now, run)
+	if err != nil {
+		t.Fatalf("prepareNucleiTemplates() error = %v", err)
+	}
+	if updateCalled {
+		t.Fatal("existing templates were updated without an administrator request")
+	}
+	if remoteVersionRead {
+		t.Fatal("existing installed version was replaced with the remote public version")
+	}
+	if status.TemplateVersion != "v10.4.5" || status.State != nucleiScannerStateReady {
+		t.Fatalf("status = %#v, want existing ready template version", status)
+	}
+}
+
 func TestReconcileNucleiTemplatesSkipsRefreshWhenStateIsFresh(t *testing.T) {
 	toolPath := t.TempDir()
 	now := time.Date(2026, time.July, 20, 12, 0, 0, 0, time.UTC)

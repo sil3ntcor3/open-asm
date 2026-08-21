@@ -15,6 +15,17 @@ import {
   OneToMany,
 } from 'typeorm';
 
+export interface WorkerToolStatus {
+  installedVersion?: string;
+  state: 'ready' | 'pending' | 'updating' | 'succeeded' | 'failed';
+  requestId?: string;
+  targetVersion?: string;
+  rollbackVersion?: string;
+  lastAttemptAt?: string;
+  lastSuccessAt?: string;
+  error?: string;
+}
+
 @Entity('workers')
 @Index('IDX_workers_token', ['token'])
 @Index('IDX_workers_workspaceId', ['workspace'])
@@ -179,4 +190,8 @@ export class WorkerInstance extends BaseEntity {
   })
   @Column({ type: 'timestamptz', nullable: true })
   scannerStatusUpdatedAt?: Date | null;
+
+  @ApiProperty({ required: false, type: Object })
+  @Column({ type: 'jsonb', default: () => "'{}'::jsonb" })
+  toolStatuses: Record<string, WorkerToolStatus>;
 }

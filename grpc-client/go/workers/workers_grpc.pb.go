@@ -26,6 +26,8 @@ const (
 	WorkersService_ConnectInternalNetwork_FullMethodName = "/workers.WorkersService/ConnectInternalNetwork"
 	WorkersService_BuiltinToolRegistry_FullMethodName    = "/workers.WorkersService/BuiltinToolRegistry"
 	WorkersService_ReportScannerStatus_FullMethodName    = "/workers.WorkersService/ReportScannerStatus"
+	WorkersService_GetToolUpdatePlan_FullMethodName      = "/workers.WorkersService/GetToolUpdatePlan"
+	WorkersService_ReportToolStatus_FullMethodName       = "/workers.WorkersService/ReportToolStatus"
 )
 
 // WorkersServiceClient is the client API for WorkersService service.
@@ -39,6 +41,8 @@ type WorkersServiceClient interface {
 	ConnectInternalNetwork(ctx context.Context, in *ConnectInternalNetworkRequest, opts ...grpc.CallOption) (*ConnectInternalNetworkResponse, error)
 	BuiltinToolRegistry(ctx context.Context, in *BuiltinToolRegistryRequest, opts ...grpc.CallOption) (*BuiltinToolRegistryResponse, error)
 	ReportScannerStatus(ctx context.Context, in *ScannerStatusReportRequest, opts ...grpc.CallOption) (*ScannerStatusReportResponse, error)
+	GetToolUpdatePlan(ctx context.Context, in *ToolUpdatePlanRequest, opts ...grpc.CallOption) (*ToolUpdatePlanResponse, error)
+	ReportToolStatus(ctx context.Context, in *ToolStatusReportRequest, opts ...grpc.CallOption) (*ToolStatusReportResponse, error)
 }
 
 type workersServiceClient struct {
@@ -137,6 +141,26 @@ func (c *workersServiceClient) ReportScannerStatus(ctx context.Context, in *Scan
 	return out, nil
 }
 
+func (c *workersServiceClient) GetToolUpdatePlan(ctx context.Context, in *ToolUpdatePlanRequest, opts ...grpc.CallOption) (*ToolUpdatePlanResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ToolUpdatePlanResponse)
+	err := c.cc.Invoke(ctx, WorkersService_GetToolUpdatePlan_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workersServiceClient) ReportToolStatus(ctx context.Context, in *ToolStatusReportRequest, opts ...grpc.CallOption) (*ToolStatusReportResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ToolStatusReportResponse)
+	err := c.cc.Invoke(ctx, WorkersService_ReportToolStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WorkersServiceServer is the server API for WorkersService service.
 // All implementations must embed UnimplementedWorkersServiceServer
 // for forward compatibility.
@@ -148,6 +172,8 @@ type WorkersServiceServer interface {
 	ConnectInternalNetwork(context.Context, *ConnectInternalNetworkRequest) (*ConnectInternalNetworkResponse, error)
 	BuiltinToolRegistry(context.Context, *BuiltinToolRegistryRequest) (*BuiltinToolRegistryResponse, error)
 	ReportScannerStatus(context.Context, *ScannerStatusReportRequest) (*ScannerStatusReportResponse, error)
+	GetToolUpdatePlan(context.Context, *ToolUpdatePlanRequest) (*ToolUpdatePlanResponse, error)
+	ReportToolStatus(context.Context, *ToolStatusReportRequest) (*ToolStatusReportResponse, error)
 	mustEmbedUnimplementedWorkersServiceServer()
 }
 
@@ -178,6 +204,12 @@ func (UnimplementedWorkersServiceServer) BuiltinToolRegistry(context.Context, *B
 }
 func (UnimplementedWorkersServiceServer) ReportScannerStatus(context.Context, *ScannerStatusReportRequest) (*ScannerStatusReportResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReportScannerStatus not implemented")
+}
+func (UnimplementedWorkersServiceServer) GetToolUpdatePlan(context.Context, *ToolUpdatePlanRequest) (*ToolUpdatePlanResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetToolUpdatePlan not implemented")
+}
+func (UnimplementedWorkersServiceServer) ReportToolStatus(context.Context, *ToolStatusReportRequest) (*ToolStatusReportResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportToolStatus not implemented")
 }
 func (UnimplementedWorkersServiceServer) mustEmbedUnimplementedWorkersServiceServer() {}
 func (UnimplementedWorkersServiceServer) testEmbeddedByValue()                        {}
@@ -312,6 +344,42 @@ func _WorkersService_ReportScannerStatus_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkersService_GetToolUpdatePlan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ToolUpdatePlanRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkersServiceServer).GetToolUpdatePlan(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkersService_GetToolUpdatePlan_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkersServiceServer).GetToolUpdatePlan(ctx, req.(*ToolUpdatePlanRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WorkersService_ReportToolStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ToolStatusReportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkersServiceServer).ReportToolStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkersService_ReportToolStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkersServiceServer).ReportToolStatus(ctx, req.(*ToolStatusReportRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WorkersService_ServiceDesc is the grpc.ServiceDesc for WorkersService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -338,6 +406,14 @@ var WorkersService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReportScannerStatus",
 			Handler:    _WorkersService_ReportScannerStatus_Handler,
+		},
+		{
+			MethodName: "GetToolUpdatePlan",
+			Handler:    _WorkersService_GetToolUpdatePlan_Handler,
+		},
+		{
+			MethodName: "ReportToolStatus",
+			Handler:    _WorkersService_ReportToolStatus_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

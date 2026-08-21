@@ -90,6 +90,41 @@ message ScannerStatusReportResponse {
   string message = 1;
 }
 
+message ToolUpdatePlanRequest {
+  string os = 1;
+  string arch = 2;
+}
+
+message ToolUpdateDirective {
+  string request_id = 1;
+  string component = 2;
+  string target_version = 3;
+  string kind = 4;
+  optional string artifact_name = 5;
+  optional string artifact_url = 6;
+  optional string sha256 = 7;
+}
+
+message ToolUpdatePlanResponse {
+  repeated ToolUpdateDirective updates = 1;
+}
+
+message ToolStatusReportRequest {
+  string component = 1;
+  optional string installed_version = 2;
+  string state = 3;
+  optional string request_id = 4;
+  optional string target_version = 5;
+  optional string rollback_version = 6;
+  optional string last_attempt_at = 7;
+  optional string last_success_at = 8;
+  optional string error = 9;
+}
+
+message ToolStatusReportResponse {
+  string message = 1;
+}
+
 service WorkersService {
   rpc Join(JoinRequest) returns (JoinResponse);
   rpc Alive(AliveRequest) returns (stream AliveResponse);
@@ -98,4 +133,6 @@ service WorkersService {
   rpc ConnectInternalNetwork(ConnectInternalNetworkRequest) returns (ConnectInternalNetworkResponse);
   rpc BuiltinToolRegistry(BuiltinToolRegistryRequest) returns (BuiltinToolRegistryResponse);
   rpc ReportScannerStatus(ScannerStatusReportRequest) returns (ScannerStatusReportResponse);
+  rpc GetToolUpdatePlan(ToolUpdatePlanRequest) returns (ToolUpdatePlanResponse);
+  rpc ReportToolStatus(ToolStatusReportRequest) returns (ToolStatusReportResponse);
 }

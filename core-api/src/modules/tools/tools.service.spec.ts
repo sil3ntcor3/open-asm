@@ -7,10 +7,11 @@ import type { WorkersService } from '../workers/workers.service';
 import type { ToolsQueryDto } from './dto/tools-query.dto';
 import type { Tool } from './entities/tools.entity';
 import type { WorkspaceTool } from './entities/workspace_tools.entity';
+import type { ToolUpdateService } from './tool-update.service';
 import { ToolsService } from './tools.service';
 
 describe('ToolsService', () => {
-  it('attaches worker-reported template versions only to the Nuclei tool', async () => {
+  it('attaches update component metadata to every tool', async () => {
     const tools = [
       { id: 'tool-nuclei', name: 'nuclei', type: WorkerType.BUILT_IN },
       { id: 'tool-httpx', name: 'httpx', type: WorkerType.BUILT_IN },
@@ -26,13 +27,44 @@ describe('ToolsService', () => {
       andWhere: jest.fn().mockReturnThis(),
       getCount: jest.fn().mockResolvedValue(3),
     };
-    const getNucleiTemplateVersions = jest.fn().mockResolvedValue(['v10.4.7']);
     const workersService = {
       repo: {
         createQueryBuilder: jest.fn().mockReturnValue(workerQueryBuilder),
       },
-      getNucleiTemplateVersions,
     } as unknown as WorkersService;
+    const getToolComponents = jest.fn().mockResolvedValue(
+      new Map([
+        [
+          'tool-nuclei',
+          [
+            {
+              component: 'nuclei-templates',
+              displayName: 'Nuclei templates',
+              mode: 'managed',
+              installedVersions: ['10.4.6'],
+              latestVersion: '10.4.7',
+              updateAvailable: true,
+            },
+          ],
+        ],
+        [
+          'tool-httpx',
+          [
+            {
+              component: 'httpx',
+              displayName: 'httpx engine',
+              mode: 'managed',
+              installedVersions: ['1.9.0'],
+              latestVersion: '1.10.0',
+              updateAvailable: true,
+            },
+          ],
+        ],
+      ]),
+    );
+    const toolUpdateService = {
+      getToolComponents,
+    } as unknown as ToolUpdateService;
     const service = new ToolsService(
       toolsRepository,
       workspaceToolRepository,
@@ -40,6 +72,7 @@ describe('ToolsService', () => {
       {} as Repository<Vulnerability>,
       {} as ApiKeysService,
       workersService,
+      toolUpdateService,
     );
     const query = {
       page: 1,
@@ -49,13 +82,15 @@ describe('ToolsService', () => {
 
     const response = await service.getManyTools(query);
 
-    expect(getNucleiTemplateVersions).toHaveBeenCalledWith('workspace-1');
+    expect(getToolComponents).toHaveBeenCalledWith(tools, 'workspace-1');
     expect(response.data.find((tool) => tool.name === 'nuclei')).toMatchObject({
-      templateVersions: ['v10.4.7'],
+      updateComponents: [
+        expect.objectContaining({ component: 'nuclei-templates' }),
+      ],
     });
-    expect(
-      response.data.find((tool) => tool.name === 'httpx'),
-    ).not.toHaveProperty('templateVersions');
+    expect(response.data.find((tool) => tool.name === 'httpx')).toMatchObject({
+      updateComponents: [expect.objectContaining({ component: 'httpx' })],
+    });
   });
 });
 
@@ -72,6 +107,8 @@ describe('ToolsService built-in tool synchronization', () => {
     const toolsRepository = {
       createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
     };
+    const synchronizeCatalog = jest.fn().mockResolvedValue(undefined);
+    const checkAll = jest.fn().mockResolvedValue({ checked: 6, failed: 0 });
 
     const service = new ToolsService(
       toolsRepository as never,
@@ -80,6 +117,7 @@ describe('ToolsService built-in tool synchronization', () => {
       {} as never,
       {} as never,
       {} as never,
+      { synchronizeCatalog, checkAll } as never,
     );
 
     await service.onModuleInit();
@@ -90,5 +128,7 @@ describe('ToolsService built-in tool synchronization', () => {
       }),
     );
     expect(execute).toHaveBeenCalledTimes(1);
+    expect(synchronizeCatalog).toHaveBeenCalledTimes(1);
+    expect(checkAll).toHaveBeenCalledTimes(1);
   });
 });
