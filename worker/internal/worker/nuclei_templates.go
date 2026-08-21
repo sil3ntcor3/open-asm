@@ -76,6 +76,77 @@ type commandOutputRunner func(
 	args ...string,
 ) ([]byte, error)
 
+// prepareNucleiTemplates validates the active template set and bootstraps it
+// only when none is usable. Existing templates are never refreshed here;
+// release updates require an administrator-approved update directive.
+func prepareNucleiTemplates(
+	ctx context.Context,
+	toolPath string,
+	now time.Time,
+	run commandOutputRunner,
+) (nucleiScannerStatus, error) {
+	absToolPath, nucleiPath, templatePath, err := nucleiInstallationPaths(toolPath)
+	if err != nil {
+		return nucleiScannerStatus{State: nucleiScannerStateError, LastError: boundedNucleiStatusError(err)}, err
+	}
+	state, _ := loadNucleiTemplateState(absToolPath)
+	state.TemplateSource = nucleiTemplateSource
+	engineVersion, err := readNucleiEngineVersion(ctx, nucleiPath, run)
+	if err != nil {
+		return handleNucleiRefreshFailure(absToolPath, state, false, err)
+	}
+	state.EngineVersion = engineVersion
+
+	ready, validationErr := validateNucleiTemplates(ctx, nucleiPath, templatePath, run)
+	if validationErr != nil || !ready {
+		state.LastAttemptAt = now
+		templateVersion, updateErr := downloadAndActivateNucleiTemplates(
+			ctx,
+			absToolPath,
+			nucleiPath,
+			templatePath,
+			run,
+		)
+		if updateErr != nil {
+			return handleNucleiRefreshFailure(absToolPath, state, false, updateErr)
+		}
+		state.TemplateVersion = templateVersion
+		state.LastSuccessAt = now
+	} else {
+		templateVersion := installedNucleiTemplateVersion(templatePath, state)
+		if templateVersion == "" {
+			var versionErr error
+			templateVersion, versionErr = readNucleiTemplateVersion(ctx, nucleiPath, run)
+			if versionErr != nil {
+				return handleNucleiRefreshFailure(absToolPath, state, true, versionErr)
+			}
+		}
+		state.TemplateVersion = templateVersion
+	}
+
+	state.LastValidatedAt = now
+	state.LastError = ""
+	if err := saveNucleiTemplateState(absToolPath, state); err != nil {
+		return handleNucleiRefreshFailure(absToolPath, state, true, err)
+	}
+	return nucleiStatusFromState(state, 0, now), nil
+}
+
+func installedNucleiTemplateVersion(templatePath string, state nucleiTemplateState) string {
+	readyVersion, err := os.ReadFile(filepath.Join(templatePath, nucleiTemplatesReadyFile))
+	if err == nil {
+		version := strings.TrimSpace(string(readyVersion))
+		if toolUpdateVersionPattern.MatchString(strings.TrimPrefix(version, "v")) {
+			return version
+		}
+	}
+	if state.TemplateSource == nucleiTemplateSource &&
+		toolUpdateVersionPattern.MatchString(strings.TrimPrefix(state.TemplateVersion, "v")) {
+		return state.TemplateVersion
+	}
+	return ""
+}
+
 // runNucleiTemplateRefreshLoop performs inexpensive freshness checks on a
 // fixed cadence. The reconciler itself decides whether an upstream refresh is
 // due, so failed stale updates can be retried without modifying fresh caches.

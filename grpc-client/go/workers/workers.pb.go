@@ -893,6 +893,346 @@ func (x *ScannerStatusReportResponse) GetMessage() string {
 	return ""
 }
 
+type ToolUpdatePlanRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Os            string                 `protobuf:"bytes,1,opt,name=os,proto3" json:"os,omitempty"`
+	Arch          string                 `protobuf:"bytes,2,opt,name=arch,proto3" json:"arch,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ToolUpdatePlanRequest) Reset() {
+	*x = ToolUpdatePlanRequest{}
+	mi := &file_workers_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ToolUpdatePlanRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ToolUpdatePlanRequest) ProtoMessage() {}
+
+func (x *ToolUpdatePlanRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_workers_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ToolUpdatePlanRequest.ProtoReflect.Descriptor instead.
+func (*ToolUpdatePlanRequest) Descriptor() ([]byte, []int) {
+	return file_workers_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ToolUpdatePlanRequest) GetOs() string {
+	if x != nil {
+		return x.Os
+	}
+	return ""
+}
+
+func (x *ToolUpdatePlanRequest) GetArch() string {
+	if x != nil {
+		return x.Arch
+	}
+	return ""
+}
+
+type ToolUpdateDirective struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Component     string                 `protobuf:"bytes,2,opt,name=component,proto3" json:"component,omitempty"`
+	TargetVersion string                 `protobuf:"bytes,3,opt,name=target_version,json=targetVersion,proto3" json:"target_version,omitempty"`
+	Kind          string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`
+	ArtifactName  *string                `protobuf:"bytes,5,opt,name=artifact_name,json=artifactName,proto3,oneof" json:"artifact_name,omitempty"`
+	ArtifactUrl   *string                `protobuf:"bytes,6,opt,name=artifact_url,json=artifactUrl,proto3,oneof" json:"artifact_url,omitempty"`
+	Sha256        *string                `protobuf:"bytes,7,opt,name=sha256,proto3,oneof" json:"sha256,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ToolUpdateDirective) Reset() {
+	*x = ToolUpdateDirective{}
+	mi := &file_workers_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ToolUpdateDirective) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ToolUpdateDirective) ProtoMessage() {}
+
+func (x *ToolUpdateDirective) ProtoReflect() protoreflect.Message {
+	mi := &file_workers_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ToolUpdateDirective.ProtoReflect.Descriptor instead.
+func (*ToolUpdateDirective) Descriptor() ([]byte, []int) {
+	return file_workers_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ToolUpdateDirective) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ToolUpdateDirective) GetComponent() string {
+	if x != nil {
+		return x.Component
+	}
+	return ""
+}
+
+func (x *ToolUpdateDirective) GetTargetVersion() string {
+	if x != nil {
+		return x.TargetVersion
+	}
+	return ""
+}
+
+func (x *ToolUpdateDirective) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *ToolUpdateDirective) GetArtifactName() string {
+	if x != nil && x.ArtifactName != nil {
+		return *x.ArtifactName
+	}
+	return ""
+}
+
+func (x *ToolUpdateDirective) GetArtifactUrl() string {
+	if x != nil && x.ArtifactUrl != nil {
+		return *x.ArtifactUrl
+	}
+	return ""
+}
+
+func (x *ToolUpdateDirective) GetSha256() string {
+	if x != nil && x.Sha256 != nil {
+		return *x.Sha256
+	}
+	return ""
+}
+
+type ToolUpdatePlanResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Updates       []*ToolUpdateDirective `protobuf:"bytes,1,rep,name=updates,proto3" json:"updates,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ToolUpdatePlanResponse) Reset() {
+	*x = ToolUpdatePlanResponse{}
+	mi := &file_workers_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ToolUpdatePlanResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ToolUpdatePlanResponse) ProtoMessage() {}
+
+func (x *ToolUpdatePlanResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_workers_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ToolUpdatePlanResponse.ProtoReflect.Descriptor instead.
+func (*ToolUpdatePlanResponse) Descriptor() ([]byte, []int) {
+	return file_workers_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ToolUpdatePlanResponse) GetUpdates() []*ToolUpdateDirective {
+	if x != nil {
+		return x.Updates
+	}
+	return nil
+}
+
+type ToolStatusReportRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Component        string                 `protobuf:"bytes,1,opt,name=component,proto3" json:"component,omitempty"`
+	InstalledVersion *string                `protobuf:"bytes,2,opt,name=installed_version,json=installedVersion,proto3,oneof" json:"installed_version,omitempty"`
+	State            string                 `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
+	RequestId        *string                `protobuf:"bytes,4,opt,name=request_id,json=requestId,proto3,oneof" json:"request_id,omitempty"`
+	TargetVersion    *string                `protobuf:"bytes,5,opt,name=target_version,json=targetVersion,proto3,oneof" json:"target_version,omitempty"`
+	RollbackVersion  *string                `protobuf:"bytes,6,opt,name=rollback_version,json=rollbackVersion,proto3,oneof" json:"rollback_version,omitempty"`
+	LastAttemptAt    *string                `protobuf:"bytes,7,opt,name=last_attempt_at,json=lastAttemptAt,proto3,oneof" json:"last_attempt_at,omitempty"`
+	LastSuccessAt    *string                `protobuf:"bytes,8,opt,name=last_success_at,json=lastSuccessAt,proto3,oneof" json:"last_success_at,omitempty"`
+	Error            *string                `protobuf:"bytes,9,opt,name=error,proto3,oneof" json:"error,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ToolStatusReportRequest) Reset() {
+	*x = ToolStatusReportRequest{}
+	mi := &file_workers_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ToolStatusReportRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ToolStatusReportRequest) ProtoMessage() {}
+
+func (x *ToolStatusReportRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_workers_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ToolStatusReportRequest.ProtoReflect.Descriptor instead.
+func (*ToolStatusReportRequest) Descriptor() ([]byte, []int) {
+	return file_workers_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ToolStatusReportRequest) GetComponent() string {
+	if x != nil {
+		return x.Component
+	}
+	return ""
+}
+
+func (x *ToolStatusReportRequest) GetInstalledVersion() string {
+	if x != nil && x.InstalledVersion != nil {
+		return *x.InstalledVersion
+	}
+	return ""
+}
+
+func (x *ToolStatusReportRequest) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *ToolStatusReportRequest) GetRequestId() string {
+	if x != nil && x.RequestId != nil {
+		return *x.RequestId
+	}
+	return ""
+}
+
+func (x *ToolStatusReportRequest) GetTargetVersion() string {
+	if x != nil && x.TargetVersion != nil {
+		return *x.TargetVersion
+	}
+	return ""
+}
+
+func (x *ToolStatusReportRequest) GetRollbackVersion() string {
+	if x != nil && x.RollbackVersion != nil {
+		return *x.RollbackVersion
+	}
+	return ""
+}
+
+func (x *ToolStatusReportRequest) GetLastAttemptAt() string {
+	if x != nil && x.LastAttemptAt != nil {
+		return *x.LastAttemptAt
+	}
+	return ""
+}
+
+func (x *ToolStatusReportRequest) GetLastSuccessAt() string {
+	if x != nil && x.LastSuccessAt != nil {
+		return *x.LastSuccessAt
+	}
+	return ""
+}
+
+func (x *ToolStatusReportRequest) GetError() string {
+	if x != nil && x.Error != nil {
+		return *x.Error
+	}
+	return ""
+}
+
+type ToolStatusReportResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Message       string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ToolStatusReportResponse) Reset() {
+	*x = ToolStatusReportResponse{}
+	mi := &file_workers_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ToolStatusReportResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ToolStatusReportResponse) ProtoMessage() {}
+
+func (x *ToolStatusReportResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_workers_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ToolStatusReportResponse.ProtoReflect.Descriptor instead.
+func (*ToolStatusReportResponse) Descriptor() ([]byte, []int) {
+	return file_workers_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ToolStatusReportResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
 var File_workers_proto protoreflect.FileDescriptor
 
 const file_workers_proto_rawDesc = "" +
@@ -965,7 +1305,44 @@ const file_workers_proto_rawDesc = "" +
 	"\x12_last_validated_atB\r\n" +
 	"\v_last_error\"7\n" +
 	"\x1bScannerStatusReportResponse\x12\x18\n" +
-	"\amessage\x18\x01 \x01(\tR\amessage2\xb8\x04\n" +
+	"\amessage\x18\x01 \x01(\tR\amessage\";\n" +
+	"\x15ToolUpdatePlanRequest\x12\x0e\n" +
+	"\x02os\x18\x01 \x01(\tR\x02os\x12\x12\n" +
+	"\x04arch\x18\x02 \x01(\tR\x04arch\"\xaa\x02\n" +
+	"\x13ToolUpdateDirective\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1c\n" +
+	"\tcomponent\x18\x02 \x01(\tR\tcomponent\x12%\n" +
+	"\x0etarget_version\x18\x03 \x01(\tR\rtargetVersion\x12\x12\n" +
+	"\x04kind\x18\x04 \x01(\tR\x04kind\x12(\n" +
+	"\rartifact_name\x18\x05 \x01(\tH\x00R\fartifactName\x88\x01\x01\x12&\n" +
+	"\fartifact_url\x18\x06 \x01(\tH\x01R\vartifactUrl\x88\x01\x01\x12\x1b\n" +
+	"\x06sha256\x18\a \x01(\tH\x02R\x06sha256\x88\x01\x01B\x10\n" +
+	"\x0e_artifact_nameB\x0f\n" +
+	"\r_artifact_urlB\t\n" +
+	"\a_sha256\"P\n" +
+	"\x16ToolUpdatePlanResponse\x126\n" +
+	"\aupdates\x18\x01 \x03(\v2\x1c.workers.ToolUpdateDirectiveR\aupdates\"\xf3\x03\n" +
+	"\x17ToolStatusReportRequest\x12\x1c\n" +
+	"\tcomponent\x18\x01 \x01(\tR\tcomponent\x120\n" +
+	"\x11installed_version\x18\x02 \x01(\tH\x00R\x10installedVersion\x88\x01\x01\x12\x14\n" +
+	"\x05state\x18\x03 \x01(\tR\x05state\x12\"\n" +
+	"\n" +
+	"request_id\x18\x04 \x01(\tH\x01R\trequestId\x88\x01\x01\x12*\n" +
+	"\x0etarget_version\x18\x05 \x01(\tH\x02R\rtargetVersion\x88\x01\x01\x12.\n" +
+	"\x10rollback_version\x18\x06 \x01(\tH\x03R\x0frollbackVersion\x88\x01\x01\x12+\n" +
+	"\x0flast_attempt_at\x18\a \x01(\tH\x04R\rlastAttemptAt\x88\x01\x01\x12+\n" +
+	"\x0flast_success_at\x18\b \x01(\tH\x05R\rlastSuccessAt\x88\x01\x01\x12\x19\n" +
+	"\x05error\x18\t \x01(\tH\x06R\x05error\x88\x01\x01B\x14\n" +
+	"\x12_installed_versionB\r\n" +
+	"\v_request_idB\x11\n" +
+	"\x0f_target_versionB\x13\n" +
+	"\x11_rollback_versionB\x12\n" +
+	"\x10_last_attempt_atB\x12\n" +
+	"\x10_last_success_atB\b\n" +
+	"\x06_error\"4\n" +
+	"\x18ToolStatusReportResponse\x12\x18\n" +
+	"\amessage\x18\x01 \x01(\tR\amessage2\xe7\x05\n" +
 	"\x0eWorkersService\x123\n" +
 	"\x04Join\x12\x14.workers.JoinRequest\x1a\x15.workers.JoinResponse\x128\n" +
 	"\x05Alive\x12\x15.workers.AliveRequest\x1a\x16.workers.AliveResponse0\x01\x12H\n" +
@@ -973,7 +1350,9 @@ const file_workers_proto_rawDesc = "" +
 	"\aStorage\x12\x17.workers.StorageRequest\x1a\x18.workers.StorageResponse0\x01\x12i\n" +
 	"\x16ConnectInternalNetwork\x12&.workers.ConnectInternalNetworkRequest\x1a'.workers.ConnectInternalNetworkResponse\x12`\n" +
 	"\x13BuiltinToolRegistry\x12#.workers.BuiltinToolRegistryRequest\x1a$.workers.BuiltinToolRegistryResponse\x12`\n" +
-	"\x13ReportScannerStatus\x12#.workers.ScannerStatusReportRequest\x1a$.workers.ScannerStatusReportResponseB\vZ\t./workersb\x06proto3"
+	"\x13ReportScannerStatus\x12#.workers.ScannerStatusReportRequest\x1a$.workers.ScannerStatusReportResponse\x12T\n" +
+	"\x11GetToolUpdatePlan\x12\x1e.workers.ToolUpdatePlanRequest\x1a\x1f.workers.ToolUpdatePlanResponse\x12W\n" +
+	"\x10ReportToolStatus\x12 .workers.ToolStatusReportRequest\x1a!.workers.ToolStatusReportResponseB\vZ\t./workersb\x06proto3"
 
 var (
 	file_workers_proto_rawDescOnce sync.Once
@@ -987,7 +1366,7 @@ func file_workers_proto_rawDescGZIP() []byte {
 	return file_workers_proto_rawDescData
 }
 
-var file_workers_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_workers_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_workers_proto_goTypes = []any{
 	(*JoinRequest)(nil),                    // 0: workers.JoinRequest
 	(*WorkerMetadata)(nil),                 // 1: workers.WorkerMetadata
@@ -1005,29 +1384,39 @@ var file_workers_proto_goTypes = []any{
 	(*BuiltinToolRegistryResponse)(nil),    // 13: workers.BuiltinToolRegistryResponse
 	(*ScannerStatusReportRequest)(nil),     // 14: workers.ScannerStatusReportRequest
 	(*ScannerStatusReportResponse)(nil),    // 15: workers.ScannerStatusReportResponse
+	(*ToolUpdatePlanRequest)(nil),          // 16: workers.ToolUpdatePlanRequest
+	(*ToolUpdateDirective)(nil),            // 17: workers.ToolUpdateDirective
+	(*ToolUpdatePlanResponse)(nil),         // 18: workers.ToolUpdatePlanResponse
+	(*ToolStatusReportRequest)(nil),        // 19: workers.ToolStatusReportRequest
+	(*ToolStatusReportResponse)(nil),       // 20: workers.ToolStatusReportResponse
 }
 var file_workers_proto_depIdxs = []int32{
 	1,  // 0: workers.JoinRequest.metadata:type_name -> workers.WorkerMetadata
 	9,  // 1: workers.ConnectInternalNetworkRequest.network_interfaces:type_name -> workers.NetworkInterfaceMessage
-	0,  // 2: workers.WorkersService.Join:input_type -> workers.JoinRequest
-	3,  // 3: workers.WorkersService.Alive:input_type -> workers.AliveRequest
-	5,  // 4: workers.WorkersService.GetManifest:input_type -> workers.GetManifestRequest
-	7,  // 5: workers.WorkersService.Storage:input_type -> workers.StorageRequest
-	10, // 6: workers.WorkersService.ConnectInternalNetwork:input_type -> workers.ConnectInternalNetworkRequest
-	12, // 7: workers.WorkersService.BuiltinToolRegistry:input_type -> workers.BuiltinToolRegistryRequest
-	14, // 8: workers.WorkersService.ReportScannerStatus:input_type -> workers.ScannerStatusReportRequest
-	2,  // 9: workers.WorkersService.Join:output_type -> workers.JoinResponse
-	4,  // 10: workers.WorkersService.Alive:output_type -> workers.AliveResponse
-	6,  // 11: workers.WorkersService.GetManifest:output_type -> workers.GetManifestResponse
-	8,  // 12: workers.WorkersService.Storage:output_type -> workers.StorageResponse
-	11, // 13: workers.WorkersService.ConnectInternalNetwork:output_type -> workers.ConnectInternalNetworkResponse
-	13, // 14: workers.WorkersService.BuiltinToolRegistry:output_type -> workers.BuiltinToolRegistryResponse
-	15, // 15: workers.WorkersService.ReportScannerStatus:output_type -> workers.ScannerStatusReportResponse
-	9,  // [9:16] is the sub-list for method output_type
-	2,  // [2:9] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	17, // 2: workers.ToolUpdatePlanResponse.updates:type_name -> workers.ToolUpdateDirective
+	0,  // 3: workers.WorkersService.Join:input_type -> workers.JoinRequest
+	3,  // 4: workers.WorkersService.Alive:input_type -> workers.AliveRequest
+	5,  // 5: workers.WorkersService.GetManifest:input_type -> workers.GetManifestRequest
+	7,  // 6: workers.WorkersService.Storage:input_type -> workers.StorageRequest
+	10, // 7: workers.WorkersService.ConnectInternalNetwork:input_type -> workers.ConnectInternalNetworkRequest
+	12, // 8: workers.WorkersService.BuiltinToolRegistry:input_type -> workers.BuiltinToolRegistryRequest
+	14, // 9: workers.WorkersService.ReportScannerStatus:input_type -> workers.ScannerStatusReportRequest
+	16, // 10: workers.WorkersService.GetToolUpdatePlan:input_type -> workers.ToolUpdatePlanRequest
+	19, // 11: workers.WorkersService.ReportToolStatus:input_type -> workers.ToolStatusReportRequest
+	2,  // 12: workers.WorkersService.Join:output_type -> workers.JoinResponse
+	4,  // 13: workers.WorkersService.Alive:output_type -> workers.AliveResponse
+	6,  // 14: workers.WorkersService.GetManifest:output_type -> workers.GetManifestResponse
+	8,  // 15: workers.WorkersService.Storage:output_type -> workers.StorageResponse
+	11, // 16: workers.WorkersService.ConnectInternalNetwork:output_type -> workers.ConnectInternalNetworkResponse
+	13, // 17: workers.WorkersService.BuiltinToolRegistry:output_type -> workers.BuiltinToolRegistryResponse
+	15, // 18: workers.WorkersService.ReportScannerStatus:output_type -> workers.ScannerStatusReportResponse
+	18, // 19: workers.WorkersService.GetToolUpdatePlan:output_type -> workers.ToolUpdatePlanResponse
+	20, // 20: workers.WorkersService.ReportToolStatus:output_type -> workers.ToolStatusReportResponse
+	12, // [12:21] is the sub-list for method output_type
+	3,  // [3:12] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_workers_proto_init() }
@@ -1038,13 +1427,15 @@ func file_workers_proto_init() {
 	file_workers_proto_msgTypes[0].OneofWrappers = []any{}
 	file_workers_proto_msgTypes[1].OneofWrappers = []any{}
 	file_workers_proto_msgTypes[14].OneofWrappers = []any{}
+	file_workers_proto_msgTypes[17].OneofWrappers = []any{}
+	file_workers_proto_msgTypes[19].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_workers_proto_rawDesc), len(file_workers_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

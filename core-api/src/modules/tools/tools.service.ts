@@ -30,6 +30,7 @@ import { ToolsQueryDto } from './dto/tools-query.dto';
 import { AddToolToWorkspaceDto } from './dto/tools.dto';
 import { Tool } from './entities/tools.entity';
 import { WorkspaceTool } from './entities/workspace_tools.entity';
+import { ToolUpdateService } from './tool-update.service';
 import { builtInTools } from './tools-provider/built-in-tools';
 import { officialSupportTools } from './tools-provider/official-support-tools';
 @Injectable()
@@ -51,6 +52,8 @@ export class ToolsService implements OnModuleInit {
 
     @Inject(forwardRef(() => WorkersService))
     private readonly workersService: WorkersService,
+
+    private readonly toolUpdateService: ToolUpdateService,
   ) {}
 
   /**
@@ -141,6 +144,10 @@ export class ToolsService implements OnModuleInit {
         })
         .values(toolsToInsert)
         .execute();
+      await this.toolUpdateService.synchronizeCatalog();
+      void this.toolUpdateService.checkAll().catch((error: unknown) => {
+        Logger.warn('Initial tool release check failed', error);
+      });
     } catch (error) {
       Logger.error('Error initializing built-in tools:', error);
     }
@@ -281,29 +288,28 @@ export class ToolsService implements OnModuleInit {
         },
       });
 
-      const [installedTools, nucleiTemplateVersions] = await Promise.all([
+      const [installedTools, updateComponentsByTool] = await Promise.all([
         this.workspaceToolRepository.find({
           where: {
             workspace: { id: workspaceId },
           },
           relations: ['tool'],
         }),
-        this.workersService.getNucleiTemplateVersions(workspaceId),
+        this.toolUpdateService.getToolComponents(data, workspaceId),
       ]);
 
       // Add isInstalled flag and availableWorkersCount to each tool
       const toolsWithInstalledFlag = await Promise.all(
         data.map(async (tool) => {
-          const templateMetadata =
-            tool.name.toLowerCase() === 'nuclei'
-              ? { templateVersions: nucleiTemplateVersions }
-              : {};
+          const updateComponents = tool.id
+            ? (updateComponentsByTool.get(tool.id) ?? [])
+            : [];
 
           // Skip tools without ID or type
           if (!tool.id || !tool.type) {
             return {
               ...tool,
-              ...templateMetadata,
+              updateComponents,
               isInstalled: false,
               availableWorkersCount: 0,
             };
@@ -320,7 +326,7 @@ export class ToolsService implements OnModuleInit {
           if (tool.type === WorkerType.BUILT_IN) {
             return {
               ...tool,
-              ...templateMetadata,
+              updateComponents,
               isInstalled: true,
               availableWorkersCount,
             };
@@ -331,7 +337,7 @@ export class ToolsService implements OnModuleInit {
           );
           return {
             ...tool,
-            ...templateMetadata,
+            updateComponents,
             isInstalled: !!workspaceTool?.isEnabled,
             availableWorkersCount,
           };
@@ -403,6 +409,14 @@ export class ToolsService implements OnModuleInit {
 
     if (!tool) {
       throw new NotFoundException(`Tool with ID "${id}" not found.`);
+    }
+
+    if (workspaceId) {
+      const componentMap = await this.toolUpdateService.getToolComponents(
+        [tool],
+        workspaceId,
+      );
+      tool.updateComponents = componentMap.get(id) ?? [];
     }
 
     // If tool is built-in, it's always considered installed

@@ -18,8 +18,6 @@ import (
 	"google.golang.org/grpc"
 )
 
-const nucleiTemplateRefreshCheckInterval = 15 * time.Minute
-
 // chromiumBinCandidates are the system chromium/chrome paths the worker prefers
 // over rod's auto-download, in priority order.
 var chromiumBinCandidates = []string{
@@ -151,7 +149,7 @@ func Start(ctx context.Context, cfg *config.Config) {
 		sessionCtx       context.Context
 		sessionCancel    context.CancelFunc
 		schedulerStarted bool
-		refreshStarted   bool
+		updatesStarted   bool
 	)
 
 	// Concurrency limit and worker-level pause are runtime-controllable from
@@ -160,39 +158,38 @@ func Start(ctx context.Context, cfg *config.Config) {
 	var dispatchPaused atomic.Bool
 	scheduler := gocron.NewScheduler(time.UTC)
 	var wg sync.WaitGroup
-	var nucleiRefreshWG sync.WaitGroup
-	nucleiRefreshOptions := nucleiTemplateRefreshOptions{
-		refreshInterval: cfg.NucleiTemplateRefreshInterval,
-		maxStale:        cfg.NucleiTemplateMaxStale,
-		now:             time.Now,
-	}
+	var toolUpdateWG sync.WaitGroup
 
-	refreshNucleiTemplates := func(refreshCtx context.Context, synchronizeTools bool) (nucleiScannerStatus, bool, error) {
+	prepareScanners := func(prepareCtx context.Context, synchronizeTools bool) (nucleiScannerStatus, bool, error) {
 		var status nucleiScannerStatus
 		toolsReady := !synchronizeTools
 		err := withToolCacheLock(
-			refreshCtx,
+			prepareCtx,
 			toolPath,
 			defaultToolCacheLockOptions,
 			func() error {
 				if synchronizeTools {
-					if err := client.WorkerDownloadTools(client.WithAuth(refreshCtx)); err != nil {
+					if err := client.WorkerDownloadTools(client.WithAuth(prepareCtx)); err != nil {
 						return fmt.Errorf("download tools: %w", err)
 					}
 					toolsReady = true
 				}
-				var reconcileErr error
-				status, reconcileErr = reconcileNucleiTemplates(
-					refreshCtx,
+				var prepareErr error
+				status, prepareErr = prepareNucleiTemplates(
+					prepareCtx,
 					toolPath,
-					nucleiRefreshOptions,
+					time.Now().UTC(),
 					runCommandOutput,
 				)
-				return reconcileErr
+				return prepareErr
 			},
 		)
 		if err != nil && status.State == "" {
-			status = nucleiStatusForWrapperFailure(toolPath, nucleiRefreshOptions, err)
+			status = nucleiStatusForWrapperFailure(
+				toolPath,
+				nucleiTemplateRefreshOptions{now: time.Now},
+				err,
+			)
 		}
 		return status, toolsReady, err
 	}
@@ -256,19 +253,19 @@ func Start(ctx context.Context, cfg *config.Config) {
 						candidateCtx,
 						defaultWorkerReadinessOptions,
 						func(attemptCtx context.Context) error {
-							status, toolsReady, refreshErr := refreshNucleiTemplates(attemptCtx, true)
+							status, toolsReady, prepareErr := prepareScanners(attemptCtx, true)
 							if reportErr := reportNucleiScannerStatus(attemptCtx, client, status); reportErr != nil {
 								sysLog.Warning("Unable to report Nuclei scanner status: %v", reportErr)
 							}
-							if refreshErr == nil && status.LastError != "" {
-								sysLog.Warning("Nuclei templates are usable but their refresh is delayed: %s", status.LastError)
+							if reportErr := reportInstalledToolVersions(attemptCtx, client, toolPath, status); reportErr != nil {
+								sysLog.Warning("Unable to report installed tool versions: %v", reportErr)
 							}
 							if toolsReady {
 								// Core gates only Nuclei while its templates are unavailable;
 								// unrelated scanners can start as soon as their tools are ready.
 								return nil
 							}
-							return refreshErr
+							return prepareErr
 						},
 						func(readinessErr error) {
 							sysLog.ErrorE("Scanner readiness failed; retrying", readinessErr)
@@ -285,34 +282,16 @@ func Start(ctx context.Context, cfg *config.Config) {
 						jobLog.Success("Gocron poller started (Max Concurrency: %d)", cfg.MaxConcurrency)
 						schedulerStarted = true
 					}
-					if !refreshStarted {
-						refreshStarted = true
-						nucleiRefreshWG.Go(func() {
-							checkInterval := nucleiTemplateRefreshCheckInterval
-							if cfg.NucleiTemplateRefreshInterval < checkInterval {
-								checkInterval = cfg.NucleiTemplateRefreshInterval
-							}
-							runNucleiTemplateRefreshLoop(
+					if !updatesStarted {
+						updatesStarted = true
+						toolUpdateWG.Go(func() {
+							runToolUpdateLoop(
 								ctx,
-								checkInterval,
-								func(loopCtx context.Context) (nucleiScannerStatus, error) {
-									attemptCtx, cancelAttempt := context.WithTimeout(loopCtx, defaultWorkerReadinessOptions.attemptTimeout)
-									defer cancelAttempt()
-									status, _, refreshErr := refreshNucleiTemplates(attemptCtx, false)
-									return status, refreshErr
-								},
-								func(status nucleiScannerStatus, refreshErr error) {
-									reportCtx, cancelReport := context.WithTimeout(ctx, 10*time.Second)
-									reportErr := reportNucleiScannerStatus(reportCtx, client, status)
-									cancelReport()
-									if reportErr != nil && ctx.Err() == nil {
-										sysLog.Warning("Unable to report Nuclei scanner status: %v", reportErr)
-									}
-									if refreshErr != nil {
-										sysLog.ErrorE("Nuclei template refresh failed", refreshErr)
-									} else if status.LastError != "" {
-										sysLog.Warning("Nuclei template refresh delayed: %s", status.LastError)
-									}
+								client,
+								toolPath,
+								func() bool { return activeJobs.count() > 0 },
+								func(updateErr error) {
+									sysLog.Warning("Tool update check failed: %v", updateErr)
 								},
 							)
 						})
@@ -395,6 +374,6 @@ func Start(ctx context.Context, cfg *config.Config) {
 	workerCancel()
 	<-connectorDone
 	<-connectionLifecycleDone
-	nucleiRefreshWG.Wait()
+	toolUpdateWG.Wait()
 	shutLog.Success("Worker shut down safely")
 }

@@ -4,64 +4,39 @@ Open-ASM manages the Nuclei engine and the community template set separately.
 
 ## Engine releases
 
-The Core API serves pinned Nuclei archives from `core-api/public/archived`. The
-canonical version and SHA-256 values are stored in
-`core-api/public/archived/nuclei-manifest.json`, and the built-in tool metadata
-reads its version from that manifest.
+Core checks the official stable `projectdiscovery/nuclei` GitHub release once
+per day and when an administrator selects **Check for updates** on the Tools
+page. The check records the exact release URL, platform archive URLs, and
+GitHub-published SHA-256 digests. It never installs a release.
 
-The `Check Nuclei Updates` GitHub Actions workflow runs daily against the
-official `projectdiscovery/nuclei` release feed. When a newer semantic release
-exists, it downloads the supported platform archives, verifies each official
-checksum and archive layout, runs focused compatibility tests, and opens a pull
-request against `dev`. It never merges or promotes a release to `main`.
-The workflow uses the repository `GITHUB_TOKEN`; depending on repository
-policy, checks on its pull request may require a maintainer to approve or
-re-run them. The workflow's privileged third-party actions are pinned to full
-commit SHAs.
-
-To prepare a release manually from the repository root:
-
-```bash
-scripts/update-nuclei-artifacts.sh 3.11.0
-scripts/update-nuclei-artifacts.test.sh
-```
-
-Review the resulting manifest, archive replacements, automated checks, and UAT
-results before merging.
+An administrator can request an update for the Nuclei engine independently of
+its templates. Each eligible idle worker downloads the exact approved archive,
+verifies its digest and archive layout, smoke-tests the staged executable, and
+activates it atomically. A failed post-activation smoke test restores the prior
+executable. Per-worker progress and errors are shown on the Tools page.
 
 ## Template releases
 
-Workers share a persistent tool cache under `WORKER_TOOL_PATH`. At startup and
-on a recurring cadence, the worker:
+Workers share a persistent tool cache under `WORKER_TOOL_PATH`. At startup, a
+worker:
 
 1. Reads the installed Nuclei engine version.
 2. Validates the active templates with Nuclei itself.
-3. Seeds a stable updater directory from the active templates, then asks
-   Nuclei to update it. This preserves a complete candidate when upstream is
-   already current and Nuclei performs a successful no-op update.
-4. Copies the validated candidate to a new immutable version directory and
-   atomically publishes a small pointer file. Each scan resolves this pointer
-   once, so an update cannot remove templates from a running scan.
-5. Keeps the previous validated version and recovers the newest ready version
-   if the pointer is missing after a crash.
-6. Reports engine version, template version, freshness, validation time, and
-   update errors to Core API for display on the Workers page.
+3. Bootstraps templates only if no validated template set exists.
+4. Reports the installed engine and template versions to Core.
+
+The worker does not refresh an existing template set automatically. Core checks
+the official stable `projectdiscovery/nuclei-templates` release once per day,
+but an administrator must request the template update from the Tools page.
+During that rollout, the worker seeds a staging directory from the active
+templates, invokes the Nuclei updater, validates the candidate, atomically
+publishes a version pointer, and verifies that the installed version is the
+administrator-approved target. The previous validated version is restored if
+the update cannot be verified.
 
 Nuclei jobs are withheld while no validated template set exists. Other tools
 continue to run, so an upstream template outage does not stop subdomain, port,
 HTTP, or screenshot discovery.
-
-The defaults are a six-hour refresh interval and a 24-hour maximum-stale
-threshold:
-
-```dotenv
-WORKER_NUCLEI_TEMPLATE_REFRESH_INTERVAL=6h
-WORKER_NUCLEI_TEMPLATE_MAX_STALE=24h
-```
-
-The refresh interval must be at least as long as `WORKER_JOB_TIMEOUT`; this
-guarantees the retained prior immutable version outlives any scan that resolved
-it before a refresh.
 
 All worker replicas should mount the same named volume at `WORKER_TOOL_PATH`.
 Open-ASM serializes tool and template changes in that shared cache so one worker

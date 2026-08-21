@@ -1,7 +1,8 @@
-import { WorkspaceId } from '@/common/decorators/app.decorator';
+import { Roles, UserId, WorkspaceId } from '@/common/decorators/app.decorator';
 import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
 import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
+import { Role } from '@/common/enums/enum';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
 import {
   BadRequestException,
@@ -9,6 +10,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
 } from '@nestjs/common';
@@ -25,12 +27,46 @@ import { ToolsQueryDto } from './dto/tools-query.dto';
 import { AddToolToWorkspaceDto } from './dto/tools.dto';
 import { Tool } from './entities/tools.entity';
 import { WorkspaceTool } from './entities/workspace_tools.entity';
+import { ToolUpdateState } from './entities/tool-update-state.entity';
+import { ToolUpdateService } from './tool-update.service';
 import { ToolsService } from './tools.service';
 
 @ApiTags('Tools')
 @Controller('tools')
 export class ToolsController {
-  constructor(private readonly toolsService: ToolsService) {}
+  constructor(
+    private readonly toolsService: ToolsService,
+    private readonly toolUpdateService: ToolUpdateService,
+  ) {}
+
+  @Doc({
+    summary: 'Check official tool release channels',
+    description:
+      'Checks the allowlisted official stable release channel for each independently managed tool component without installing updates.',
+  })
+  @Post('check-updates')
+  @Roles(Role.ADMIN)
+  checkForUpdates() {
+    return this.toolUpdateService.checkAll();
+  }
+
+  @Doc({
+    summary: 'Request an individual tool component update',
+    description:
+      'Creates a deployment-wide, idempotent rollout request for one verified tool component. Workers apply it independently and report progress.',
+    response: {
+      serialization: ToolUpdateState,
+    },
+  })
+  @Post(':id/update/:component')
+  @Roles(Role.ADMIN)
+  requestToolUpdate(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('component') component: string,
+    @UserId() userId: string,
+  ) {
+    return this.toolUpdateService.requestUpdate(id, component, userId);
+  }
 
   @Doc({
     summary: 'Create a new tool',

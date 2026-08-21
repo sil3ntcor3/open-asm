@@ -11,27 +11,22 @@ import { useNavigateWithParams } from '@/hooks/useNavigateWithParams';
 import type { Tool } from '@/services/apis/gen/queries';
 import { Verified } from 'lucide-react';
 import React from 'react';
+import ToolUpdateControls from './tool-update-controls';
 
 interface ToolCardProps {
   tool: Tool;
   button?: React.ReactNode;
-}
-
-/** Formats worker-reported template versions for the compact tool badge. */
-function formatTemplateVersions(templateVersions?: string[]): string {
-  if (!templateVersions?.length) return 'Not reported';
-  if (templateVersions.length === 1) return templateVersions[0];
-  return 'Mixed';
+  canUpdateTools?: boolean;
 }
 
 /** Renders one navigable marketplace tool with availability and version metadata. */
-const ToolCard = ({ tool, button }: ToolCardProps) => {
+const ToolCard = ({ tool, button, canUpdateTools = false }: ToolCardProps) => {
   const navigateWithParams = useNavigateWithParams();
 
   /** Opens the tool detail unless an embedded action button was selected. */
   const handleCardClick = (e: React.MouseEvent) => {
     // Don't navigate if clicking on the button
-    if ((e.target as HTMLElement).closest('button')) {
+    if ((e.target as HTMLElement).closest('button, a, [role="dialog"]')) {
       return;
     }
     navigateWithParams(`/tools/${tool.id}`);
@@ -109,15 +104,13 @@ const ToolCard = ({ tool, button }: ToolCardProps) => {
                   .join(' ')
               : 'N/A'}
           </Badge>
-          <Badge variant="outline" className="text-xs font-normal px-2 py-1">
-            Version: {tool.version?.trim() || 'Not reported'}
-          </Badge>
-          {tool.name.toLowerCase() === 'nuclei' && (
+          {!tool.updateComponents?.length && (
             <Badge variant="outline" className="text-xs font-normal px-2 py-1">
-              Templates: {formatTemplateVersions(tool.templateVersions)}
+              Version: {tool.version?.trim() || 'Not reported'}
             </Badge>
           )}
         </div>
+        <ToolUpdateControls tool={tool} canUpdateTools={canUpdateTools} />
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>

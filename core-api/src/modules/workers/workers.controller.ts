@@ -14,7 +14,9 @@ import {
   Body,
   Controller,
   ForbiddenException,
+  forwardRef,
   Get,
+  Inject,
   Logger,
   Param,
   Patch,
@@ -30,12 +32,18 @@ import { Observable } from 'rxjs';
 import {
   GetManyWorkersDto,
   ScannerStatusReportDto,
+  ToolStatusReportDto,
+  ToolUpdatePlanRequestDto,
   UpdateWorkerSettingsDto,
 } from './dto/workers.dto';
 import { WorkerInstance } from './entities/worker.entity';
 import { AliveStreamManager } from './alive-stream-manager.service';
 import { ToolArtifactService } from './tool-artifact.service';
 import { WorkersService } from './workers.service';
+import {
+  ToolUpdateDirective,
+  ToolUpdateService,
+} from '../tools/tool-update.service';
 
 interface GrpcCall {
   getPeer?(): string | undefined;
@@ -51,6 +59,8 @@ export class WorkersController {
     private readonly toolArtifactService: ToolArtifactService,
     private readonly grpcWorkerContext: GrpcWorkerContext,
     private readonly workspacePolicyService: WorkspacePolicyService,
+    @Inject(forwardRef(() => ToolUpdateService))
+    private readonly toolUpdateService: ToolUpdateService,
   ) {}
 
   /** Resolves the worker identity established by GrpcWorkerTokenGuard. */
@@ -288,6 +298,35 @@ export class WorkersController {
     metadata: Metadata,
   ): Promise<{ message: string }> {
     return this.workersService.reportScannerStatus(
+      this.authenticatedWorkerId(metadata),
+      request,
+    );
+  }
+
+  @GrpcMethod('WorkersService', 'GetToolUpdatePlan')
+  @UseGuards(GrpcWorkerTokenGuard)
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  async grpcGetToolUpdatePlan(
+    request: ToolUpdatePlanRequestDto,
+    metadata: Metadata,
+  ): Promise<{ updates: ToolUpdateDirective[] }> {
+    return {
+      updates: await this.toolUpdateService.getWorkerUpdatePlan(
+        this.authenticatedWorkerId(metadata),
+        request.os,
+        request.arch,
+      ),
+    };
+  }
+
+  @GrpcMethod('WorkersService', 'ReportToolStatus')
+  @UseGuards(GrpcWorkerTokenGuard)
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  grpcReportToolStatus(
+    request: ToolStatusReportDto,
+    metadata: Metadata,
+  ): Promise<{ message: string }> {
+    return this.workersService.reportToolStatus(
       this.authenticatedWorkerId(metadata),
       request,
     );
