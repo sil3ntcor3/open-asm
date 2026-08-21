@@ -23,26 +23,17 @@ describe('Register Page', () => {
     mockMutate.mockReset();
   });
 
-  it('requires the deployment bootstrap token for first-admin setup', async () => {
-    const user = userEvent.setup();
+  it('does not ask the user for a bootstrap token', async () => {
     renderWithProviders(<Register />, {
       routePath: '/init-admin',
       initialEntries: ['/init-admin'],
     });
 
-    const bootstrapToken = await screen.findByLabelText(/bootstrap token/i);
-    await user.type(bootstrapToken, 'too-short');
-    await user.click(screen.getByRole('button', { name: /create account/i }));
-
-    await waitFor(() => {
-      expect(
-        screen.getByText('Bootstrap token must be at least 32 characters'),
-      ).toBeInTheDocument();
-    });
-    expect(mockMutate).not.toHaveBeenCalled();
+    await screen.findByLabelText(/email/i);
+    expect(screen.queryByLabelText(/bootstrap token/i)).not.toBeInTheDocument();
   });
 
-  it('submits the configured bootstrap token with valid account details', async () => {
+  it('submits only the administrator credentials', async () => {
     const user = userEvent.setup();
     renderWithProviders(<Register />, {
       routePath: '/init-admin',
@@ -61,21 +52,47 @@ describe('Register Page', () => {
       screen.getByLabelText(/confirm password/i),
       'correct horse battery staple',
     );
-    await user.type(
-      screen.getByLabelText(/bootstrap token/i),
-      'a-secure-bootstrap-token-with-32-chars',
-    );
     await user.click(screen.getByRole('button', { name: /create account/i }));
 
     await waitFor(() => {
       expect(mockMutate).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({
-            bootstrapToken: 'a-secure-bootstrap-token-with-32-chars',
-          }),
+          data: {
+            email: 'admin@example.com',
+            password: 'correct horse battery staple',
+          },
         }),
         expect.any(Object),
       );
     });
+  });
+
+  it('explains how to recover when setup authorization is missing or expired', async () => {
+    mockMutate.mockImplementationOnce((_variables, options) => {
+      options.onError({ response: { status: 401 } });
+    });
+    const user = userEvent.setup();
+    renderWithProviders(<Register />, {
+      routePath: '/init-admin',
+      initialEntries: ['/init-admin'],
+    });
+
+    await user.type(
+      await screen.findByLabelText(/email/i),
+      'admin@example.com',
+    );
+    await user.type(
+      screen.getByLabelText(/^password$/i),
+      'correct horse battery staple',
+    );
+    await user.type(
+      screen.getByLabelText(/confirm password/i),
+      'correct horse battery staple',
+    );
+    await user.click(screen.getByRole('button', { name: /create account/i }));
+
+    expect(
+      await screen.findByText(/setup authorization expired.*new setup link/i),
+    ).toBeInTheDocument();
   });
 });

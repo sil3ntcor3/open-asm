@@ -9,6 +9,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import type { HttpError } from '@/services/apis/axios-client';
 import {
   getRootControllerGetMetadataQueryKey,
   useRootControllerCreateFirstAdmin,
@@ -24,9 +25,6 @@ import { useQueryClient } from '@tanstack/react-query';
 
 const formSchema = z
   .object({
-    bootstrapToken: z
-      .string()
-      .min(32, 'Bootstrap token must be at least 32 characters'),
     email: z.string().email('Invalid email address'),
     password: z.string().min(8, 'Password must be at least 8 characters'),
     confirmPassword: z
@@ -42,7 +40,6 @@ export default function Register() {
   const form = useForm({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      bootstrapToken: '',
       email: '',
       password: '',
       confirmPassword: '',
@@ -57,7 +54,12 @@ export default function Register() {
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setLoading(true);
     mutate(
-      { data: values as CreateFirstAdminDto },
+      {
+        data: {
+          email: values.email,
+          password: values.password,
+        } satisfies CreateFirstAdminDto,
+      },
       {
         onSuccess: async () => {
           queryClient.removeQueries({
@@ -65,8 +67,15 @@ export default function Register() {
           });
           await navigate({ to: '/login' });
         },
-        onError: () => {
-          form.setError('email', { message: 'Invalid email or password' });
+        onError: (error) => {
+          if ((error as HttpError).response?.status === 401) {
+            form.setError('root', {
+              message:
+                'Setup authorization expired. Generate and open a new setup link on the server.',
+            });
+          } else {
+            form.setError('email', { message: 'Invalid email or password' });
+          }
         },
         onSettled: () => {
           setLoading(false);
@@ -84,29 +93,12 @@ export default function Register() {
               Create your first admin
             </h1>
             <p className="text-pretty text-sm text-muted-foreground">
-              Set up the workspace administrator account.
+              Open the short-lived setup link generated on the server, then
+              choose the workspace administrator credentials.
             </p>
           </div>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-              <FormField
-                control={form.control}
-                name="bootstrapToken"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Bootstrap token</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="password"
-                        autoComplete="off"
-                        placeholder="Value from ADMIN_BOOTSTRAP_TOKEN"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
               <FormField
                 control={form.control}
                 name="email"
@@ -154,6 +146,11 @@ export default function Register() {
                   </FormItem>
                 )}
               />
+              {form.formState.errors.root?.message ? (
+                <p className="text-sm text-destructive" role="alert">
+                  {form.formState.errors.root.message}
+                </p>
+              ) : null}
               <Button
                 disabled={loading}
                 type="submit"

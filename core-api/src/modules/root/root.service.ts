@@ -4,9 +4,14 @@ import { ReleaseVersion } from '@/common/interfaces/app.interface';
 import { RedisService } from '@/services/redis/redis.service';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { timingSafeEqual } from 'crypto';
+import { createHash } from 'crypto';
 import { SystemConfigsService } from '../system-configs/system-configs.service';
 import { UsersService } from '../users/users.service';
+import {
+  BOOTSTRAP_AUTHORIZATION_TTL_MS,
+  exchangeBootstrapLinkTicket,
+  isValidBootstrapSession,
+} from './bootstrap-authorization';
 import {
   CreateFirstAdminDto,
   GetMetadataDto,
@@ -29,18 +34,62 @@ export class RootService {
   /**
    * Creates the first admin user in the system.
    * @param dto The data transfer object containing the email and password for the admin user.
+   * @param authorization The short-lived browser authorization from the setup link.
+   * @param origin The browser Origin header, which must match the configured console.
    * @returns A promise that resolves to a default message response dto.
    */
   public async createFirstAdmin(
     dto: CreateFirstAdminDto,
+    authorization?: string,
+    origin?: string,
   ): Promise<DefaultMessageResponseDto> {
-    const { email, password, bootstrapToken } = dto;
-    if (!this.bootstrapSecretsMatch(bootstrapToken)) {
-      throw new UnauthorizedException('Invalid bootstrap token');
+    const expectedOrigin = this.getConfiguredConsoleUrl()?.origin;
+    if (
+      !expectedOrigin ||
+      origin !== expectedOrigin ||
+      !isValidBootstrapSession(
+        this.configService.get<string>('ADMIN_BOOTSTRAP_TOKEN'),
+        authorization,
+      )
+    ) {
+      throw new UnauthorizedException('Invalid bootstrap authorization');
     }
+    const { email, password } = dto;
     await this.usersService.createFirstAdmin(email, password);
     return {
       message: 'Admin user created successfully',
+    };
+  }
+
+  /** Exchanges and consumes a signed setup-link ticket for browser authorization. */
+  public async authorizeFirstAdmin(ticket: string): Promise<{
+    authorization: string;
+    secure: boolean;
+  }> {
+    const authorization = exchangeBootstrapLinkTicket(
+      this.configService.get<string>('ADMIN_BOOTSTRAP_TOKEN'),
+      ticket,
+    );
+    const consoleUrl = this.getConfiguredConsoleUrl();
+    if (!authorization || !consoleUrl) {
+      throw new UnauthorizedException('Invalid bootstrap authorization');
+    }
+
+    const ticketDigest = createHash('sha256').update(ticket).digest('hex');
+    const consumed = await this.redisService.cacheClient.set(
+      `bootstrap:first-admin:${ticketDigest}`,
+      '1',
+      'PX',
+      BOOTSTRAP_AUTHORIZATION_TTL_MS,
+      'NX',
+    );
+    if (consumed !== 'OK') {
+      throw new UnauthorizedException('Invalid bootstrap authorization');
+    }
+
+    return {
+      authorization,
+      secure: consoleUrl.protocol === 'https:',
     };
   }
 
@@ -149,22 +198,22 @@ export class RootService {
     return match ? match.slice(1).map(Number) : null;
   }
 
-  private bootstrapSecretsMatch(actual: string | undefined): boolean {
-    const expected = this.configService.get<string>('ADMIN_BOOTSTRAP_TOKEN');
-    if (
-      !expected ||
-      expected.length < 32 ||
-      expected === 'change_me' ||
-      !actual
-    ) {
-      return false;
-    }
+  private getConfiguredConsoleUrl(): URL | null {
+    const configuredUrl = this.configService.get<string>('OASM_CONSOLE_URL');
+    if (!configuredUrl) return null;
 
-    const expectedBytes = Buffer.from(expected);
-    const actualBytes = Buffer.from(actual);
-    return (
-      expectedBytes.length === actualBytes.length &&
-      timingSafeEqual(expectedBytes, actualBytes)
-    );
+    try {
+      const url = new URL(configuredUrl);
+      if (
+        !['http:', 'https:'].includes(url.protocol) ||
+        url.username ||
+        url.password
+      ) {
+        return null;
+      }
+      return url;
+    } catch {
+      return null;
+    }
   }
 }

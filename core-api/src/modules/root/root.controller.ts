@@ -1,15 +1,21 @@
 import { Public, Roles } from '@/common/decorators/app.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
-import { Body, Controller, Get, Post } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Post, Query, Req, Res } from '@nestjs/common';
+import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
+import type { Request, Response } from 'express';
 import { Role } from '@/common/enums/enum';
+import { BOOTSTRAP_AUTHORIZATION_TTL_MS } from './bootstrap-authorization';
 import {
+  AuthorizeFirstAdminDto,
   CreateFirstAdminDto,
   GetMetadataDto,
   GetVersionDto,
 } from './dto/root.dto';
 import { RootService } from './root.service';
+
+const BOOTSTRAP_COOKIE_NAME = 'oasm_admin_bootstrap';
+const BOOTSTRAP_COOKIE_PATH = '/api/init-admin';
 
 @ApiTags('Root')
 @Controller()
@@ -31,10 +37,47 @@ export class RootController {
     },
   })
   @Post('init-admin')
-  createFirstAdmin(
+  async createFirstAdmin(
     @Body() dto: CreateFirstAdminDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<DefaultMessageResponseDto> {
-    return this.rootService.createFirstAdmin(dto);
+    const authorization = request.cookies?.[BOOTSTRAP_COOKIE_NAME] as
+      | string
+      | undefined;
+    const origin = request.headers.origin;
+    const result = await this.rootService.createFirstAdmin(
+      dto,
+      authorization,
+      typeof origin === 'string' ? origin : undefined,
+    );
+    response.clearCookie(BOOTSTRAP_COOKIE_NAME, {
+      httpOnly: true,
+      path: BOOTSTRAP_COOKIE_PATH,
+      sameSite: 'strict',
+    });
+    return result;
+  }
+
+  @Public()
+  @ApiExcludeEndpoint()
+  @Get('init-admin/authorize')
+  async authorizeFirstAdmin(
+    @Query() dto: AuthorizeFirstAdminDto,
+    @Res() response: Response,
+  ): Promise<void> {
+    const { authorization, secure } =
+      await this.rootService.authorizeFirstAdmin(dto.ticket);
+    response.cookie(BOOTSTRAP_COOKIE_NAME, authorization, {
+      httpOnly: true,
+      maxAge: BOOTSTRAP_AUTHORIZATION_TTL_MS,
+      path: BOOTSTRAP_COOKIE_PATH,
+      sameSite: 'strict',
+      secure,
+    });
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('Referrer-Policy', 'no-referrer');
+    response.redirect(303, '/init-admin');
   }
 
   @Public()

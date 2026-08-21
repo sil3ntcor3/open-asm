@@ -137,11 +137,25 @@ To quickly get started with OASM using Docker:
    cp worker/example.env worker/.env
    ```
 
-3. Start the services:
+3. In `core-api/.env`, set `OASM_CONSOLE_URL` to the public console origin and
+   replace `ADMIN_BOOTSTRAP_TOKEN=change_me` with a random secret of at least
+   32 characters. This secret signs setup links and is never entered in the
+   browser.
+
+4. Start the services:
 
    ```bash
    docker compose up -d --build
    ```
+
+5. Generate the short-lived first-admin setup link from the API container:
+
+   ```bash
+   docker compose exec core-api node dist/bootstrap-admin-link.js
+   ```
+
+   Open the generated link within 15 minutes, then enter only the administrator
+   email and password.
 
 This will launch the entire system, including the console, core API, workers, PostgreSQL, Redis, Geo-IP proxy, and Rustfs storage. Access the console at `http://localhost:3000`.
 
