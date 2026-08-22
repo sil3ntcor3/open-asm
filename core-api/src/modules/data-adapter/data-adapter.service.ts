@@ -30,6 +30,73 @@ import {
   WEB_PORT_FLOOR,
 } from '@/common/constants/app.constants';
 
+/**
+ * Nuclei protocol types whose match proves nothing about a port on the scanned
+ * asset, so a finding of one of these types must never create an asset_service:
+ * a `dns` match is answered by a nameserver, `whois` by a registry, and `file`,
+ * `code` and `offline-http` never leave the worker. Every other protocol —
+ * http, tcp/network, ssl, websocket, headless, javascript — reaches its match by
+ * completing a connection to host:port, which is exactly the evidence we want.
+ *
+ * A deny list rather than an allow list is deliberate. Nuclei adds protocols
+ * (javascript is recent, and is what carries the Redis, SSH and SNMP templates);
+ * an allow list would silently drop each new one, which is the same
+ * under-reporting this reconciliation exists to fix.
+ */
+const NON_ENDPOINT_FINDING_TYPES = new Set([
+  'dns',
+  'whois',
+  'file',
+  'code',
+  'offline-http',
+]);
+
+/**
+ * Reduces a host as a scanner reported it to a bare comparable hostname:
+ * strips scheme, credentials, path and port, unwraps an IPv6 literal, and
+ * lowercases. Nuclei reports `host` bare, but `matched-at` and some providers
+ * carry a full URL, and an unnormalised comparison would reject the asset's own
+ * endpoints and lose the port.
+ */
+function normalizeHostname(value: string | undefined | null): string {
+  if (!value) {
+    return '';
+  }
+
+  let host = String(value).trim();
+  host = host.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//, '');
+  host = host.split('@').pop() ?? host;
+  host = host.split(/[/?#]/)[0] ?? '';
+
+  const bracketed = host.match(/^\[(.+)\](?::\d+)?$/);
+  if (bracketed) {
+    host = bracketed[1];
+  } else if (host.split(':').length === 2) {
+    // Exactly one colon is "host:port"; more than one is a bare IPv6 literal
+    // that carries no port and must be left intact.
+    host = host.split(':')[0];
+  }
+
+  return host.replace(/\.$/, '').toLowerCase();
+}
+
+/**
+ * Parses a scanner-reported port into a usable TCP/UDP port number, rejecting
+ * anything that is not a whole number in range.
+ */
+function parsePortNumber(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === '') {
+    return undefined;
+  }
+
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    return undefined;
+  }
+
+  return port;
+}
+
 @Injectable()
 export class DataAdapterService {
   private readonly logger = new Logger(DataAdapterService.name);
@@ -81,6 +148,121 @@ export class DataAdapterService {
         overwrite: ['value'],
       })
       .execute();
+  }
+
+  /**
+   * Adds to the inventory every port a vulnerability scan proved was reachable
+   * on the asset.
+   *
+   * Until now `asset_services` was written only by the port-scanner adapter and
+   * the {@link WEB_PORT_FLOOR}, so the inventory could never be more complete
+   * than naabu's port list — and the vulnerability scanner is not bound by that
+   * list. Nuclei runs host-wide (`-u <asset>`, no assetServiceId) and each
+   * network template supplies its own port, so it reaches endpoints naabu never
+   * probes. Two ways that happens, both observed on pentest-ground.com:
+   *
+   *   - The port is outside naabu's `-top-ports 1000`. That list is nmap's
+   *     open-frequency ranking, where Redis (6379) sits at ~1671, so the sweep
+   *     never asks about it. Nuclei's Redis templates connect to 6379 directly
+   *     and returned seven findings, one of them critical, against an asset
+   *     whose inventory listed six services and no 6379.
+   *   - The service is UDP. naabu is TCP-only, so SNMP on 161 is invisible to
+   *     it while nuclei's snmp templates fingerprint it.
+   *
+   * A template match is stronger evidence than the SYN-ACK the port scanner
+   * accepts: it means a connection completed AND the service answered its own
+   * protocol. Declining to record it leaves the operator with a critical finding
+   * on a port the asset view denies exists, which is the discrepancy this fixes.
+   *
+   * Attribution is conservative — a port is recorded only when the finding's own
+   * host is this asset, and only for protocols that reach their match by
+   * connecting to it (see {@link NON_ENDPOINT_FINDING_TYPES}). Evidence entries
+   * are authoritative when present because each pairs a host and port with the
+   * protocol that produced them; the vulnerability's own host/ports are the
+   * fallback for providers that report no per-match evidence.
+   *
+   * Idempotent and manager-scoped for the same reasons as
+   * {@link ensureWebPortFloor}: conflicts on (assetId, port) refresh `value`
+   * only, so a port naabu also found is untouched and a re-scan adds nothing,
+   * and the caller's transaction connection is reused rather than a second one
+   * taken from a pool sized to the result-processor concurrency.
+   */
+  private async reconcileServicesFromFindings(
+    manager: EntityManager,
+    job: DataAdapterInput<Vulnerability[]>['job'],
+    findings: Vulnerability[],
+  ): Promise<void> {
+    const assetHost = normalizeHostname(job.asset?.value);
+    if (!job.asset?.id || !assetHost) {
+      return;
+    }
+
+    const ports = new Map<
+      number,
+      { value: string; port: number; assetId: string }
+    >();
+
+    const record = (host: string | undefined, rawPort: unknown) => {
+      if (normalizeHostname(host) !== assetHost) {
+        return;
+      }
+
+      const port = parsePortNumber(rawPort);
+      if (port === undefined || ports.has(port)) {
+        return;
+      }
+
+      ports.set(port, {
+        value: `${job.asset.value}:${port}`,
+        port,
+        assetId: job.asset.id,
+      });
+    };
+
+    for (const finding of findings) {
+      const evidence = Array.isArray(finding.evidence) ? finding.evidence : [];
+
+      if (evidence.length > 0) {
+        for (const entry of evidence) {
+          if (
+            NON_ENDPOINT_FINDING_TYPES.has((entry?.type ?? '').toLowerCase())
+          ) {
+            continue;
+          }
+          record(entry?.host ?? finding.host, entry?.port);
+        }
+        continue;
+      }
+
+      for (const rawPort of finding.ports ?? []) {
+        record(finding.host, rawPort);
+      }
+    }
+
+    if (ports.size === 0) {
+      return;
+    }
+
+    await manager
+      .createQueryBuilder()
+      .insert()
+      .into(AssetService)
+      .values([...ports.values()])
+      .orUpdate({
+        conflict_target: ['assetId', 'port'],
+        overwrite: ['value'],
+      })
+      .execute();
+
+    // Logged unconditionally, including when every port was already known: the
+    // useful signal is which endpoints the vulnerability scan proved reachable,
+    // and comparing that against the port scan is how the next coverage gap gets
+    // noticed.
+    this.logger.log(
+      `Vulnerability findings for ${job.asset.value} attest to service port(s): ${[
+        ...ports.keys(),
+      ].join(', ')}`,
+    );
   }
 
   public async validateData<T extends object>(
@@ -151,10 +333,7 @@ export class DataAdapterService {
             isEnabled: workspaceConfigs.isAutoEnableAssetAfterDiscovered,
           })),
         )
-        .orUpdate(
-          ['dnsRecords', 'dnsResolutionStatus'],
-          ['value', 'targetId'],
-        )
+        .orUpdate(['dnsRecords', 'dnsResolutionStatus'], ['value', 'targetId'])
         .returning(['id', 'value', 'dnsResolutionStatus'])
         .execute();
 
@@ -411,6 +590,11 @@ export class DataAdapterService {
         .execute();
 
       const insertedVulnerabilities = result.raw as Vulnerability[];
+
+      // Before the alerting block below, which returns early when the run has no
+      // workspace — the inventory must be corrected whether or not an issue is
+      // raised.
+      await this.reconcileServicesFromFindings(manager, job, data);
 
       const uniqueVulnerabilities = Array.from(
         new Map(

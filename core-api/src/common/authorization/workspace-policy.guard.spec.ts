@@ -1,4 +1,4 @@
-import { WORKSPACE_HEADER_NAME } from '@/common/constants/app.constants';
+import { WORKSPACE_HEADER_LOOKUP_NAME } from '@/common/constants/app.constants';
 import { Role } from '@/common/enums/enum';
 import type { ExecutionContext } from '@nestjs/common';
 import type { Reflector } from '@nestjs/core';
@@ -11,6 +11,9 @@ describe('WorkspacePolicyGuard', () => {
   const userId = '0cc46e27-174e-46de-abd7-05858754c47f';
   const workspaceId = '3579afb6-d960-4fa6-8fdd-65bb72f77477';
 
+  // Headers are keyed by WORKSPACE_HEADER_LOOKUP_NAME, not the canonical
+  // WORKSPACE_HEADER_NAME: Node lowercases incoming header names, so a mock
+  // using the canonical casing would exercise a request that cannot exist.
   const createContext = (request: Record<string, unknown>) =>
     ({
       getHandler: jest.fn(),
@@ -37,7 +40,7 @@ describe('WorkspacePolicyGuard', () => {
     });
     const context = createContext({
       user: { id: userId, role: Role.USER },
-      headers: { [WORKSPACE_HEADER_NAME]: workspaceId },
+      headers: { [WORKSPACE_HEADER_LOOKUP_NAME]: workspaceId },
       cookies: {},
       params: {},
       body: {},
@@ -58,7 +61,7 @@ describe('WorkspacePolicyGuard', () => {
     });
     const context = createContext({
       user: { id: userId },
-      headers: { [WORKSPACE_HEADER_NAME]: workspaceId },
+      headers: { [WORKSPACE_HEADER_LOOKUP_NAME]: workspaceId },
       cookies: {},
       params: { workspaceId: '64d93ff8-a011-4473-ac3b-2fe5abe3f325' },
       body: {},
@@ -77,7 +80,7 @@ describe('WorkspacePolicyGuard', () => {
     });
     const context = createContext({
       user: { id: userId },
-      headers: { [WORKSPACE_HEADER_NAME]: workspaceId },
+      headers: { [WORKSPACE_HEADER_LOOKUP_NAME]: workspaceId },
       cookies: {},
       params: {},
       query: { workspaceId: '64d93ff8-a011-4473-ac3b-2fe5abe3f325' },
@@ -96,7 +99,7 @@ describe('WorkspacePolicyGuard', () => {
     });
     const context = createContext({
       user: { id: userId },
-      headers: { [WORKSPACE_HEADER_NAME]: 'not-a-workspace-id' },
+      headers: { [WORKSPACE_HEADER_LOOKUP_NAME]: 'not-a-workspace-id' },
       cookies: {},
       params: {},
       query: {},

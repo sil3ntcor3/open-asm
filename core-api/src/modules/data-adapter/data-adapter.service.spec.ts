@@ -8,6 +8,7 @@ import {
   Severity,
   ToolCategory,
 } from '../../common/enums/enum';
+import { AssetService } from '../assets/entities/asset-services.entity';
 import { AssetTag } from '../assets/entities/asset-tags.entity';
 import type { Asset } from '../assets/entities/assets.entity';
 import type { HttpResponse } from '../assets/entities/http-response.entity';
@@ -298,7 +299,9 @@ describe('DataAdapterService', () => {
       const floorCall = values.mock.calls.find(
         ([payload]) =>
           Array.isArray(payload) &&
-          payload.some((row: { assetId?: string }) => row.assetId === 'asset1-id'),
+          payload.some(
+            (row: { assetId?: string }) => row.assetId === 'asset1-id',
+          ),
       );
       expect(floorCall?.[0]).not.toContainEqual(
         expect.objectContaining({ assetId: 'asset3-id' }),
@@ -775,6 +778,217 @@ describe('DataAdapterService', () => {
       );
       expect(mockQueryBuilder.returning).toHaveBeenCalledWith('*');
       expect(mockQueryBuilder.execute).toHaveBeenCalled();
+    });
+
+    describe('service port reconciliation', () => {
+      const buildQueryBuilder = () => ({
+        insert: jest.fn().mockReturnThis(),
+        into: jest.fn().mockReturnThis(),
+        values: jest.fn().mockReturnThis(),
+        orUpdate: jest.fn().mockReturnThis(),
+        returning: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ raw: [], identifiers: [] }),
+      });
+
+      type AssetServiceRow = { value: string; port: number; assetId: string };
+
+      // insert().into(X).values(Y) is one chain on a shared builder, so the nth
+      // into() call pairs with the nth values() call. Keep only the pairs whose
+      // target is AssetService.
+      const assetServiceValues = (queryBuilder: {
+        into: jest.Mock;
+        values: jest.Mock;
+      }): AssetServiceRow[] =>
+        queryBuilder.into.mock.calls.flatMap(([target], index) => {
+          if (target !== AssetService) return [];
+          const values = queryBuilder.values.mock.calls[index]?.[0] as
+            | AssetServiceRow[]
+            | undefined;
+          return Array.isArray(values) ? values : [];
+        });
+
+      beforeEach(() => {
+        mockDataSource.transaction.mockImplementation(
+          async (callback: (manager: any) => Promise<any>) => {
+            await callback(mockQueryRunner.manager);
+            return undefined;
+          },
+        );
+      });
+
+      it('records a service port proven by a finding the port scan missed', async () => {
+        const queryBuilder = buildQueryBuilder();
+        mockQueryRunner.manager.createQueryBuilder.mockReturnValue(
+          queryBuilder,
+        );
+
+        await service.vulnerabilities({
+          data: [
+            {
+              name: 'Redis < 8.2.1 lua script - Integer Overflow',
+              severity: Severity.CRITICAL,
+              host: 'example.com',
+              ports: ['6379'],
+              affectedUrl: 'example.com:6379',
+              evidence: [
+                {
+                  type: 'javascript',
+                  host: 'example.com',
+                  port: '6379',
+                  matchedAt: 'example.com:6379',
+                },
+              ],
+            },
+          ] as unknown as Vulnerability[],
+          job: mockJob,
+        });
+
+        expect(assetServiceValues(queryBuilder)).toEqual([
+          { value: 'example.com:6379', port: 6379, assetId: 'asset-id' },
+        ]);
+        expect(queryBuilder.orUpdate).toHaveBeenCalledWith({
+          conflict_target: ['assetId', 'port'],
+          overwrite: ['value'],
+        });
+      });
+
+      it('deduplicates ports repeated across findings and evidence entries', async () => {
+        const queryBuilder = buildQueryBuilder();
+        mockQueryRunner.manager.createQueryBuilder.mockReturnValue(
+          queryBuilder,
+        );
+
+        await service.vulnerabilities({
+          data: [
+            {
+              name: 'Redis Server - Unauthenticated Access',
+              severity: Severity.HIGH,
+              host: 'example.com',
+              ports: ['6379'],
+              evidence: [
+                { type: 'tcp', host: 'example.com', port: '6379' },
+                { type: 'javascript', host: 'example.com', port: '6379' },
+              ],
+            },
+            {
+              name: 'SNMPv3 Fingerprint - Detect',
+              severity: Severity.INFO,
+              host: 'example.com',
+              ports: ['161'],
+              evidence: [
+                { type: 'javascript', host: 'example.com', port: '161' },
+              ],
+            },
+          ] as unknown as Vulnerability[],
+          job: mockJob,
+        });
+
+        expect(assetServiceValues(queryBuilder)).toEqual([
+          { value: 'example.com:6379', port: 6379, assetId: 'asset-id' },
+          { value: 'example.com:161', port: 161, assetId: 'asset-id' },
+        ]);
+      });
+
+      it('ignores findings whose host is not the scanned asset', async () => {
+        const queryBuilder = buildQueryBuilder();
+        mockQueryRunner.manager.createQueryBuilder.mockReturnValue(
+          queryBuilder,
+        );
+
+        await service.vulnerabilities({
+          data: [
+            {
+              name: 'Redirected Finding',
+              severity: Severity.INFO,
+              host: 'someone-else.com',
+              ports: ['6379'],
+              evidence: [
+                { type: 'tcp', host: 'someone-else.com', port: '6379' },
+              ],
+            },
+          ] as unknown as Vulnerability[],
+          job: mockJob,
+        });
+
+        expect(assetServiceValues(queryBuilder)).toEqual([]);
+      });
+
+      it('ignores protocols that never touch the asset and unusable ports', async () => {
+        const queryBuilder = buildQueryBuilder();
+        mockQueryRunner.manager.createQueryBuilder.mockReturnValue(
+          queryBuilder,
+        );
+
+        await service.vulnerabilities({
+          data: [
+            {
+              name: 'DNS finding resolved by a nameserver, not the asset',
+              severity: Severity.INFO,
+              evidence: [{ type: 'dns', host: 'example.com', port: '53' }],
+            },
+            {
+              name: 'Whois finding answered by the registry',
+              severity: Severity.INFO,
+              evidence: [{ type: 'whois', host: 'example.com', port: '43' }],
+            },
+            {
+              name: 'Finding with an out-of-range port',
+              severity: Severity.INFO,
+              evidence: [{ type: 'tcp', host: 'example.com', port: '70000' }],
+            },
+            {
+              name: 'Finding with a non-numeric port',
+              severity: Severity.INFO,
+              evidence: [{ type: 'tcp', host: 'example.com', port: 'redis' }],
+            },
+          ] as unknown as Vulnerability[],
+          job: mockJob,
+        });
+
+        expect(assetServiceValues(queryBuilder)).toEqual([]);
+      });
+
+      it('accepts scheme-qualified and bracketed hosts for the scanned asset', async () => {
+        const queryBuilder = buildQueryBuilder();
+        mockQueryRunner.manager.createQueryBuilder.mockReturnValue(
+          queryBuilder,
+        );
+
+        await service.vulnerabilities({
+          data: [
+            {
+              name: 'TLS finding reported with a URL host',
+              severity: Severity.INFO,
+              evidence: [
+                {
+                  type: 'ssl',
+                  host: 'https://Example.com:8443/login',
+                  port: '8443',
+                },
+              ],
+            },
+          ] as unknown as Vulnerability[],
+          job: mockJob,
+        });
+
+        expect(assetServiceValues(queryBuilder)).toEqual([
+          { value: 'example.com:8443', port: 8443, assetId: 'asset-id' },
+        ]);
+      });
+
+      it('does not write asset services when no finding carries a port', async () => {
+        const queryBuilder = buildQueryBuilder();
+        mockQueryRunner.manager.createQueryBuilder.mockReturnValue(
+          queryBuilder,
+        );
+
+        await service.vulnerabilities({
+          data: mockVulnerabilities,
+          job: mockJob,
+        });
+
+        expect(queryBuilder.into).not.toHaveBeenCalledWith(AssetService);
+      });
     });
 
     it('should not create duplicate issues for existing open issues', async () => {
