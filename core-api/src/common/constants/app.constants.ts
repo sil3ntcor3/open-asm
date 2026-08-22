@@ -27,7 +27,24 @@ export const WEBAPP_ANALYZER_SRC_URL =
   'https://raw.githubusercontent.com/oasm-platform/webappanalyzer/main/src';
 export const GET_WORKSPACE_MCP_TOOL_NAME = 'get_workspaces';
 export const WORKSPACE_COOKIE_NAME = 'wid';
+/**
+ * Canonical name of the workspace-selection header: what the OpenAPI docs
+ * advertise and what clients put on the wire.
+ */
 export const WORKSPACE_HEADER_NAME = 'X-Workspace-Id';
+
+/**
+ * The key that header must be READ by. Node lowercases every incoming header
+ * name before Express exposes `req.headers`, so `req.headers['X-Workspace-Id']`
+ * is undefined no matter what the client sent — which is how the documented
+ * header silently became dead code, leaving the `wid` cookie as the only way to
+ * select a workspace and every non-browser client (OpenAPI "Try it out", API-key
+ * integrations, curl) stuck on 400.
+ *
+ * Derived rather than written out so the two can never drift apart. Always read
+ * headers by this constant; always document them by {@link WORKSPACE_HEADER_NAME}.
+ */
+export const WORKSPACE_HEADER_LOOKUP_NAME = WORKSPACE_HEADER_NAME.toLowerCase();
 export const CACHE_STATIC_RESOURCE = 14 * 24 * 60 * 60; // 14 days in seconds
 export const BOT_ID = '019b3ae4-189e-7dfe-b10e-20d847717733';
 export const BOT_EMAIL = 'bot@oasm.local';
