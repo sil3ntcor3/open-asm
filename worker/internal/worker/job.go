@@ -626,9 +626,21 @@ func buildToolInvocation(toolPath string, execution *jobs_registry.ToolExecution
 			}
 			return toolInvocation{}, errors.New("active Nuclei templates are unavailable")
 		}
+		// -ud anchors helper and payload file resolution at the active template
+		// set. Without it Nuclei resolves helpers against its own configured
+		// template directory and denies every helper-backed template when that
+		// directory is absent, which is exactly the state of a worker running a
+		// baked template seed it never downloaded.
 		return toolInvocation{
 			executable: scannerExecutable(toolPath, "nuclei"),
-			args:       []string{"-duc", "-t", templatePath, "-u", target, "-j", "--silent"},
+			args: []string{
+				"-duc",
+				"-ud", templatePath,
+				"-t", templatePath,
+				"-u", target,
+				"-j",
+				"--silent",
+			},
 		}, nil
 	case "subfinder":
 		args := []string{"-duc", "-all"}

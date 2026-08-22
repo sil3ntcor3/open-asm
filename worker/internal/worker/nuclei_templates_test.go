@@ -54,6 +54,9 @@ func TestEnsureNucleiTemplatesBootstrapsIntoToolCache(t *testing.T) {
 	if !slices.Contains(commandArgs, "-validate") || !slices.Contains(commandArgs, "-silent") {
 		t.Fatalf("last command args = %q, want fixed template validation flags", commandArgs)
 	}
+	if argumentValue(t, commandArgs, "-ud") != argumentValue(t, commandArgs, "-t") {
+		t.Fatalf("validation args = %q, want the validated set anchored as the template directory", commandArgs)
+	}
 	activeTemplatePath, err := resolveActiveNucleiTemplatePath(toolPath)
 	if err != nil {
 		t.Fatal(err)
@@ -812,4 +815,229 @@ func writeReadyNucleiTemplateDirectory(t *testing.T, toolPath string, suffix str
 		t.Fatal(err)
 	}
 	return candidatePath
+}
+
+func writeTestNucleiBinary(t *testing.T, toolPath string) {
+	t.Helper()
+
+	if err := os.WriteFile(
+		filepath.Join(toolPath, nucleiExecutableName()),
+		[]byte("test binary"),
+		0o755,
+	); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeTestNucleiTemplateSeed(t *testing.T, version string) string {
+	t.Helper()
+
+	seedPath := t.TempDir()
+	templatePath := filepath.Join(seedPath, "http", "seeded.yaml")
+	if err := os.MkdirAll(filepath.Dir(templatePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(templatePath, []byte("id: seeded"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(seedPath, nucleiIgnoreFile),
+		[]byte("tags:\n  - fuzz\n"),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if version != "" {
+		if err := os.WriteFile(
+			filepath.Join(seedPath, nucleiTemplateSeedVersionFile),
+			[]byte(version+"\n"),
+			0o644,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return seedPath
+}
+
+func TestBootstrapNucleiTemplatesActivatesBakedSeedWithoutUpdating(t *testing.T) {
+	toolPath := t.TempDir()
+	writeTestNucleiBinary(t, toolPath)
+	t.Setenv(nucleiTemplateSeedEnvVar, writeTestNucleiTemplateSeed(t, "10.4.7"))
+
+	var updateAttempts int
+	run := func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if slices.Contains(args, "-ut") {
+			updateAttempts++
+			return nil, errors.New("network is unavailable")
+		}
+		if slices.Contains(args, "-validate") {
+			return []byte("templates valid"), nil
+		}
+		return nil, errors.New("unexpected nuclei command")
+	}
+
+	if err := ensureNucleiTemplates(context.Background(), toolPath, run); err != nil {
+		t.Fatalf("ensureNucleiTemplates() error = %v", err)
+	}
+
+	if updateAttempts != 0 {
+		t.Fatalf("template update attempts = %d, want 0 when a baked seed is present", updateAttempts)
+	}
+	activeTemplatePath, err := resolveActiveNucleiTemplatePath(toolPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(filepath.Base(activeTemplatePath), nucleiTemplatesVersionPrefix+"10.4.7-") {
+		t.Fatalf("active template directory = %q, want the seeded version", activeTemplatePath)
+	}
+	if _, err := os.Stat(filepath.Join(activeTemplatePath, "http", "seeded.yaml")); err != nil {
+		t.Fatalf("seeded template was not activated: %v", err)
+	}
+	readyVersion, err := os.ReadFile(filepath.Join(activeTemplatePath, nucleiTemplatesReadyFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(readyVersion)) != "10.4.7" {
+		t.Fatalf("ready marker = %q, want 10.4.7", strings.TrimSpace(string(readyVersion)))
+	}
+	assertNoNucleiStagingDirectories(t, toolPath)
+}
+
+func TestBootstrapNucleiTemplatesInstallsSeededIgnoreList(t *testing.T) {
+	toolPath := t.TempDir()
+	configDirectory := filepath.Join(t.TempDir(), "nuclei-config")
+	writeTestNucleiBinary(t, toolPath)
+	t.Setenv(nucleiTemplateSeedEnvVar, writeTestNucleiTemplateSeed(t, "10.4.7"))
+	t.Setenv(nucleiConfigDirEnvVar, configDirectory)
+
+	run := func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if slices.Contains(args, "-validate") {
+			return []byte("templates valid"), nil
+		}
+		return nil, errors.New("unexpected nuclei command")
+	}
+
+	if err := ensureNucleiTemplates(context.Background(), toolPath, run); err != nil {
+		t.Fatalf("ensureNucleiTemplates() error = %v", err)
+	}
+
+	// `nuclei -ut` installs the release ignore list; a seeded worker must end
+	// up with the same exclusions rather than running ignored templates.
+	installed, err := os.ReadFile(filepath.Join(configDirectory, nucleiIgnoreFile))
+	if err != nil {
+		t.Fatalf("seeded ignore list was not installed: %v", err)
+	}
+	if !strings.Contains(string(installed), "fuzz") {
+		t.Fatalf("installed ignore list = %q, want the seeded exclusions", string(installed))
+	}
+}
+
+func TestBootstrapNucleiTemplatesFallsBackWhenSeedIsUnusable(t *testing.T) {
+	for _, testCase := range []struct {
+		name          string
+		seedVersion   string
+		seedPathValue func(t *testing.T) string
+	}{
+		{
+			name:          "no seed baked into the image",
+			seedPathValue: func(*testing.T) string { return "" },
+		},
+		{
+			name: "seed directory is missing",
+			seedPathValue: func(t *testing.T) string {
+				return filepath.Join(t.TempDir(), "absent")
+			},
+		},
+		{
+			name: "seed version marker is malformed",
+			seedPathValue: func(t *testing.T) string {
+				return writeTestNucleiTemplateSeed(t, "not-a-version")
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			toolPath := t.TempDir()
+			writeTestNucleiBinary(t, toolPath)
+			t.Setenv(nucleiTemplateSeedEnvVar, testCase.seedPathValue(t))
+
+			var updateAttempts int
+			run := func(_ context.Context, _ string, args ...string) ([]byte, error) {
+				if slices.Contains(args, "-ut") {
+					updateAttempts++
+					writeDownloadedTemplate(t, argumentValue(t, args, "-ud"), "downloaded")
+					return []byte("templates installed"), nil
+				}
+				if slices.Contains(args, "-validate") {
+					return []byte("templates valid"), nil
+				}
+				if slices.Contains(args, "-tv") {
+					return []byte("Public nuclei-templates version: v10.4.6"), nil
+				}
+				return nil, errors.New("unexpected nuclei command")
+			}
+
+			if err := ensureNucleiTemplates(context.Background(), toolPath, run); err != nil {
+				t.Fatalf("ensureNucleiTemplates() error = %v", err)
+			}
+
+			if updateAttempts != 1 {
+				t.Fatalf("template update attempts = %d, want 1 when no usable seed exists", updateAttempts)
+			}
+			activeTemplatePath, err := resolveActiveNucleiTemplatePath(toolPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(filepath.Join(activeTemplatePath, "http", "downloaded.yaml")); err != nil {
+				t.Fatalf("updated template set was not activated: %v", err)
+			}
+		})
+	}
+}
+
+func TestBootstrapNucleiTemplatesDiscardsSeedThatFailsValidation(t *testing.T) {
+	toolPath := t.TempDir()
+	writeTestNucleiBinary(t, toolPath)
+	t.Setenv(nucleiTemplateSeedEnvVar, writeTestNucleiTemplateSeed(t, "10.4.7"))
+
+	run := func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if slices.Contains(args, "-ut") {
+			writeDownloadedTemplate(t, argumentValue(t, args, "-ud"), "downloaded")
+			return []byte("templates installed"), nil
+		}
+		if slices.Contains(args, "-validate") {
+			validatedPath := argumentValue(t, args, "-t")
+			if _, err := os.Stat(filepath.Join(validatedPath, "http", "seeded.yaml")); err == nil {
+				return nil, errors.New("seeded template set is corrupt")
+			}
+			return []byte("templates valid"), nil
+		}
+		if slices.Contains(args, "-tv") {
+			return []byte("Public nuclei-templates version: v10.4.6"), nil
+		}
+		return nil, errors.New("unexpected nuclei command")
+	}
+
+	if err := ensureNucleiTemplates(context.Background(), toolPath, run); err != nil {
+		t.Fatalf("ensureNucleiTemplates() error = %v", err)
+	}
+
+	activeTemplatePath, err := resolveActiveNucleiTemplatePath(toolPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(activeTemplatePath, "http", "seeded.yaml")); err == nil {
+		t.Fatal("invalid seeded template set was activated")
+	}
+	if _, err := os.Stat(filepath.Join(activeTemplatePath, "http", "downloaded.yaml")); err != nil {
+		t.Fatalf("updated template set was not activated after the seed was rejected: %v", err)
+	}
+	entries, err := os.ReadDir(toolPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), nucleiTemplatesVersionPrefix+"10.4.7-") {
+			t.Fatalf("rejected seed directory was left behind: %q", entry.Name())
+		}
+	}
 }

@@ -1,7 +1,17 @@
 import type { Vulnerability } from '@/modules/vulnerabilities/entities/vulnerability.entity';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { builtInTools } from './built-in-tools';
+
+const pinnedVersion = (tool: string): string =>
+  (
+    JSON.parse(
+      readFileSync(
+        join(process.cwd(), 'public/archived/tool-manifest.json'),
+        'utf8',
+      ),
+    ) as { tools: Record<string, { version: string }> }
+  ).tools[tool].version;
 
 describe('builtInTools static assets', () => {
   it('ships the configured Nmap logo used by the tools and workers pages', () => {
@@ -23,7 +33,7 @@ describe('builtInTools subfinder parser', () => {
   });
 
   it('advertises the bundled Subfinder version', () => {
-    expect(subfinder?.version).toBe('2.14.0');
+    expect(subfinder?.version).toBe(pinnedVersion('subfinder'));
   });
 
   it('marks SOA-only DNS output as unresolved', () => {
@@ -55,8 +65,10 @@ describe('builtInTools nuclei parser', () => {
   it('uses the worker-managed persistent template directory', () => {
     const nuclei = builtInTools.find((tool) => tool.name === 'nuclei');
 
+    // Reported versions must track the pinned archives the image actually
+    // ships, not literals that silently rot at every bump.
     expect(nuclei?.command).toContain('-t nuclei-templates');
-    expect(nuclei?.version).toBe('3.11.0');
+    expect(nuclei?.version).toBe(pinnedVersion('nuclei'));
   });
 
   it('captures structured and raw evidence for grouped nuclei findings', () => {
