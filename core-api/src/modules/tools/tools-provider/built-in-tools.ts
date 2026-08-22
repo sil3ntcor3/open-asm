@@ -18,12 +18,28 @@ import { Tool } from '../entities/tools.entity';
 
 type NucleiFinding = Record<string, unknown>;
 
-const nucleiVersion = JSON.parse(
-  readFileSync(
-    join(process.cwd(), 'public/archived/nuclei-manifest.json'),
-    'utf8',
-  ),
-)['version'] as string;
+// Versions reported for archive-delivered tools are whatever the image actually
+// ships, read from the same pinned manifest that gates which archives workers
+// are allowed to download. Hardcoding them here silently misreports every tool
+// as soon as the pinned set is bumped.
+const pinnedToolVersions = (
+  JSON.parse(
+    readFileSync(
+      join(process.cwd(), 'public/archived/tool-manifest.json'),
+      'utf8',
+    ),
+  ) as { tools: Record<string, { version: string }> }
+).tools;
+
+function pinnedVersion(tool: string): string {
+  const version = pinnedToolVersions[tool]?.version;
+  if (!version) {
+    throw new Error(`No pinned archive version for ${tool}`);
+  }
+  return version;
+}
+
+const nucleiVersion = pinnedVersion('nuclei');
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -144,7 +160,7 @@ export const builtInTools: Tool[] = [
             : DnsResolutionStatus.UNRESOLVED,
       })) as Asset[];
     },
-    version: '2.14.0',
+    version: pinnedVersion('subfinder'),
     priority: JobPriority.MEDIUM,
   },
   {
@@ -156,7 +172,7 @@ export const builtInTools: Tool[] = [
     command:
       'httpx -duc -u {{value}} -status-code -favicon -asn -title -web-server -irr -tech-detect -ip -cname -location -tls-grab -cdn -probe -json -timeout 10 -retries 2 -threads 100 -silent',
     parser: JSON.parse,
-    version: '1.7.1',
+    version: pinnedVersion('httpx'),
     priority: JobPriority.MEDIUM,
   },
   {
@@ -185,7 +201,7 @@ export const builtInTools: Tool[] = [
         .sort();
       return parsed;
     },
-    version: '2.3.5',
+    version: pinnedVersion('naabu'),
     priority: JobPriority.MEDIUM,
   },
   {

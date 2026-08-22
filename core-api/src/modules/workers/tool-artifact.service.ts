@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
@@ -9,14 +9,24 @@ import { extname, relative, resolve, sep } from 'node:path';
 const PLATFORM_PART = /^[a-z0-9_-]+$/;
 const ARTIFACT_ID = /^[a-f0-9]{64}(?:\.zip|\.tgz|\.tar\.gz)$/;
 
-interface NucleiArtifactManifest {
-  artifacts?: Record<string, { file?: string; sha256?: string }>;
+interface ToolArtifactDeclaration {
+  file?: string;
+  sha256?: string;
+}
+
+interface ToolArtifactManifest {
+  tools?: Record<
+    string,
+    { artifacts?: Record<string, ToolArtifactDeclaration> }
+  >;
 }
 
 @Injectable()
 export class ToolArtifactService {
+  private readonly logger = new Logger(ToolArtifactService.name);
   private readonly archiveRoot: string;
   private readonly artifacts = new Map<string, string>();
+  private readonly reportedRejections = new Set<string>();
 
   constructor(configService: ConfigService) {
     this.archiveRoot = resolve(
@@ -51,6 +61,8 @@ export class ToolArtifactService {
     }
 
     const entries = await readdir(platformRoot, { withFileTypes: true });
+    const platform = `${normalizedOs}_${normalizedArch}`;
+    const declarations = await this.declaredArtifacts(platform);
     const artifactIds: string[] = [];
 
     for (const entry of entries) {
@@ -74,15 +86,12 @@ export class ToolArtifactService {
         continue;
       }
 
+      // Only archives the pinned manifest declares for this platform, at the
+      // exact digest it declares, are ever handed to a worker: an archive
+      // dropped into the image out of band is inert.
       const contentHash = await this.hashArtifact(realCandidate);
-      if (
-        entry.name.toLowerCase().startsWith('nuclei') &&
-        !(await this.isDeclaredNucleiArtifact(
-          `${normalizedOs}_${normalizedArch}`,
-          entry.name,
-          contentHash,
-        ))
-      ) {
+      if (declarations.get(entry.name) !== contentHash) {
+        this.reportRejection(platform, entry.name);
         continue;
       }
       const artifactId = `${contentHash}${extension}`;
@@ -98,23 +107,53 @@ export class ToolArtifactService {
     return artifactIds.sort();
   }
 
-  private async isDeclaredNucleiArtifact(
+  /**
+   * Reads the pinned manifest that ships beside the archives and returns the
+   * artifacts declared for one platform, keyed by file name. An unreadable
+   * manifest declares nothing, which fails closed: workers receive no tools
+   * rather than unverified ones.
+   */
+  private async declaredArtifacts(
     platform: string,
-    fileName: string,
-    sha256: string,
-  ): Promise<boolean> {
+  ): Promise<Map<string, string>> {
+    const declarations = new Map<string, string>();
+    let manifest: ToolArtifactManifest;
     try {
-      const manifest = JSON.parse(
-        await readFile(
-          resolve(this.archiveRoot, 'nuclei-manifest.json'),
-          'utf8',
-        ),
-      ) as NucleiArtifactManifest;
-      const declaration = manifest.artifacts?.[platform];
-      return declaration?.file === fileName && declaration.sha256 === sha256;
-    } catch {
-      return false;
+      manifest = JSON.parse(
+        await readFile(resolve(this.archiveRoot, 'tool-manifest.json'), 'utf8'),
+      ) as ToolArtifactManifest;
+    } catch (error) {
+      this.reportOnce(
+        'manifest',
+        `Tool artifact manifest is unreadable, no tools will be served: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return declarations;
     }
+
+    for (const tool of Object.values(manifest.tools ?? {})) {
+      const declaration = tool.artifacts?.[platform];
+      if (declaration?.file && declaration.sha256) {
+        declarations.set(declaration.file, declaration.sha256.toLowerCase());
+      }
+    }
+    return declarations;
+  }
+
+  private reportRejection(platform: string, fileName: string): void {
+    this.reportOnce(
+      `${platform}/${fileName}`,
+      `Archive ${platform}/${fileName} is not declared in tool-manifest.json at its current digest and will not be served`,
+    );
+  }
+
+  private reportOnce(key: string, message: string): void {
+    if (this.reportedRejections.has(key)) {
+      return;
+    }
+    this.reportedRejections.add(key);
+    this.logger.warn(message);
   }
 
   async resolveArtifact(artifactId: string): Promise<string> {

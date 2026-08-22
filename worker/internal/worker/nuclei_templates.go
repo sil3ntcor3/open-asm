@@ -13,22 +13,35 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/oasm-platform/oasm-sdk-go/oasm"
 )
 
 const (
-	nucleiTemplatesDirectory     = "nuclei-templates"
-	nucleiTemplatesStagingPrefix = ".nuclei-templates-stage-"
-	nucleiTemplatesUpdaterDir    = ".nuclei-templates-updater"
-	nucleiTemplatesVersionPrefix = "nuclei-templates-v"
-	nucleiTemplatesPointerFile   = ".nuclei-templates-current"
-	nucleiTemplatesReadyFile     = ".oasm-ready"
-	nucleiTemplateStateFile      = ".nuclei-templates-state.json"
-	nucleiTemplateSource         = "projectdiscovery/nuclei-templates"
-	maxBootstrapErrorOutputBytes = 4096
-	maxNucleiStatusErrorBytes    = 2048
+	nucleiTemplatesDirectory      = "nuclei-templates"
+	nucleiTemplatesStagingPrefix  = ".nuclei-templates-stage-"
+	nucleiTemplatesUpdaterDir     = ".nuclei-templates-updater"
+	nucleiTemplatesVersionPrefix  = "nuclei-templates-v"
+	nucleiTemplatesPointerFile    = ".nuclei-templates-current"
+	nucleiTemplatesReadyFile      = ".oasm-ready"
+	nucleiTemplateStateFile       = ".nuclei-templates-state.json"
+	nucleiTemplateSource          = "projectdiscovery/nuclei-templates"
+	nucleiTemplateSeedVersionFile = ".oasm-seed-version"
+	nucleiTemplateSeedEnvVar      = "WORKER_NUCLEI_TEMPLATE_SEED"
+	nucleiIgnoreFile              = ".nuclei-ignore"
+	nucleiConfigDirEnvVar         = "NUCLEI_CONFIG_DIR"
+	maxBootstrapErrorOutputBytes  = 4096
+	maxNucleiStatusErrorBytes     = 2048
 )
 
 var errNucleiTemplateFound = errors.New("nuclei template found")
+
+// errNucleiTemplateSeedUnavailable separates "this worker image ships no seed"
+// from "the seed is present but broken": the first is the normal case for
+// locally built workers and falls through to the updater without noise.
+var errNucleiTemplateSeedUnavailable = errors.New("no baked nuclei template seed is available")
+
+var templateLog = oasm.NewLogger("Worker.Templates")
 
 var (
 	nucleiEngineVersionPattern   = regexp.MustCompile(`(?i)Nuclei Engine Version:\s*(v?[0-9]+\.[0-9]+\.[0-9]+)`)
@@ -100,7 +113,7 @@ func prepareNucleiTemplates(
 	ready, validationErr := validateNucleiTemplates(ctx, nucleiPath, templatePath, run)
 	if validationErr != nil || !ready {
 		state.LastAttemptAt = now
-		templateVersion, updateErr := downloadAndActivateNucleiTemplates(
+		templateVersion, updateErr := bootstrapNucleiTemplates(
 			ctx,
 			absToolPath,
 			nucleiPath,
@@ -224,7 +237,14 @@ func reconcileNucleiTemplates(
 		return nucleiScannerStatus{State: nucleiScannerStateError, LastError: boundedNucleiStatusError(err)}, err
 	}
 
-	templateVersion, updateErr := downloadAndActivateNucleiTemplates(
+	// A worker that still has a valid set is refreshing and must reach the
+	// upstream release; one with nothing usable is bootstrapping and may take
+	// the baked seed instead.
+	install := downloadAndActivateNucleiTemplates
+	if !activeReady {
+		install = bootstrapNucleiTemplates
+	}
+	templateVersion, updateErr := install(
 		ctx,
 		absToolPath,
 		nucleiPath,
@@ -267,8 +287,176 @@ func ensureNucleiTemplates(
 		return validationErr
 	}
 
-	_, err = downloadAndActivateNucleiTemplates(ctx, absToolPath, nucleiPath, templatePath, run)
+	_, err = bootstrapNucleiTemplates(ctx, absToolPath, nucleiPath, templatePath, run)
 	return err
+}
+
+// bootstrapNucleiTemplates installs a worker's first template set. The seed
+// baked into the image is preferred because it needs neither network access
+// nor a ~14k file download, which is what makes a freshly deployed worker
+// scan-ready immediately instead of after a post-deployment update.
+func bootstrapNucleiTemplates(
+	ctx context.Context,
+	absToolPath string,
+	nucleiPath string,
+	templatePath string,
+	run commandOutputRunner,
+) (string, error) {
+	templateVersion, err := activateSeededNucleiTemplates(ctx, absToolPath, nucleiPath, run)
+	if err == nil {
+		templateLog.Success("Activated baked Nuclei template seed v%s", templateVersion)
+		return templateVersion, nil
+	}
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	if !errors.Is(err, errNucleiTemplateSeedUnavailable) {
+		// A broken seed must not strand the worker: report it and let the
+		// updater produce a template set the normal way.
+		templateLog.Warning("Baked Nuclei template seed unusable, falling back to update: %v", err)
+	}
+	return downloadAndActivateNucleiTemplates(ctx, absToolPath, nucleiPath, templatePath, run)
+}
+
+// nucleiTemplateSeedPath reports the read-only template set shipped in the
+// worker image. Unset (a locally built worker) disables seeding entirely.
+func nucleiTemplateSeedPath() string {
+	return strings.TrimSpace(os.Getenv(nucleiTemplateSeedEnvVar))
+}
+
+// activateSeededNucleiTemplates promotes the baked seed into the writable tool
+// cache using the same immutable-version layout, validation and pointer publish
+// as a downloaded set, so nothing downstream can tell the two apart.
+func activateSeededNucleiTemplates(
+	ctx context.Context,
+	absToolPath string,
+	nucleiPath string,
+	run commandOutputRunner,
+) (string, error) {
+	seedPath := nucleiTemplateSeedPath()
+	if seedPath == "" {
+		return "", errNucleiTemplateSeedUnavailable
+	}
+	templateVersion, err := readNucleiTemplateSeedVersion(seedPath)
+	if err != nil {
+		return "", err
+	}
+	seeded, err := hasNucleiTemplates(seedPath)
+	if err != nil {
+		return "", fmt.Errorf("inspect baked nuclei template seed: %w", err)
+	}
+	if !seeded {
+		return "", errNucleiTemplateSeedUnavailable
+	}
+
+	candidatePath, err := moveNucleiTemplatesToVersionedDirectory(
+		absToolPath,
+		seedPath,
+		templateVersion,
+	)
+	if err != nil {
+		return "", err
+	}
+	ready, err := validateNucleiTemplates(ctx, nucleiPath, candidatePath, run)
+	if err != nil || !ready {
+		_ = os.RemoveAll(candidatePath)
+		if err != nil {
+			return "", err
+		}
+		return "", errors.New("activate baked nuclei template seed: seeded template set is not valid")
+	}
+	if err := os.WriteFile(
+		filepath.Join(candidatePath, nucleiTemplatesReadyFile),
+		[]byte(templateVersion+"\n"),
+		0o600,
+	); err != nil {
+		_ = os.RemoveAll(candidatePath)
+		return "", fmt.Errorf("mark baked nuclei template seed ready: %w", err)
+	}
+	if err := publishNucleiTemplatesPointer(absToolPath, candidatePath); err != nil {
+		return "", err
+	}
+	if err := installNucleiIgnoreList(candidatePath); err != nil {
+		// A missing ignore list widens the template set rather than breaking
+		// scanning, so this never blocks a worker from becoming ready.
+		templateLog.Warning("Unable to install seeded Nuclei ignore list: %v", err)
+	}
+	cleanupObsoleteNucleiTemplateVersions(absToolPath, candidatePath)
+	return templateVersion, nil
+}
+
+// nucleiConfigDirectory mirrors Nuclei's own resolution order so a seeded
+// worker writes where the engine actually reads.
+func nucleiConfigDirectory() string {
+	if configured := strings.TrimSpace(os.Getenv(nucleiConfigDirEnvVar)); configured != "" {
+		return configured
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".config", "nuclei")
+}
+
+// installNucleiIgnoreList publishes a template set's ignore list into Nuclei's
+// configuration directory. `nuclei -ut` does this as part of an update, so a
+// worker that only ever activated a baked seed would otherwise run templates
+// the release marks as excluded.
+func installNucleiIgnoreList(templatePath string) error {
+	configDirectory := nucleiConfigDirectory()
+	if configDirectory == "" {
+		return errors.New("resolve nuclei configuration directory")
+	}
+	data, err := os.ReadFile(filepath.Join(templatePath, nucleiIgnoreFile))
+	if err != nil {
+		return fmt.Errorf("read seeded nuclei ignore list: %w", err)
+	}
+	if err := os.MkdirAll(configDirectory, 0o755); err != nil {
+		return fmt.Errorf("create nuclei configuration directory: %w", err)
+	}
+	temporary, err := os.CreateTemp(configDirectory, ".nuclei-ignore-")
+	if err != nil {
+		return fmt.Errorf("create nuclei ignore list: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	defer func() { _ = os.Remove(temporaryPath) }()
+	if err := temporary.Chmod(0o644); err != nil {
+		_ = temporary.Close()
+		return fmt.Errorf("secure nuclei ignore list: %w", err)
+	}
+	if _, err := temporary.Write(data); err != nil {
+		_ = temporary.Close()
+		return fmt.Errorf("write nuclei ignore list: %w", err)
+	}
+	if err := temporary.Close(); err != nil {
+		return fmt.Errorf("close nuclei ignore list: %w", err)
+	}
+	if err := os.Rename(temporaryPath, filepath.Join(configDirectory, nucleiIgnoreFile)); err != nil {
+		return fmt.Errorf("activate nuclei ignore list: %w", err)
+	}
+	return nil
+}
+
+// readNucleiTemplateSeedVersion reads the release the image was built against.
+// The version is trusted only as far as its format: an unreadable or malformed
+// marker means the seed is not usable, never that an arbitrary string becomes
+// the reported template version.
+func readNucleiTemplateSeedVersion(seedPath string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(seedPath, nucleiTemplateSeedVersionFile))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", errNucleiTemplateSeedUnavailable
+		}
+		return "", fmt.Errorf("read baked nuclei template seed version: %w", err)
+	}
+	templateVersion := strings.TrimPrefix(strings.TrimSpace(string(data)), "v")
+	if !toolUpdateVersionPattern.MatchString(templateVersion) {
+		return "", fmt.Errorf(
+			"baked nuclei template seed version is invalid: %q",
+			templateVersion,
+		)
+	}
+	return templateVersion, nil
 }
 
 func downloadAndActivateNucleiTemplates(
@@ -511,10 +699,16 @@ func validateNucleiTemplates(
 		return false, nil
 	}
 
+	// -ud makes the set under validation its own helper root. Nuclei otherwise
+	// resolves helper and payload files against its configured template
+	// directory and rejects them all when that directory does not exist, which
+	// would fail every candidate on a worker that has never run an update.
 	output, runErr := run(
 		ctx,
 		nucleiPath,
 		"-duc",
+		"-ud",
+		templatePath,
 		"-validate",
 		"-t",
 		templatePath,

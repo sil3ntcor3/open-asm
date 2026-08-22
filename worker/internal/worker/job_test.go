@@ -456,6 +456,11 @@ func TestBuildNucleiInvocationResolvesImmutableTemplateVersion(t *testing.T) {
 	if got := argumentValue(t, invocation.args, "-t"); got != candidatePath {
 		t.Fatalf("template path = %q, want %q", got, candidatePath)
 	}
+	// Helper and payload files are only loadable from Nuclei's configured
+	// template directory, so scans must anchor it at the set being scanned.
+	if got := argumentValue(t, invocation.args, "-ud"); got != candidatePath {
+		t.Fatalf("template directory = %q, want the scanned set %q", got, candidatePath)
+	}
 }
 
 func TestDnsxWildcardFilterInvocationDropsWildcardNoise(t *testing.T) {
