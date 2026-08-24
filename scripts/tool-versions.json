@@ -10,7 +10,7 @@
     "httpx": "1.10.0",
     "naabu": "2.6.1",
     "nuclei": "3.11.1",
-    "subfinder": "2.15.0"
+    "subfinder": "2.16.0"
   },
   "nucleiTemplates": {
     "version": "10.4.7",
