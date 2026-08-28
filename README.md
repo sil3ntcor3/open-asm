@@ -13,7 +13,8 @@ Open-source platform for cybersecurity Attack Surface Management. Built to help 
   <a href="#features">Features</a> •
   <a href="#system-architecture">System Architecture</a> •
   <a href="#installation">Installation</a> •
-  <a href="https://docs.oasm.dev" target="_blank">Documentation</a> •
+  <a href="docs/ADMINISTRATOR_GUIDE.md">Administrator Guide</a> •
+  <a href="docs/USER_GUIDE.md">User Guide</a> •
   <a href="#developer-guide">Developer Guide</a> •
   <a href="#screenshots">Screenshots</a>
 </p>
@@ -169,6 +170,16 @@ on the deployment host.
 
 Images: `sil3ntcor3/myoasm-console`, `sil3ntcor3/myoasm-api`,
 `sil3ntcor3/myoasm-worker`
+
+## Documentation
+
+| Guide | For |
+|-------|-----|
+| [Administrator Guide](docs/ADMINISTRATOR_GUIDE.md) | Deploying, securing, scaling, and maintaining a deployment |
+| [User Guide](docs/USER_GUIDE.md) | Adding targets, running discovery, and triaging findings |
+| [Developer Guide](DEVELOPER_GUIDE.md) | Local development environment and contributing |
+| [Scanner tool lifecycle](docs/tool-updates.md) | How scanner engines and Nuclei templates are versioned and updated |
+| [Subfinder provider credentials](docs/subfinder-provider-credentials.md) | Enabling credentialed passive subdomain sources |
 
 ## Developer Guide
 
