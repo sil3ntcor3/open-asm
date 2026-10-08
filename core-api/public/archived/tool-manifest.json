@@ -2,48 +2,48 @@
   "schemaVersion": 1,
   "tools": {
     "dnsx": {
-      "version": "1.3.0",
+      "version": "1.3.1",
       "source": "projectdiscovery/dnsx",
-      "releaseUrl": "https://github.com/projectdiscovery/dnsx/releases/tag/v1.3.0",
+      "releaseUrl": "https://github.com/projectdiscovery/dnsx/releases/tag/v1.3.1",
       "artifacts": {
         "linux_amd64": {
-          "file": "dnsx_1.3.0_linux_amd64.zip",
-          "sha256": "1415020474886151a4820c62b9e68a315cc062f7f111a2fd13fda99047a809a6"
+          "file": "dnsx_1.3.1_linux_amd64.zip",
+          "sha256": "438b964653056dd51dcfe614b1a16f8bced3cc48a1d27bc07cc6fdf2ef2a9533"
         },
         "linux_arm64": {
-          "file": "dnsx_1.3.0_linux_arm64.zip",
-          "sha256": "94dc2d96aed1ae3e680dc09f070e67e48bd796583b8144c1de5bd3425a318847"
+          "file": "dnsx_1.3.1_linux_arm64.zip",
+          "sha256": "dd657dd1ccee5e137eca2dbad0e97dbd067555f744adb97efcda774f1b2fbde1"
         },
         "macos_amd64": {
-          "file": "dnsx_1.3.0_macOS_amd64.zip",
-          "sha256": "3227e23e38f1c4b6cc8fea519aca530f96db6505fcf2bef70f98e988fbed3f95"
+          "file": "dnsx_1.3.1_macOS_amd64.zip",
+          "sha256": "ade8207185467df3768f08993a1b0140cdec5b5d2b735dc2213b90de5a2d3a1c"
         },
         "windows_amd64": {
-          "file": "dnsx_1.3.0_windows_amd64.zip",
-          "sha256": "57d96a78674e3e33495e019d84a23d15d25475a13e935bd728c017e82a909cee"
+          "file": "dnsx_1.3.1_windows_amd64.zip",
+          "sha256": "112c2d62d67d26a1b940ed9d10d500d2aa1ee3e3e18393d181ac4969936b9d96"
         }
       }
     },
     "httpx": {
-      "version": "1.10.0",
+      "version": "1.12.0",
       "source": "projectdiscovery/httpx",
-      "releaseUrl": "https://github.com/projectdiscovery/httpx/releases/tag/v1.10.0",
+      "releaseUrl": "https://github.com/projectdiscovery/httpx/releases/tag/v1.12.0",
       "artifacts": {
         "linux_amd64": {
-          "file": "httpx_1.10.0_linux_amd64.zip",
-          "sha256": "63eac4dcd6e5c9867c94765fdaaf66e7b4eeae3474a1f06e600e266a1c81a53e"
+          "file": "httpx_1.12.0_linux_amd64.zip",
+          "sha256": "9d8439e8b6c9aa7d1e2314817a392e00d5178da3af5652f7475f88868f418f76"
         },
         "linux_arm64": {
-          "file": "httpx_1.10.0_linux_arm64.zip",
-          "sha256": "7f3eaf5a6839504f5e2ce29c3ce94aa2ddeeaa7619d9a497e017232c6dc49b1c"
+          "file": "httpx_1.12.0_linux_arm64.zip",
+          "sha256": "fd7b123c1dfbc3d69f19f524e4eebcd6ec06b9a6cbd56813c76f11645197331e"
         },
         "macos_amd64": {
-          "file": "httpx_1.10.0_macOS_amd64.zip",
-          "sha256": "10cf5787279d5e2560732417ac2ed347eca73513aee107e6f79f3f79ff85bbe5"
+          "file": "httpx_1.12.0_macOS_amd64.zip",
+          "sha256": "16760b5e2122b66f57b9fbdb59f564b1181507c093d6a36066f40e5de38e8fa9"
         },
         "windows_amd64": {
-          "file": "httpx_1.10.0_windows_amd64.zip",
-          "sha256": "5b157473d301a289e6c7c33e31130db019f9ea51e112cff509bc60eb9c2072ba"
+          "file": "httpx_1.12.0_windows_amd64.zip",
+          "sha256": "14d8ccaa2d95ce9365162682f1a2ba3f14d2000bb4bfb0924af65ec5163ae021"
         }
       }
     },
@@ -94,25 +94,25 @@
       }
     },
     "subfinder": {
-      "version": "2.16.0",
+      "version": "2.17.0",
       "source": "projectdiscovery/subfinder",
-      "releaseUrl": "https://github.com/projectdiscovery/subfinder/releases/tag/v2.16.0",
+      "releaseUrl": "https://github.com/projectdiscovery/subfinder/releases/tag/v2.17.0",
       "artifacts": {
         "linux_amd64": {
-          "file": "subfinder_2.16.0_linux_amd64.zip",
-          "sha256": "1b7f9c608e9a5bd59e609a5e09710d63c5485e92d3d49dc2c16eb4fdbe10cb60"
+          "file": "subfinder_2.17.0_linux_amd64.zip",
+          "sha256": "a39c3e5c7a26ef3c430915c4d6cbf7716a00f26769a75e9405aba796142eba37"
         },
         "linux_arm64": {
-          "file": "subfinder_2.16.0_linux_arm64.zip",
-          "sha256": "c81d49559c0f630177be9e347e502e7a3d474aacc6ff78291ffcb4964367d63d"
+          "file": "subfinder_2.17.0_linux_arm64.zip",
+          "sha256": "24913d49dddc1d3a5e99a4a7580da5be980959b9415b96f52c4f7f4124392190"
         },
         "macos_amd64": {
-          "file": "subfinder_2.16.0_macOS_amd64.zip",
-          "sha256": "8300c4d98f75596b7e8460ba6f3322dfeda4674bc2bcbde14d61d098db260b50"
+          "file": "subfinder_2.17.0_macOS_amd64.zip",
+          "sha256": "75bf5990b409c6fd1116c81cd64fbdfd2cfd5bfb1f43542035b42344cb9fdffa"
         },
         "windows_amd64": {
-          "file": "subfinder_2.16.0_windows_amd64.zip",
-          "sha256": "ef760f0a064c22811100c75a61da35ba73d71398cb99ae85d32d0eed44496ab8"
+          "file": "subfinder_2.17.0_windows_amd64.zip",
+          "sha256": "a3fd612928d591fb31c1e59a2e06055e364421ba32251e553073f5673a2d3103"
         }
       }
     }

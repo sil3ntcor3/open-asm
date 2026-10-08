@@ -178,7 +178,7 @@ Images: `sil3ntcor3/myoasm-console`, `sil3ntcor3/myoasm-api`,
 | [Administrator Guide](docs/ADMINISTRATOR_GUIDE.md) | Deploying, securing, scaling, and maintaining a deployment |
 | [User Guide](docs/USER_GUIDE.md) | Adding targets, running discovery, and triaging findings |
 | [Developer Guide](DEVELOPER_GUIDE.md) | Local development environment and contributing |
-| [Scanner tool lifecycle](docs/tool-updates.md) | How scanner engines and Nuclei templates are versioned and updated |
+| [Scanner tool lifecycle](docs/tool-updates.md) | Step-by-step Tools-page updates and bundled image version updates |
 | [Subfinder provider credentials](docs/subfinder-provider-credentials.md) | Enabling credentialed passive subdomain sources |
 
 ## Developer Guide

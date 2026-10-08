@@ -9,6 +9,39 @@ a version is changed.
 | Baked into the worker image | `nmap`, Chromium (screenshots), the Nuclei template seed | Rebuilding the worker image |
 | Approved release directive at runtime | the five archive tools plus `nuclei-templates` | An administrator on the Tools page |
 
+## Update running workers from the Tools page
+
+Use this flow to upgrade the scanners already running in your deployment:
+
+1. Sign in with the application-wide **admin** role and open **Management → Tools**.
+   A workspace Security Administrator role alone does not grant update access.
+2. Click **Check for updates**. This checks official stable releases without
+   installing anything; scheduled checks also run daily.
+3. Find the component showing **Update available**, review **Installed**, **Latest**
+   and **Release notes**, then click **Update**.
+4. Review the target version and click **Start update**. The request applies to
+   all currently connected eligible workers across the deployment.
+5. Click **Details** to monitor each worker. Busy workers stay pending until their
+   active jobs finish. Completion is shown as **Update complete**; if a worker
+   fails, inspect its error in **Details** and use **Retry update** when offered.
+
+The managed components are `subfinder`, `dnsx`, `httpx`, `naabu`, `nuclei`, and
+`nuclei-templates`. The `dnsx` control is labeled **DNS resolver** on the
+subfinder card; Nuclei engine and template updates have separate controls.
+
+If the Update button is absent, check that you are signed in as an application
+admin and that a newer release is available. **Check failed** means the release
+check failed; inspect its error and retry **Check for updates**. **Not reported**
+means workers have not reported an installed version yet. Components labeled
+**Managed by worker image** (`nmap` and Chromium) require an image rebuild, while
+**Managed by provider** components are updated through their provider.
+
+Runtime updates change the worker tool cache. They do not change the source
+version pins or the archives bundled in the API image. To make a newer version
+available when workers bootstrap from the image, also follow the image process
+below. A restarted worker checks the API archive's artifact ID during bootstrap;
+keep the bundled versions aligned with the versions you intend to deploy.
+
 ## Where a freshly deployed worker gets its tools
 
 Workers never fetch scanners from the internet on first start. On connect a
@@ -24,26 +57,60 @@ refreshing the archive, not of upgrading workers after deployment.
 
 ## Baking a newer tool version into the images
 
-1. Bump the version in `scripts/tool-versions.json`.
-2. Run the refresher. It downloads every platform archive, verifies each one
-   against the official ProjectDiscovery checksums file for that release,
-   checks that the archive really contains the expected binary, smoke-tests the
-   Linux build, promotes all platforms together, prunes superseded archives and
-   regenerates `core-api/public/archived/tool-manifest.json`:
+Run these commands from the **open-asm repository root**. You need Bash,
+Python 3, curl, unzip, a SHA-256 utility (`shasum` or `sha256sum`), outbound
+access to GitHub, and Docker for the image build.
+
+1. Set the desired stable versions under `tools` in
+   [`scripts/tool-versions.json`](../scripts/tool-versions.json).
+2. Refresh the archives for those pins:
 
    ```bash
-   scripts/update-tool-artifacts.sh                 # verify/refresh every pinned tool
-   scripts/update-tool-artifacts.sh nuclei          # one tool
-   scripts/update-tool-artifacts.sh nuclei=3.12.0   # bump the pin, then refresh
+   bash scripts/update-tool-artifacts.sh          # refresh all pinned tools
+   # Or refresh selected tools after editing their pins:
+   bash scripts/update-tool-artifacts.sh nuclei httpx
    ```
 
-   Nothing is written into the repository until every archive of every
-   requested tool has passed, so a partial or tampered release cannot half
-   replace the pinned set.
-3. Rebuild and redeploy the api image (`scripts/build-images.sh api`). Newly
-   started workers bootstrap directly at the new version, and workers already
-   running pick it up on their next reconnect because the refreshed archive
-   hashes to a new artifact ID.
+   Alternatively, `bash scripts/update-tool-artifacts.sh TOOL=X.Y.Z` changes
+   one pin and refreshes that tool in one command. Replace `TOOL` and `X.Y.Z`
+   with a supported tool name and an existing stable release, without a `v` prefix.
+
+   The script verifies every requested platform archive against the official
+   ProjectDiscovery release checksums, checks the binary's presence, smoke-tests
+   newly downloaded Linux amd64 binaries when run on Linux amd64, then promotes
+   archives, prunes superseded files and regenerates
+   `core-api/public/archived/tool-manifest.json`. Archive promotion waits until
+   all requested downloads pass. The `TOOL=X.Y.Z` form writes the pin before
+   downloading, so inspect or revert the pin if the refresh fails.
+3. Review the changes together: `scripts/tool-versions.json`, the regenerated
+   manifest, and the added/deleted platform archives under
+   `core-api/public/archived/`. Do not edit the generated manifest manually.
+4. Build the API image:
+
+   ```bash
+   bash scripts/build-images.sh api
+   ```
+
+   This builds locally only. For a deployment that pulls images from a registry,
+   build and publish using its configured namespace and tag:
+
+   ```bash
+   REGISTRY=sil3ntcor3 TAG=latest bash scripts/build-images.sh --push api
+   ```
+
+   Replace the namespace and tag if your deployment uses different values.
+5. On the **deployment host**, from the **oasm-docker repository root**, pull and
+   recreate the stack:
+
+   ```bash
+   make update
+   ```
+
+   This stops and recreates the stack and causes a brief service interruption.
+   It retains named volumes, including the worker tool cache. Workers check the
+   refreshed API archives on reconnect and install changed artifact IDs.
+6. Return to **Management → Tools** and confirm the reported installed versions
+   and worker health. An API image build alone does not change a running deployment.
 
 `.github/workflows/check-tool-updates.yml` runs this daily per tool and opens a
 checksum-verified pull request against `dev` when upstream is ahead.
@@ -77,10 +144,45 @@ not exist. Both validation and scan invocations therefore pass
 `-ud <active template set>`; without it a worker running a baked seed silently
 loads a small fraction of helper-backed templates.
 
-To bake a newer template release, bump `nucleiTemplates.version` and `.sha256`
-in `scripts/tool-versions.json` and rebuild the worker image.
-`scripts/update-tool-artifacts.test.sh` asserts that the `worker/Dockerfile`
-build arguments still match the pin file.
+### Update the template seed for new workers
+
+1. Choose a stable template release and download its exact tag archive from
+   `https://github.com/projectdiscovery/nuclei-templates/archive/refs/tags/vX.Y.Z.tar.gz`.
+   Compute the SHA-256 of that archive with `shasum -a 256` (or `sha256sum`).
+2. Update `nucleiTemplates.version` and `nucleiTemplates.sha256` in
+   `scripts/tool-versions.json`. Keep the default `NUCLEI_TEMPLATES_VERSION` and
+   `NUCLEI_TEMPLATES_SHA256` build arguments in
+   [`worker/Dockerfile`](../worker/Dockerfile) in sync; the artifact test checks them.
+3. Build and publish the worker image with your deployment's namespace and tag:
+
+   ```bash
+   REGISTRY=sil3ntcor3 TAG=latest bash scripts/build-images.sh --push worker
+   ```
+
+4. Run `make update` from the oasm-docker repository on the deployment host.
+
+`build-images.sh` passes the template pin and checksum into the worker build.
+The scanner archive refresher does not download template seeds. A worker with an
+existing validated template set keeps that set; changing the seed only affects
+bootstrap when there is no validated set. Use the Tools-page template update to
+upgrade existing caches.
+
+### Update Nmap and Chromium
+
+These packages are installed by apt in the worker image. Rebuild with fresh base
+images and without cached package-install layers to pick up versions available
+from the configured Debian repositories (from the open-asm root):
+
+```bash
+docker build --pull --no-cache --platform linux/amd64 -f worker/Dockerfile \
+  -t sil3ntcor3/myoasm-worker:latest .
+docker push sil3ntcor3/myoasm-worker:latest
+```
+
+Adjust the platform, namespace and tag to match your deployment. This direct
+build uses the Dockerfile's template-seed defaults, which must match the pin
+file. Redeploy with `make update` on the deployment host, then check the installed
+Nmap and Screenshot engine (Chromium) versions on the Tools page.
 
 ## Runtime updates approved by an administrator
 
