@@ -481,7 +481,8 @@ what an operator needs day to day.
 `dnsx` ships and runs but is **not a catalog tool and not a pipeline stage.**
 It executes inside the subfinder job as a two-pass `-wd` filter that strips
 wildcard-DNS noise from passive results before they become assets. You will not
-see it on the Tools page or in the Jobs Registry.
+see it as a separate catalog card or in the Jobs Registry. Its update control
+appears as **DNS resolver** on the subfinder card.
 
 ### 8.2 Three delivery paths
 
@@ -517,13 +518,27 @@ administrator clicks **Check for updates**. The check records release and
 archive URLs plus GitHub-published SHA-256 digests. **It never installs
 anything.**
 
-An administrator then requests an update per component. Each eligible idle
-worker downloads the approved archive, verifies its digest and layout,
-smoke-tests the staged executable, and activates it atomically. A failed
-post-activation smoke test restores the previous executable. Per-worker
-progress and errors appear on the Tools page.
+To install an update:
 
-Updates are always administrator-initiated. Nothing self-upgrades.
+1. Sign in as an application **admin** and open **Management → Tools**.
+2. Click **Check for updates** and review **Installed**, **Latest**, and
+   **Release notes** for the desired component.
+3. Click **Update**, then **Start update** to approve the displayed version for
+   all currently connected eligible workers across the deployment.
+4. Open **Details** to monitor per-worker progress and errors. Workers wait for
+   active jobs to finish, verify and smoke-test the release, and restore the
+   previous executable if its post-activation smoke test fails.
+5. Confirm **Update complete**. If an update fails, inspect the worker error and
+   use **Retry update** when offered.
+
+`dnsx` is updated as **DNS resolver** under subfinder; the Nuclei engine and
+Nuclei templates have separate controls. Nmap and Chromium show **Managed by
+worker image** and require rebuilding and redeploying that image.
+
+The application admin role is required; a workspace Security Administrator
+role alone does not grant update access. Runtime updates change the tool cache,
+so also update the bundled pins if fresh deployments should use the same release.
+See the [step-by-step lifecycle guide](tool-updates.md) for troubleshooting.
 
 ### 8.5 Nuclei templates
 
@@ -544,19 +559,32 @@ without stopping subdomain, port, HTTP, or screenshot discovery.
 
 ### 8.6 Baking a newer version
 
+From the **open-asm repository root**, edit the desired scanner versions under
+`tools` in `scripts/tool-versions.json`, then refresh the archives and build:
+
 ```bash
-scripts/update-tool-artifacts.sh                 # verify/refresh every pinned tool
-scripts/update-tool-artifacts.sh nuclei          # one tool
-scripts/update-tool-artifacts.sh nuclei=3.12.0   # bump the pin, then refresh
+bash scripts/update-tool-artifacts.sh
+bash scripts/build-images.sh api
 ```
 
-Nothing is written to the repository until every archive of every requested
-tool passes verification, so a partial or tampered release cannot half-replace
-the pinned set. Then rebuild and redeploy the API image
-(`scripts/build-images.sh api`).
+A local build does not update the running deployment. If your deployment pulls
+registry images, publish using its configured namespace and tag:
 
-`.github/workflows/check-tool-updates.yml` runs this daily per tool and opens a
-checksum-verified pull request against `dev` when upstream is ahead.
+```bash
+REGISTRY=sil3ntcor3 TAG=latest bash scripts/build-images.sh --push api
+```
+
+Then run `make update` from the **oasm-docker repository root on the deployment
+host**. This briefly stops and recreates the stack while retaining named volumes.
+Confirm the installed versions on the Tools page after workers reconnect.
+
+For template-seed pins, Nmap, or Chromium, rebuild the worker image instead.
+See [Baking a newer tool version](tool-updates.md#baking-a-newer-tool-version-into-the-images)
+for selective updates, generated artifacts to review, template checksums,
+Dockerfile defaults, and uncached worker builds.
+
+`.github/workflows/check-tool-updates.yml` checks daily for newer scanner releases
+and opens checksum-verified pull requests against `dev`.
 
 ---
 
