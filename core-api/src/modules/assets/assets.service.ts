@@ -11,7 +11,7 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
-import { DataSource, Repository } from 'typeorm';
+import { Brackets, DataSource, Repository } from 'typeorm';
 import { Target } from '../targets/entities/target.entity';
 
 import { TechnologyForwarderService } from '../technology/technology-forwarder.service';
@@ -23,18 +23,11 @@ import { GetPortAssetsDTO } from './dto/get-port-assets.dto';
 import { GetStatusCodeAssetsDTO } from './dto/get-status-code-assets.dto';
 import { GetTechnologyAssetsDTO } from './dto/get-technology-assets.dto';
 import { GetTlsQueryDto, GetTlsResponseDto } from './dto/tls.dto';
-import { AssetExportView, ExportAssetsQueryDto } from './dto/export-assets.dto';
 import { UpdateAssetDto } from './dto/update-asset.dto';
 import { AssetService } from './entities/asset-services.entity';
 import { AssetTag } from './entities/asset-tags.entity';
 import { Asset } from './entities/assets.entity';
 import { TlsAssetsView } from './entities/tls-assets.entity';
-import {
-  buildAssetExportSheet,
-  type AssetExportSheet,
-} from './utils/asset-export.util';
-
-const ASSET_EXPORT_BATCH_SIZE = 100;
 
 // Type cho raw database response từ TLS query
 // interface TlsRawData {
@@ -142,15 +135,14 @@ export class AssetsService {
       .leftJoin('asset_service.tlsAssets', 'tlsAssets')
       .where('"workspaceTargets"."workspaceId" = :workspaceId', {
         workspaceId,
-      });
-    // NOTE: we intentionally do NOT filter out services whose latest HTTP probe
-    // returned status_code 0 (a failed httpx probe). Each asset_service is an open
-    // port confirmed by naabu, so it is a real, security-relevant part of the
-    // attack surface regardless of whether the HTTP probe succeeded. Excluding
-    // status_code 0 here hid the entire service — and with it the ports, IPs and
-    // service rows the discovery *did* collect — from every service tab. The
-    // Status Code facet still drops 0 locally in getStatusCodeAssets so "0" never
-    // surfaces as a real HTTP status.
+      })
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where('"statusCodeAssets"."statusCode" IS NULL').orWhere(
+            '"statusCodeAssets"."statusCode" != 0',
+          );
+        }),
+      );
 
     for (const [key, value] of Object.entries(whereBuilder)) {
       if (query[key]) {
@@ -180,99 +172,6 @@ export class AssetsService {
   }
 
   /**
-   * Builds the base query for host-centric views (the "Hosts" tab).
-   *
-   * Unlike {@link buildBaseQuery}, this is anchored on the `asset` table and
-   * only LEFT JOINs `asset_service`. That is deliberate: a discovered subdomain
-   * with no open ports (hence no asset_service) must still be listed as a host.
-   * The service-anchored base query hides those hosts entirely, which is why a
-   * completed discovery run could show zero assets even though the subdomains
-   * were persisted. Service-specific filters (ports, techs, status codes, TLS)
-   * are applied via their joins so selecting one still narrows to matching hosts.
-   */
-  private buildHostBaseQuery(query: GetAssetsQueryDto, workspaceId: string) {
-    const queryBuilder = this.assetRepo
-      .createQueryBuilder('asset')
-      .innerJoin('asset.target', 'target')
-      .innerJoin('target.workspaceTargets', 'workspaceTargets')
-      .leftJoin('asset.assetServices', 'asset_service')
-      .where('"workspaceTargets"."workspaceId" = :workspaceId', { workspaceId })
-      .andWhere('asset.value IS NOT NULL');
-
-    if (query.targetIds) {
-      queryBuilder.andWhere('asset."targetId" = ANY(:targetIds)', {
-        targetIds: query.targetIds,
-      });
-    }
-
-    if (query.hosts) {
-      queryBuilder.andWhere('asset.value = ANY(:hosts)', {
-        hosts: query.hosts,
-      });
-    }
-
-    if (query.value) {
-      queryBuilder.andWhere('asset.value::text ILIKE :value', {
-        value: `%${query.value}%`,
-      });
-    }
-
-    if (query.ipAddresses) {
-      queryBuilder
-        .leftJoin('asset.ipAssets', 'ipAssets')
-        .andWhere('"ipAssets"."ip" = ANY(:ipAddresses)', {
-          ipAddresses: query.ipAddresses,
-        });
-    }
-
-    if (query.ports) {
-      queryBuilder.andWhere('asset_service.port = ANY(:ports)', {
-        ports: query.ports,
-      });
-    }
-
-    if (query.techs) {
-      queryBuilder
-        .leftJoin(
-          'asset_service.httpResponses',
-          'host_http_response',
-          'host_http_response.id = (SELECT hr.id FROM http_responses hr WHERE hr."assetServiceId" = asset_service.id ORDER BY hr."createdAt" DESC LIMIT 1)',
-        )
-        .andWhere('host_http_response.tech && :techs', { techs: query.techs });
-    }
-
-    if (query.statusCodes) {
-      queryBuilder
-        .leftJoin('asset_service.statusCodeAssets', 'statusCodeAssets')
-        .andWhere('"statusCodeAssets"."statusCode" = ANY(:statusCodes)', {
-          statusCodes: query.statusCodes,
-        });
-    }
-
-    if (query.tlsHosts) {
-      queryBuilder
-        .leftJoin('asset_service.tlsAssets', 'tlsAssets')
-        .andWhere('"tlsAssets"."host" = ANY(:tlsHosts)', {
-          tlsHosts: query.tlsHosts,
-        });
-    }
-
-    if (query.startDate) {
-      queryBuilder.andWhere('asset."createdAt" >= :startDate', {
-        startDate: query.startDate,
-      });
-    }
-
-    if (query.endDate) {
-      queryBuilder.andWhere('asset."createdAt" <= :endDate', {
-        endDate: `${query.endDate} 23:59:59.999`,
-      });
-    }
-
-    return queryBuilder;
-  }
-
-  /**
    * Retrieves a paginated list of assets associated with a specified target.
    *
    * @param id - The ID of the target for which to retrieve assets.
@@ -290,7 +189,6 @@ export class AssetsService {
     const offset = (query.page - 1) * query.limit;
 
     const queryBuilder = this.buildBaseQuery(query, workspaceId);
-    queryBuilder.leftJoinAndSelect('asset_service.tags', 'asset_tags');
 
     if (query.value) {
       queryBuilder.andWhere('asset_service.value ILIKE :value', {
@@ -308,18 +206,13 @@ export class AssetsService {
       const asset = new GetAssetsResponseDto();
       asset.id = item.id;
       asset.value = item.value;
-      asset.hostname = item.asset?.value;
       asset.targetId = item.asset?.targetId;
-      asset.port = item.port;
-      asset.detectedService = item.service;
-      asset.product = item.product;
-      asset.scheme = item.scheme;
       asset.createdAt = item.createdAt;
       asset.dnsRecords = item.asset?.dnsRecords;
       asset.isEnabled = item.asset?.isEnabled;
       asset.screenshotPath =
         item.screenshotPath && `${STORAGE_BASE_PATH}/${item.screenshotPath}`;
-      asset.tags = item.tags ?? [];
+      // asset.tags = item.asset.tags || [];
       asset.ipAddresses = item.asset?.ipAssets
         ? item.asset.ipAssets.map((e) => e.ipAddress)
         : [];
@@ -466,15 +359,11 @@ export class AssetsService {
     const asset = new GetAssetsResponseDto();
     asset.id = item.id;
     asset.value = item.value;
-    asset.hostname = item.asset?.value;
     asset.targetId = item.asset?.targetId;
     asset.createdAt = item.createdAt;
     asset.dnsRecords = item.asset?.dnsRecords;
     asset.isEnabled = item.asset?.isEnabled;
     asset.port = item.port;
-    asset.detectedService = item.service;
-    asset.product = item.product;
-    asset.scheme = item.scheme;
     asset.screenshotPath = item.screenshotPath
       ? `${STORAGE_BASE_PATH}/${item.screenshotPath}`
       : null;
@@ -487,10 +376,9 @@ export class AssetsService {
       .where('"assetServiceId" = :assetServiceId', { assetServiceId: item.id })
       .getRawMany<{ tag: string; id: string }>();
 
-    asset.tags = tagsResult.map((t) => ({
-      id: t.id,
-      tag: t.tag,
-    })) as AssetTag[];
+    asset.tags = tagsResult.map(
+      (t) => ({ id: t.id, tag: t.tag }),
+    ) as AssetTag[];
 
     asset.ipAddresses = item.asset?.ipAssets
       ? item.asset.ipAssets.map((e) => e.ipAddress)
@@ -535,31 +423,19 @@ export class AssetsService {
       query.sortBy = '"assetCount"';
     }
 
-    // Anchor on the asset table (like getHostAssets) instead of asset_service
-    // so every discovered IP is listed — including IPs of subdomains that
-    // resolve via DNS but have no open ports (hence no asset_service). The
-    // service-anchored buildBaseQuery hid those IPs entirely. The free-text
-    // filter targets the IP below, so strip `value` from the host base query;
-    // otherwise buildHostBaseQuery would match it against asset.value instead.
-    const queryBuilder = this.buildHostBaseQuery(
-      { ...query, value: undefined },
-      workspaceId,
-    );
-
-    // buildHostBaseQuery only joins ipAssets when query.ipAddresses is set;
-    // add the join here when it isn't so the IP can be selected without
-    // creating a duplicate `ipAssets` alias.
-    if (!query.ipAddresses) {
-      queryBuilder.leftJoin('asset.ipAssets', 'ipAssets');
-    }
-
-    queryBuilder
+    const queryBuilder = this.buildBaseQuery(query, workspaceId)
       .select([
         '"ipAssets"."ip"',
         'COUNT(DISTINCT asset_service.id) as "assetCount"',
       ])
       .andWhere('"ipAssets"."ip" IS NOT NULL')
       .groupBy('"ipAssets"."ip"');
+
+    if (query.value) {
+      queryBuilder.andWhere('"ipAssets"."ip"::text ILIKE :value', {
+        value: `%${query.value}%`,
+      });
+    }
 
     if (query.value) {
       queryBuilder.andWhere('"ipAssets"."ip"::text ILIKE :value', {
@@ -612,12 +488,19 @@ export class AssetsService {
       query.sortBy = '"assetCount"';
     }
 
-    const queryBuilder = this.buildHostBaseQuery(query, workspaceId)
+    const queryBuilder = this.buildBaseQuery(query, workspaceId)
       .select([
         'asset.value',
         'COUNT(DISTINCT asset_service.id) as "assetCount"',
       ])
+      .andWhere('asset.value IS NOT NULL')
       .groupBy('asset.value');
+
+    if (query.value) {
+      queryBuilder.andWhere('asset.value::text ILIKE :value', {
+        value: `%${query.value}%`,
+      });
+    }
 
     const totalInDb = await this.dataSource
       .createQueryBuilder()
@@ -809,12 +692,6 @@ export class AssetsService {
         '"statusCodeAssets"."statusCode"',
         'COUNT(DISTINCT asset_service.id) as "assetCount"',
       ])
-      // 0 is httpx's sentinel for a failed probe (and NULL means no probe row at
-      // all); neither is a real HTTP status, so keep both out of this facet. The
-      // shared base query no longer applies this filter, since doing so hid the
-      // underlying services from every other tab.
-      .andWhere('"statusCodeAssets"."statusCode" IS NOT NULL')
-      .andWhere('"statusCodeAssets"."statusCode" != 0')
       .groupBy('"statusCodeAssets"."statusCode"');
 
     if (query.value) {
@@ -1062,13 +939,9 @@ export class AssetsService {
   public async switchAsset(
     assetId: string,
     isEnabled: boolean,
-    workspaceId: string,
   ): Promise<Asset> {
     const asset = await this.assetRepo.findOne({
-      where: {
-        id: assetId,
-        target: { workspaceTargets: { workspace: { id: workspaceId } } },
-      },
+      where: { id: assetId },
     });
 
     if (!asset) {
@@ -1080,208 +953,6 @@ export class AssetsService {
 
     // Save and return the updated asset
     return this.assetRepo.save(asset);
-  }
-
-  /** Fetches one bounded page for the selected Assets export view. */
-  private async getAssetsExportPage(
-    query: GetAssetsQueryDto,
-    view: AssetExportView,
-    workspaceId: string,
-  ): Promise<GetManyBaseResponseDto<unknown>> {
-    switch (view) {
-      case AssetExportView.HOST:
-        return this.getHostAssets(query, workspaceId);
-      case AssetExportView.IP:
-        return this.getIpAssets(query, workspaceId);
-      case AssetExportView.PORT:
-        return this.getPortAssets(query, workspaceId);
-      case AssetExportView.SERVICE:
-        return this.getManyAsssetServices(query, workspaceId);
-      case AssetExportView.STATUS_CODE:
-        return this.getStatusCodeAssets(query, workspaceId);
-      case AssetExportView.TECHNOLOGY:
-        return this.getTechnologyAssets(query, workspaceId);
-      case AssetExportView.TLS: {
-        const tlsQuery = Object.assign(new GetTlsQueryDto(), {
-          endDate: query.endDate,
-          hosts: query.tlsHosts,
-          limit: query.limit,
-          page: query.page,
-          search: query.value,
-          sortBy: query.sortBy,
-          sortOrder: query.sortOrder,
-          startDate: query.startDate,
-          targetIds: query.targetIds,
-        });
-        return this.getManyTls(tlsQuery, workspaceId);
-      }
-    }
-  }
-
-  /**
-   * Expands host summary rows into the service records shown when each host is
-   * opened in the Assets table. Hosts without services remain in the export.
-   */
-  private async expandHostExportRows(
-    query: ExportAssetsQueryDto,
-    rows: unknown[],
-    workspaceId: string,
-  ): Promise<unknown[]> {
-    const groups = rows as { assetCount: number; host: string }[];
-    const servicesByHost = new Map<string, GetAssetsResponseDto[]>();
-
-    for (
-      let offset = 0;
-      offset < groups.length;
-      offset += ASSET_EXPORT_BATCH_SIZE
-    ) {
-      const hosts = groups
-        .slice(offset, offset + ASSET_EXPORT_BATCH_SIZE)
-        .map((group) => group.host);
-      let page = 1;
-      let pageCount = 1;
-
-      do {
-        const detailQuery = Object.assign(new GetAssetsQueryDto(), query, {
-          hosts,
-          limit: ASSET_EXPORT_BATCH_SIZE,
-          page,
-          sortBy: 'createdAt',
-          value: undefined,
-        });
-        const result = await this.getManyAsssetServices(
-          detailQuery,
-          workspaceId,
-        );
-
-        for (const service of result.data) {
-          if (!service.hostname) continue;
-          const hostServices = servicesByHost.get(service.hostname) ?? [];
-          hostServices.push(service);
-          servicesByHost.set(service.hostname, hostServices);
-        }
-
-        pageCount = Math.max(result.pageCount, 1);
-        page += 1;
-      } while (page <= pageCount);
-    }
-
-    return groups.flatMap((group) => {
-      const services = servicesByHost.get(group.host);
-      if (!services || services.length === 0) return [group];
-
-      return services.map((service) => ({
-        ...service,
-        assetCount: group.assetCount,
-        host: group.host,
-      }));
-    });
-  }
-
-  /**
-   * Expands IP summary rows into the service records shown when each IP is
-   * opened in the Assets table. IPs without services remain in the export.
-   */
-  private async expandIpExportRows(
-    query: ExportAssetsQueryDto,
-    rows: unknown[],
-    workspaceId: string,
-  ): Promise<unknown[]> {
-    const groups = rows as {
-      assetCount: number;
-      geoIp: unknown;
-      ip: string;
-    }[];
-    const servicesByIp = new Map<string, GetAssetsResponseDto[]>();
-
-    for (
-      let offset = 0;
-      offset < groups.length;
-      offset += ASSET_EXPORT_BATCH_SIZE
-    ) {
-      const ipAddresses = groups
-        .slice(offset, offset + ASSET_EXPORT_BATCH_SIZE)
-        .map((group) => group.ip);
-      const selectedIps = new Set(ipAddresses);
-      let page = 1;
-      let pageCount = 1;
-
-      do {
-        const detailQuery = Object.assign(new GetAssetsQueryDto(), query, {
-          ipAddresses,
-          limit: ASSET_EXPORT_BATCH_SIZE,
-          page,
-          sortBy: 'createdAt',
-          value: undefined,
-        });
-        const result = await this.getManyAsssetServices(
-          detailQuery,
-          workspaceId,
-        );
-
-        for (const service of result.data) {
-          for (const ipAddress of service.ipAddresses ?? []) {
-            if (!selectedIps.has(ipAddress)) continue;
-            const ipServices = servicesByIp.get(ipAddress) ?? [];
-            ipServices.push(service);
-            servicesByIp.set(ipAddress, ipServices);
-          }
-        }
-
-        pageCount = Math.max(result.pageCount, 1);
-        page += 1;
-      } while (page <= pageCount);
-    }
-
-    return groups.flatMap((group) => {
-      const services = servicesByIp.get(group.ip);
-      if (!services || services.length === 0) return [group];
-
-      return services.map((service) => ({
-        ...service,
-        assetCount: group.assetCount,
-        geoIp: group.geoIp,
-        host: service.hostname,
-        ip: group.ip,
-      }));
-    });
-  }
-
-  /**
-   * Collects all filtered rows for the active Assets view in bounded database
-   * pages, then maps them into a stable export schema.
-   */
-  public async getAssetsForExport(
-    query: ExportAssetsQueryDto,
-    workspaceId: string,
-  ): Promise<AssetExportSheet> {
-    const rows: unknown[] = [];
-    let page = 1;
-    let pageCount = 1;
-
-    do {
-      const pageQuery = Object.assign(new GetAssetsQueryDto(), query, {
-        limit: ASSET_EXPORT_BATCH_SIZE,
-        page,
-      });
-      const result = await this.getAssetsExportPage(
-        pageQuery,
-        query.view,
-        workspaceId,
-      );
-      rows.push(...result.data);
-      pageCount = Math.max(result.pageCount, 1);
-      page += 1;
-    } while (page <= pageCount);
-
-    let exportRows = rows;
-    if (query.view === AssetExportView.HOST) {
-      exportRows = await this.expandHostExportRows(query, rows, workspaceId);
-    } else if (query.view === AssetExportView.IP) {
-      exportRows = await this.expandIpExportRows(query, rows, workspaceId);
-    }
-
-    return buildAssetExportSheet(query.view, exportRows);
   }
 
   public async exportServicesForCSV(workspaceId: string): Promise<

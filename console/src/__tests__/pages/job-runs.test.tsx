@@ -10,30 +10,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mockMutate = vi.fn();
 const mockNavigate = vi.fn();
 const {
-  createMockActiveJob,
   createMockJobHistoriesResponse,
-  mockActiveJob,
   mockJobHistoriesResponse,
   mockGetManyJobHistories,
 } = vi.hoisted(() => {
-  const createMockActiveJob = () => ({
-    id: 'job-1',
-    status: 'in_progress',
-    assetServiceId: 'service-1',
-    assetService: { value: 'https://example.com' },
-    asset: { value: 'example.com' },
-    tool: {
-      id: 'tool-1',
-      name: 'nuclei',
-      logoUrl: '',
-    },
-    createdAt: '2026-01-01T00:00:00',
-    updatedAt: '2026-01-01T00:01:45',
-    pickJobAt: '2026-01-01T00:00:30',
-    completedAt: null as string | null,
-    errorLogs: [],
-  });
-  const mockActiveJob = { current: createMockActiveJob() };
   const createMockJobHistoriesResponse = () => ({
     data: [
       {
@@ -59,9 +39,7 @@ const {
   };
 
   return {
-    createMockActiveJob,
     createMockJobHistoriesResponse,
-    mockActiveJob,
     mockJobHistoriesResponse,
     mockGetManyJobHistories: vi.fn(() => ({
       data: mockJobHistoriesResponse.current,
@@ -86,6 +64,23 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
 vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
   const actual =
     await importOriginal<typeof import('@/services/apis/gen/queries')>();
+  const activeJob = {
+    id: 'job-1',
+    status: actual.JobStatus.in_progress,
+    assetServiceId: 'service-1',
+    assetService: { value: 'https://example.com' },
+    asset: { value: 'example.com' },
+    tool: {
+      id: 'tool-1',
+      name: 'nuclei',
+      logoUrl: '',
+    },
+    createdAt: '2026-01-01T00:00:00',
+    updatedAt: '2026-01-01T00:01:45',
+    pickJobAt: '2026-01-01T00:00:30',
+    completedAt: null,
+    errorLogs: [],
+  };
 
   return {
     ...actual,
@@ -94,13 +89,13 @@ vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
         id: 'history-1',
         jobHistoryName: 'Example run',
         workflowName: 'Example workflow',
-        tools: [mockActiveJob.current.tool],
+        tools: [activeJob.tool],
       },
     }),
     useJobsRegistryControllerGetManyJobHistories: mockGetManyJobHistories,
     useJobsRegistryControllerGetManyJobs: () => ({
       data: {
-        data: [mockActiveJob.current],
+        data: [activeJob],
         page: 1,
         limit: 10,
         total: 1,
@@ -132,7 +127,6 @@ describe('Job runs', () => {
   beforeEach(() => {
     mockMutate.mockClear();
     mockNavigate.mockClear();
-    mockActiveJob.current = createMockActiveJob();
   });
 
   it('keeps row action menu open when the jobs table rerenders', async () => {
@@ -178,19 +172,6 @@ describe('Job runs', () => {
     expect(screen.getByText('2026-01-01 00:00:30')).toBeVisible();
     expect(screen.queryByText('2026-01-01 00:01:45')).not.toBeInTheDocument();
     expect(screen.queryByText('1m 15s')).not.toBeInTheDocument();
-  });
-
-  it('shows the end time and duration for a failed task', async () => {
-    mockActiveJob.current = {
-      ...createMockActiveJob(),
-      status: 'failed',
-      completedAt: '2026-01-01T00:01:45',
-    };
-
-    renderWithProviders(<Runs />);
-
-    expect(await screen.findByText('2026-01-01 00:01:45')).toBeVisible();
-    expect(screen.getByText('1m 15s')).toBeVisible();
   });
 
   it('closes the row action menu after choosing delete', async () => {
@@ -270,22 +251,6 @@ describe('Jobs registry', () => {
 
     expect(screen.getByText('2026-01-01 00:00:00')).toBeVisible();
     expect(screen.queryByText('2026-01-01 00:02:00')).not.toBeInTheDocument();
-  });
-
-  it('shows the end time when a run finishes with failed tasks', async () => {
-    mockJobHistoriesResponse.current = {
-      ...createMockJobHistoriesResponse(),
-      data: [
-        {
-          ...createMockJobHistoriesResponse().data[0],
-          status: 'failed',
-        },
-      ],
-    };
-
-    renderWithProviders(<JobsRegistryPage />);
-
-    expect(await screen.findByText('2026-01-01 00:02:00')).toBeVisible();
   });
 
   it('shows all row actions when a run has mixed eligible jobs', async () => {

@@ -4,12 +4,10 @@
 import type { RpcTransport } from "@protobuf-ts/runtime-rpc";
 import type { ServiceInfo } from "@protobuf-ts/runtime-rpc";
 import { WorkersService } from "./workers";
-import type { ToolStatusReportResponse } from "./workers";
-import type { ToolStatusReportRequest } from "./workers";
-import type { ToolUpdatePlanResponse } from "./workers";
-import type { ToolUpdatePlanRequest } from "./workers";
-import type { ScannerStatusReportResponse } from "./workers";
-import type { ScannerStatusReportRequest } from "./workers";
+import type { RemoteExecuteResultAck } from "./workers";
+import type { RemoteExecuteResultStream } from "./workers";
+import type { RemoteExecuteSubscribeResponse } from "./workers";
+import type { RemoteExecuteSubscribeRequest } from "./workers";
 import type { BuiltinToolRegistryResponse } from "./workers";
 import type { BuiltinToolRegistryRequest } from "./workers";
 import type { ConnectInternalNetworkResponse } from "./workers";
@@ -55,17 +53,13 @@ export interface IWorkersServiceClient {
      */
     builtinToolRegistry(input: BuiltinToolRegistryRequest, options?: RpcOptions): UnaryCall<BuiltinToolRegistryRequest, BuiltinToolRegistryResponse>;
     /**
-     * @generated from protobuf rpc: ReportScannerStatus
+     * @generated from protobuf rpc: RemoteExecuteSubscribe
      */
-    reportScannerStatus(input: ScannerStatusReportRequest, options?: RpcOptions): UnaryCall<ScannerStatusReportRequest, ScannerStatusReportResponse>;
+    remoteExecuteSubscribe(input: RemoteExecuteSubscribeRequest, options?: RpcOptions): ServerStreamingCall<RemoteExecuteSubscribeRequest, RemoteExecuteSubscribeResponse>;
     /**
-     * @generated from protobuf rpc: GetToolUpdatePlan
+     * @generated from protobuf rpc: RemoteExecuteResult
      */
-    getToolUpdatePlan(input: ToolUpdatePlanRequest, options?: RpcOptions): UnaryCall<ToolUpdatePlanRequest, ToolUpdatePlanResponse>;
-    /**
-     * @generated from protobuf rpc: ReportToolStatus
-     */
-    reportToolStatus(input: ToolStatusReportRequest, options?: RpcOptions): UnaryCall<ToolStatusReportRequest, ToolStatusReportResponse>;
+    remoteExecuteResult(input: RemoteExecuteResultStream, options?: RpcOptions): UnaryCall<RemoteExecuteResultStream, RemoteExecuteResultAck>;
 }
 /**
  * @generated from protobuf service workers.WorkersService
@@ -119,24 +113,17 @@ export class WorkersServiceClient implements IWorkersServiceClient, ServiceInfo 
         return stackIntercept<BuiltinToolRegistryRequest, BuiltinToolRegistryResponse>("unary", this._transport, method, opt, input);
     }
     /**
-     * @generated from protobuf rpc: ReportScannerStatus
+     * @generated from protobuf rpc: RemoteExecuteSubscribe
      */
-    reportScannerStatus(input: ScannerStatusReportRequest, options?: RpcOptions): UnaryCall<ScannerStatusReportRequest, ScannerStatusReportResponse> {
+    remoteExecuteSubscribe(input: RemoteExecuteSubscribeRequest, options?: RpcOptions): ServerStreamingCall<RemoteExecuteSubscribeRequest, RemoteExecuteSubscribeResponse> {
         const method = this.methods[6], opt = this._transport.mergeOptions(options);
-        return stackIntercept<ScannerStatusReportRequest, ScannerStatusReportResponse>("unary", this._transport, method, opt, input);
+        return stackIntercept<RemoteExecuteSubscribeRequest, RemoteExecuteSubscribeResponse>("serverStreaming", this._transport, method, opt, input);
     }
     /**
-     * @generated from protobuf rpc: GetToolUpdatePlan
+     * @generated from protobuf rpc: RemoteExecuteResult
      */
-    getToolUpdatePlan(input: ToolUpdatePlanRequest, options?: RpcOptions): UnaryCall<ToolUpdatePlanRequest, ToolUpdatePlanResponse> {
+    remoteExecuteResult(input: RemoteExecuteResultStream, options?: RpcOptions): UnaryCall<RemoteExecuteResultStream, RemoteExecuteResultAck> {
         const method = this.methods[7], opt = this._transport.mergeOptions(options);
-        return stackIntercept<ToolUpdatePlanRequest, ToolUpdatePlanResponse>("unary", this._transport, method, opt, input);
-    }
-    /**
-     * @generated from protobuf rpc: ReportToolStatus
-     */
-    reportToolStatus(input: ToolStatusReportRequest, options?: RpcOptions): UnaryCall<ToolStatusReportRequest, ToolStatusReportResponse> {
-        const method = this.methods[8], opt = this._transport.mergeOptions(options);
-        return stackIntercept<ToolStatusReportRequest, ToolStatusReportResponse>("unary", this._transport, method, opt, input);
+        return stackIntercept<RemoteExecuteResultStream, RemoteExecuteResultAck>("unary", this._transport, method, opt, input);
     }
 }

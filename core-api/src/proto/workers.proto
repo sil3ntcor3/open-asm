@@ -6,8 +6,7 @@ option go_package = "./workers";
 
 message JoinRequest {
   string          api_key   = 1;
-  reserved 2;
-  reserved "signature";
+  string          signature = 2;
   optional string token     = 3;
   optional WorkerMetadata metadata = 4;
 }
@@ -75,54 +74,41 @@ message BuiltinToolRegistryResponse {
   repeated string tool_paths = 1;
 }
 
-message ScannerStatusReportRequest {
-  string engine_version = 1;
-  string template_version = 2;
-  string template_source = 3;
-  string state = 4;
-  optional string last_update_attempt_at = 5;
-  optional string last_update_success_at = 6;
-  optional string last_validated_at = 7;
-  optional string last_error = 8;
+message RemoteExecuteSubscribeRequest {}
+
+enum RemoteExecuteSubscribeEventType {
+  REMOTE_EXECUTE_SUBSCRIBE_EVENT_UNKNOWN   = 0;
+  REMOTE_EXECUTE_SUBSCRIBE_EVENT_CONNECTED = 1;
+  REMOTE_EXECUTE_SUBSCRIBE_EVENT_COMMAND   = 2;
 }
 
-message ScannerStatusReportResponse {
-  string message = 1;
+message RemoteExecuteSubscribeResponse {
+  string id                               = 1;
+  string worker_id                        = 2;
+  RemoteExecuteSubscribeEventType type    = 3;
+  string session_id                       = 4;
+  string command                          = 5;
 }
 
-message ToolUpdatePlanRequest {
-  string os = 1;
-  string arch = 2;
+message RemoteExecuteResultStream {
+  string id                            = 1;
+  string session_id                    = 2;
+  RemoteExecuteResultEventType type    = 3;
+  bytes  data                          = 4;
+  int32  exit_code                     = 5;
 }
 
-message ToolUpdateDirective {
-  string request_id = 1;
-  string component = 2;
-  string target_version = 3;
-  string kind = 4;
-  optional string artifact_name = 5;
-  optional string artifact_url = 6;
-  optional string sha256 = 7;
+enum RemoteExecuteResultEventType {
+  REMOTE_EXECUTE_RESULT_UNKNOWN = 0;
+  REMOTE_EXECUTE_RESULT_STDOUT  = 1;
+  REMOTE_EXECUTE_RESULT_STDERR  = 2;
+  REMOTE_EXECUTE_RESULT_EXIT    = 3;
+  REMOTE_EXECUTE_RESULT_ERROR   = 4;
 }
 
-message ToolUpdatePlanResponse {
-  repeated ToolUpdateDirective updates = 1;
-}
-
-message ToolStatusReportRequest {
-  string component = 1;
-  optional string installed_version = 2;
-  string state = 3;
-  optional string request_id = 4;
-  optional string target_version = 5;
-  optional string rollback_version = 6;
-  optional string last_attempt_at = 7;
-  optional string last_success_at = 8;
-  optional string error = 9;
-}
-
-message ToolStatusReportResponse {
-  string message = 1;
+message RemoteExecuteResultAck {
+  bool   success = 1;
+  string message = 2;
 }
 
 service WorkersService {
@@ -132,7 +118,6 @@ service WorkersService {
   rpc Storage(StorageRequest) returns (stream StorageResponse);
   rpc ConnectInternalNetwork(ConnectInternalNetworkRequest) returns (ConnectInternalNetworkResponse);
   rpc BuiltinToolRegistry(BuiltinToolRegistryRequest) returns (BuiltinToolRegistryResponse);
-  rpc ReportScannerStatus(ScannerStatusReportRequest) returns (ScannerStatusReportResponse);
-  rpc GetToolUpdatePlan(ToolUpdatePlanRequest) returns (ToolUpdatePlanResponse);
-  rpc ReportToolStatus(ToolStatusReportRequest) returns (ToolStatusReportResponse);
+  rpc RemoteExecuteSubscribe(RemoteExecuteSubscribeRequest) returns (stream RemoteExecuteSubscribeResponse);
+  rpc RemoteExecuteResult(RemoteExecuteResultStream) returns (RemoteExecuteResultAck);
 }

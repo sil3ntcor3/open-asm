@@ -1,49 +1,41 @@
-import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
-import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
-import { WorkspacePolicyService } from '@/common/authorization/workspace-policy.service';
 import { WORKER_TOKEN_HEADER } from '@/common/constants/app.constants';
-import { UserContext, WorkspaceId } from '@/common/decorators/app.decorator';
+import { Public } from '@/common/decorators/app.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
-import { Role, WorkerScope } from '@/common/enums/enum';
+import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import { GrpcWorkerContext } from '@/common/guards/grpc-worker-context.service';
 import { GrpcWorkerTokenGuard } from '@/common/guards/grpc-worker-token.guard';
-import { UserContextPayload } from '@/common/interfaces/app.interface';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
 import { Metadata } from '@grpc/grpc-js';
 import {
   Body,
   Controller,
-  ForbiddenException,
-  forwardRef,
   Get,
-  Inject,
   Logger,
   Param,
   Patch,
+  Post,
   Query,
   UseGuards,
-  UsePipes,
-  ValidationPipe,
 } from '@nestjs/common';
 import { GrpcMethod, RpcException } from '@nestjs/microservices';
 import { ApiTags } from '@nestjs/swagger';
 import { createReadStream } from 'fs';
+import { readdir } from 'fs/promises';
+import { join } from 'path';
 import { Observable } from 'rxjs';
 import {
   GetManyWorkersDto,
-  ScannerStatusReportDto,
-  ToolStatusReportDto,
-  ToolUpdatePlanRequestDto,
   UpdateWorkerSettingsDto,
+  WorkerAliveDto,
+  WorkerJoinDto,
 } from './dto/workers.dto';
 import { WorkerInstance } from './entities/worker.entity';
 import { AliveStreamManager } from './alive-stream-manager.service';
-import { ToolArtifactService } from './tool-artifact.service';
-import { WorkersService } from './workers.service';
 import {
-  ToolUpdateDirective,
-  ToolUpdateService,
-} from '../tools/tool-update.service';
+  RemoteExecuteCommand,
+  RemoteExecuteSubscribeService,
+} from './remote-execute-subscribe.service';
+import { WorkersService } from './workers.service';
 
 interface GrpcCall {
   getPeer?(): string | undefined;
@@ -55,25 +47,37 @@ export class WorkersController {
   private readonly logger = new Logger(WorkersController.name);
   constructor(
     private readonly workersService: WorkersService,
-    private readonly aliveStreamManager: AliveStreamManager,
-    private readonly toolArtifactService: ToolArtifactService,
+    private readonly remoteExecuteSubscribeService: RemoteExecuteSubscribeService,
     private readonly grpcWorkerContext: GrpcWorkerContext,
-    private readonly workspacePolicyService: WorkspacePolicyService,
-    @Inject(forwardRef(() => ToolUpdateService))
-    private readonly toolUpdateService: ToolUpdateService,
+    private readonly aliveStreamManager: AliveStreamManager,
   ) {}
 
-  /** Resolves the worker identity established by GrpcWorkerTokenGuard. */
-  private authenticatedWorkerId(metadata: Metadata): string {
-    const workerToken = metadata.get(WORKER_TOKEN_HEADER)?.[0];
-    const worker =
-      typeof workerToken === 'string'
-        ? this.grpcWorkerContext.getWorker(workerToken)
-        : undefined;
-    if (!worker) {
-      throw new RpcException('Worker not found in authenticated context');
-    }
-    return worker.id;
+  @Doc({
+    summary: 'Worker alive',
+    description:
+      'Confirms the operational status of a security assessment worker node in the cluster.',
+    response: {
+      serialization: DefaultMessageResponseDto,
+    },
+  })
+  @Public()
+  @Post('/alive')
+  alive(@Body() dto: WorkerAliveDto) {
+    return this.workersService.alive(dto);
+  }
+
+  @Doc({
+    summary: 'Worker join',
+    description:
+      'Registers a new security assessment worker node to the distributed processing cluster.',
+    response: {
+      serialization: WorkerInstance,
+    },
+  })
+  @Public()
+  @Post('join')
+  join(@Body() dto: WorkerJoinDto) {
+    return this.workersService.join(dto);
   }
 
   @Doc({
@@ -85,90 +89,56 @@ export class WorkersController {
     },
   })
   @Get()
-  @WorkspacePolicy(WorkspaceAction.WORKER_READ)
-  getWorkers(
-    @Query() query: GetManyWorkersDto,
-    @WorkspaceId() workspaceId: string,
-  ) {
-    return this.workersService.getWorkers({ ...query, workspaceId });
+  getWorkers(@Query() query: GetManyWorkersDto) {
+    return this.workersService.getWorkers(query);
   }
 
   @Doc({
     summary: 'Update worker runtime settings',
     description:
-      "Change a worker instance's desired max concurrency and/or pause state at runtime. The worker applies the change on its next control poll (a few seconds); shrinking concurrency never kills running jobs.",
+      'Change a worker instance\'s desired max concurrency and/or pause state at runtime. The worker applies the change on its next control poll (a few seconds); shrinking concurrency never kills running jobs.',
     response: {
       serialization: WorkerInstance,
     },
   })
   @Patch('/:id/settings')
-  async updateWorkerSettings(
+  updateWorkerSettings(
     @Param('id') id: string,
     @Body() dto: UpdateWorkerSettingsDto,
-    @UserContext() userContext: UserContextPayload,
-    @WorkspaceId() workspaceId: string,
   ) {
-    const scope = await this.workersService.getWorkerManagementScope(
-      id,
-      workspaceId,
-    );
-
-    if (scope === WorkerScope.CLOUD) {
-      if (userContext.role !== Role.ADMIN) {
-        throw new ForbiddenException(
-          'Only platform administrators can manage global workers',
-        );
-      }
-    } else {
-      await this.workspacePolicyService.assertAllowed(
-        { id: userContext.id, role: userContext.role },
-        workspaceId,
-        WorkspaceAction.WORKER_MANAGE,
-      );
-    }
-
-    return this.workersService.updateWorkerSettings(id, dto, workspaceId);
+    return this.workersService.updateWorkerSettings(id, dto);
   }
 
   @GrpcMethod('WorkersService', 'GetManifest')
-  @UseGuards(GrpcWorkerTokenGuard)
   grpcGetManifest(): { initCommands: string[] } {
     return {
-      initCommands: [],
+      initCommands: ['nuclei -ut --silent'],
     };
   }
 
   @GrpcMethod('WorkersService', 'Storage')
-  @UseGuards(GrpcWorkerTokenGuard)
   grpcStorage(request: {
     path: string;
   }): Observable<{ chunk: Buffer; offset: number; eof: boolean }> {
     return new Observable((subscriber) => {
-      void this.toolArtifactService
-        .resolveArtifact(request.path)
-        .then((filePath) => {
-          const stream = createReadStream(filePath, {
-            highWaterMark: 1024 * 1024,
-          });
-          let offset = 0;
+      const normalizedPath = request.path.replace(/^static/, 'public');
+      const filePath = join(process.cwd(), normalizedPath);
+      const stream = createReadStream(filePath, { highWaterMark: 1024 * 1024 }); // 1MB chunks
+      let offset = 0;
 
-          stream.on('data', (chunk: Buffer) => {
-            subscriber.next({ chunk, offset, eof: false });
-            offset += chunk.length;
-          });
+      stream.on('data', (chunk: Buffer) => {
+        subscriber.next({ chunk, offset, eof: false });
+        offset += chunk.length;
+      });
 
-          stream.on('end', () => {
-            subscriber.next({ chunk: Buffer.alloc(0), offset, eof: true });
-            subscriber.complete();
-          });
+      stream.on('end', () => {
+        subscriber.next({ chunk: Buffer.alloc(0), offset, eof: true });
+        subscriber.complete();
+      });
 
-          stream.on('error', (error) => {
-            subscriber.error(error);
-          });
-        })
-        .catch((error: unknown) => {
-          subscriber.error(error);
-        });
+      stream.on('error', (err) => {
+        subscriber.error(err);
+      });
     });
   }
 
@@ -176,6 +146,7 @@ export class WorkersController {
   async grpcJoin(
     requests: {
       apiKey: string;
+      signature: string;
       token?: string;
       metadata?: { name?: string; os?: string };
     },
@@ -186,6 +157,7 @@ export class WorkersController {
 
     const worker = await this.workersService.join({
       apiKey: requests.apiKey,
+      signature: requests.signature,
       token: requests.token,
       metadata: requests.metadata,
       ipAddress,
@@ -198,7 +170,6 @@ export class WorkersController {
   }
 
   @GrpcMethod('WorkersService', 'Alive')
-  @UseGuards(GrpcWorkerTokenGuard)
   grpcAlive(request: {
     workerToken: string;
   }): Observable<{ alive: boolean; lastSeenAt: string; workerId: string }> {
@@ -256,79 +227,79 @@ export class WorkersController {
 
   @GrpcMethod('WorkersService', 'ConnectInternalNetwork')
   @UseGuards(GrpcWorkerTokenGuard)
-  async grpcConnectInternalNetwork(
-    request: {
-      workerId: string;
-      networkId: string;
-      networkInterfaces: Array<{
-        interfaceName: string;
-        ipAddress: string;
-        cidr: string;
-        gatewayIp: string;
-        gatewayMac: string;
-      }>;
-    },
-    metadata: Metadata,
-  ): Promise<{ message: string }> {
-    return this.workersService.connectInternalNetwork({
-      ...request,
-      workerId: this.authenticatedWorkerId(metadata),
-    });
+  async grpcConnectInternalNetwork(request: {
+    workerId: string;
+    networkId: string;
+    networkInterfaces: Array<{
+      interfaceName: string;
+      ipAddress: string;
+      cidr: string;
+      gatewayIp: string;
+      gatewayMac: string;
+    }>;
+  }): Promise<{ message: string }> {
+    return this.workersService.connectInternalNetwork(request);
   }
 
   @GrpcMethod('WorkersService', 'BuiltinToolRegistry')
-  @UseGuards(GrpcWorkerTokenGuard)
   async grpcBuiltinToolRegistry(request: {
     os: string;
     arch: string;
   }): Promise<{ toolPaths: string[] }> {
-    return {
-      toolPaths: await this.toolArtifactService.listArtifacts(
-        request.os,
-        request.arch,
-      ),
-    };
+    const platform = `${request.os.toLowerCase()}_${request.arch.toLowerCase()}`;
+    const platformPath = join(process.cwd(), 'public/archived', platform);
+
+    try {
+      const files = await readdir(platformPath);
+      return {
+        toolPaths: files.map((file) => `static/archived/${platform}/${file}`),
+      };
+    } catch {
+      return { toolPaths: [] };
+    }
   }
 
-  @GrpcMethod('WorkersService', 'ReportScannerStatus')
   @UseGuards(GrpcWorkerTokenGuard)
-  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  grpcReportScannerStatus(
-    request: ScannerStatusReportDto,
+  @GrpcMethod('WorkersService', 'RemoteExecuteSubscribe')
+  grpcRemoteExecuteSubscribe(
+    _request: Record<string, never>,
     metadata: Metadata,
-  ): Promise<{ message: string }> {
-    return this.workersService.reportScannerStatus(
-      this.authenticatedWorkerId(metadata),
-      request,
+  ): Observable<RemoteExecuteCommand> {
+    const tokenValues = metadata.get(WORKER_TOKEN_HEADER);
+    const workerToken = tokenValues?.[0] as string | undefined;
+    const worker = this.grpcWorkerContext.getWorker(workerToken!);
+
+    if (!worker) {
+      throw new RpcException('Worker not found in context');
+    }
+
+    const { subject, observable } =
+      this.remoteExecuteSubscribeService.registerWorker(worker);
+
+    subject.next({
+      id: '',
+      workerId: '',
+      type: 1, // REMOTE_EXECUTE_SUBSCRIBE_EVENT_CONNECTED
+      sessionId: '',
+      command: '',
+    });
+
+    return observable;
+  }
+
+  @UseGuards(GrpcWorkerTokenGuard)
+  @GrpcMethod('WorkersService', 'RemoteExecuteResult')
+  async grpcRemoteExecuteResult(request: {
+    id: string;
+    sessionId: string;
+    type: number;
+    data: Uint8Array;
+    exitCode: number;
+  }): Promise<{ success: boolean; message: string }> {
+    this.logger.log(
+      `[grpcRemoteExecuteResult] Received: sessionId=${request.sessionId}, type=${request.type}, exitCode=${request.exitCode}`,
     );
-  }
-
-  @GrpcMethod('WorkersService', 'GetToolUpdatePlan')
-  @UseGuards(GrpcWorkerTokenGuard)
-  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  async grpcGetToolUpdatePlan(
-    request: ToolUpdatePlanRequestDto,
-    metadata: Metadata,
-  ): Promise<{ updates: ToolUpdateDirective[] }> {
-    return {
-      updates: await this.toolUpdateService.getWorkerUpdatePlan(
-        this.authenticatedWorkerId(metadata),
-        request.os,
-        request.arch,
-      ),
-    };
-  }
-
-  @GrpcMethod('WorkersService', 'ReportToolStatus')
-  @UseGuards(GrpcWorkerTokenGuard)
-  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  grpcReportToolStatus(
-    request: ToolStatusReportDto,
-    metadata: Metadata,
-  ): Promise<{ message: string }> {
-    return this.workersService.reportToolStatus(
-      this.authenticatedWorkerId(metadata),
-      request,
-    );
+    await this.workersService.handleRemoteExecuteResult(request);
+    return { success: true, message: 'Result acknowledged' };
   }
 }

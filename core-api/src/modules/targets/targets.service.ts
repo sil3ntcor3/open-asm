@@ -255,13 +255,10 @@ export class TargetsService implements OnModuleInit {
        INNER JOIN workspace_targets wt ON wt."targetId" = t.id
        INNER JOIN workspaces w ON w.id = wt."workspaceId" AND w."deletedAt" IS NULL
        LEFT JOIN LATERAL (
-         -- Count every discovered service endpoint (naabu-found open ports).
-         -- NOT gated on isErrorPage: that flag mirrors httpx's flaky failed=true,
-         -- so a transient scan-time IPS block would otherwise zero the count.
          SELECT COUNT(DISTINCT s.id)::int AS cnt
          FROM assets a
          JOIN asset_services s ON s."assetId" = a.id
-         WHERE a."targetId" = t.id
+         WHERE a."targetId" = t.id AND s."isErrorPage" = false
        ) svc ON TRUE
        LEFT JOIN LATERAL (
          SELECT CASE
@@ -304,9 +301,11 @@ export class TargetsService implements OnModuleInit {
       this.validateTargetValue(target.value, type, !!internalNetworkId);
     }
 
-    // Route policy decides which member roles may create targets. Keep the
-    // service-level lookup to prevent use against an inaccessible workspace.
-    await this.workspacesService.getWorkspaceById(workspaceId, userContext);
+    // Check if the workspace exists and the user is the owner
+    await this.workspacesService.getWorkspaceByIdAndOwner(
+      workspaceId,
+      userContext,
+    );
 
     const targetValues = targets.map((t) => t.value);
 
@@ -493,7 +492,10 @@ export class TargetsService implements OnModuleInit {
   ): Promise<DiscoverTargetsResultDto> {
     const { targetIds } = dto;
 
-    await this.workspacesService.getWorkspaceById(workspaceId, userContext);
+    await this.workspacesService.getWorkspaceByIdAndOwner(
+      workspaceId,
+      userContext,
+    );
 
     const workspaceConfigs =
       await this.workspacesService.getWorkspaceConfigValue(workspaceId);
@@ -691,13 +693,10 @@ export class TargetsService implements OnModuleInit {
        FROM targets t
        INNER JOIN workspace_targets wt ON wt."targetId" = t.id
        LEFT JOIN LATERAL (
-         -- Count every discovered service endpoint (naabu-found open ports).
-         -- NOT gated on isErrorPage: that flag mirrors httpx's flaky failed=true,
-         -- so a transient scan-time IPS block would otherwise zero the count.
          SELECT COUNT(DISTINCT s.id)::int AS cnt
          FROM assets a
          JOIN asset_services s ON s."assetId" = a.id
-         WHERE a."targetId" = t.id
+         WHERE a."targetId" = t.id AND s."isErrorPage" = false
        ) svc ON TRUE
        LEFT JOIN LATERAL (
          SELECT ${statusExpr} AS status
@@ -726,45 +725,30 @@ export class TargetsService implements OnModuleInit {
   public async deleteTargetFromWorkspace(
     id: string,
     workspaceId: string,
+    userContext: UserContextPayload,
   ) {
-    await this.repo.manager.transaction(async (manager) => {
-      const workspaceTargetRepository = manager.getRepository(WorkspaceTarget);
-      const targetRepository = manager.getRepository(Target);
-      const workspaceTarget = await workspaceTargetRepository.findOne({
-        where: {
-          target: { id },
-          workspace: { id: workspaceId },
-        },
-        lock: { mode: 'pessimistic_write' },
-      });
+    await this.workspacesService.getWorkspaceByIdAndOwner(
+      workspaceId,
+      userContext,
+    );
 
-      if (!workspaceTarget) {
-        throw new NotFoundException('Target not found in workspace');
-      }
+    const workspaceTarget = await this.workspaceTargetRepository.findOneBy({
+      target: { id },
+      workspace: { id: workspaceId },
+    });
 
-      await workspaceTargetRepository.delete({
-        target: { id },
-        workspace: { id: workspaceId },
-      });
+    await this.repo.delete(id);
 
-      const remainingWorkspaceCount = await workspaceTargetRepository.count({
-        where: { target: { id } },
-      });
-      if (remainingWorkspaceCount === 0) {
-        await targetRepository.delete(id);
-      }
+    if (!workspaceTarget) {
+      throw new NotFoundException('Target not found in workspace');
+    }
+
+    await this.workspaceTargetRepository.delete({
+      target: { id },
+      workspace: { id: workspaceId },
     });
 
     return { message: 'Target deleted successfully' };
-  }
-
-  /**
-   * Starts a rescan only after proving that the target belongs to the selected
-   * workspace.
-   */
-  public async reScanTarget(id: string, workspaceId: string) {
-    await this.assertTargetInWorkspace(id, workspaceId);
-    return this.assetService.reScan(id);
   }
 
   /**
@@ -775,12 +759,7 @@ export class TargetsService implements OnModuleInit {
    * @throws NotFoundException if the target is not found.
    * @returns The updated target entity.
    */
-  public async updateTarget(
-    id: string,
-    dto: UpdateTargetDto,
-    workspaceId: string,
-  ): Promise<Target> {
-    await this.assertTargetInWorkspace(id, workspaceId);
+  public async updateTarget(id: string, dto: UpdateTargetDto): Promise<Target> {
     const target = await this.repo.findOneBy({ id });
     if (!target) {
       throw new NotFoundException('Target not found');
@@ -824,20 +803,6 @@ export class TargetsService implements OnModuleInit {
     }
 
     return updatedTarget;
-  }
-
-  /** Verifies target membership before any ID-based mutation or execution. */
-  private async assertTargetInWorkspace(
-    targetId: string,
-    workspaceId: string,
-  ): Promise<void> {
-    const workspaceTarget = await this.workspaceTargetRepository.findOneBy({
-      target: { id: targetId },
-      workspace: { id: workspaceId },
-    });
-    if (!workspaceTarget) {
-      throw new NotFoundException('Target not found in workspace');
-    }
   }
 
   /**

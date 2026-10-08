@@ -1,6 +1,4 @@
 import { WorkspaceId } from '@/common/decorators/workspace-id.decorator';
-import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
-import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiTags, getSchemaPath } from '@nestjs/swagger';
@@ -18,7 +16,6 @@ import { StatisticService } from './statistic.service';
 
 @ApiTags('Statistic')
 @Controller('statistic')
-@WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
 export class StatisticController {
   constructor(private readonly statisticService: StatisticService) {}
 
@@ -30,15 +27,11 @@ export class StatisticController {
       serialization: StatisticResponseDto,
     },
   })
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ, {
-    workspaceQuery: 'workspaceId',
-  })
   @Get()
   getStatistics(
     @Query() query: GetStatisticQueryDto,
-    @WorkspaceId() workspaceId: string,
   ): Promise<StatisticResponseDto> {
-    return this.statisticService.getStatistics({ ...query, workspaceId });
+    return this.statisticService.getStatistics(query);
   }
 
   @Doc({

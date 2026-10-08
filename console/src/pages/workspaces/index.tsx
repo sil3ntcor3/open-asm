@@ -16,6 +16,7 @@ import {
 import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import {
   useWorkspacesControllerGetWorkspaces,
+  WorkspaceResponseDtoRole,
   type WorkspaceResponseDto,
 } from '@/services/apis/gen/queries';
 import { Crown, Plus, Target, Users } from 'lucide-react';
@@ -72,13 +73,9 @@ export default function Workspaces() {
                   </CardContent>
                 </Card>
               ))
-            : (data?.data ?? []).map((rawWorkspace: WorkspaceResponseDto) => {
-                const workspace = rawWorkspace as WorkspaceResponseDto & {
-                  roleKey?: string | null;
-                  roleName?: string;
-                  accessSource?: 'membership' | 'platform_admin';
-                };
-                const isOwner = workspace.roleKey === 'owner';
+            : (data?.data ?? []).map((workspace: WorkspaceResponseDto) => {
+                const isOwner =
+                  workspace.role === WorkspaceResponseDtoRole.owner;
                 return (
                   <Card
                     key={workspace.id}
@@ -110,11 +107,6 @@ export default function Workspaces() {
                           {workspace.archivedAt ? 'Archived' : 'Active'}
                         </Badge>
                       </div>
-                      <Badge variant="outline" className="w-fit">
-                        {workspace.accessSource === 'platform_admin'
-                          ? 'Platform Admin access'
-                          : (workspace.roleName ?? 'Workspace member')}
-                      </Badge>
                       <div className="flex gap-4 pt-2 text-sm text-muted-foreground">
                         <div className="flex items-center gap-1.5">
                           <Users size={14} className="text-muted-foreground" />

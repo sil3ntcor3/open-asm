@@ -15,17 +15,12 @@ export class GrpcWorkerTokenGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const ctx: unknown = context.switchToRpc().getContext();
-    const metadata: Metadata | undefined =
+    const metadata: Metadata =
       (ctx as { metadata?: Metadata }).metadata ??
-      (ctx as Metadata | undefined);
+      (ctx as Metadata);
 
-    const tokenValues = metadata?.get?.(WORKER_TOKEN_HEADER);
-    const metadataToken = tokenValues?.[0];
-    const requestToken = (
-      context.switchToRpc().getData<{ workerToken?: string }>()
-    )?.workerToken;
-    const workerToken =
-      typeof metadataToken === 'string' ? metadataToken : requestToken;
+    const tokenValues = metadata.get(WORKER_TOKEN_HEADER);
+    const workerToken = tokenValues?.[0] as string | undefined;
 
     if (!workerToken) {
       throw new RpcException('Worker token is missing');

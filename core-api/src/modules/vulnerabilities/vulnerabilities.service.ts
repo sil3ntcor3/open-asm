@@ -28,7 +28,6 @@ import {
 } from './dto/get-vulnerability-statistics.dto';
 import {
   GetVulnerabilitiesQueryDto,
-  VulnerabilitySortField,
   VulnerabilityStatus,
 } from './dto/get-vulnerability.dto';
 import { VulnerabilityDismissal } from './entities/vulnerability-dismissal.entity';
@@ -140,24 +139,11 @@ export class VulnerabilitiesService {
       .take(limit);
 
     // Handle severity sorting with proper order
-    if (sortBy === VulnerabilitySortField.SEVERITY) {
+    if (sortBy === 'severity') {
       const { select, orderBy } = this.buildSeverityOrderQuery(sortOrder);
       queryBuilder.addSelect(select, 'severity_order').orderBy(orderBy, 'ASC');
     } else {
-      const sortColumns: Record<
-        Exclude<VulnerabilitySortField, VulnerabilitySortField.SEVERITY>,
-        string
-      > = {
-        createdAt: 'vulnerabilities.createdAt',
-        updatedAt: 'vulnerabilities.updatedAt',
-        name: 'vulnerabilities.name',
-        firstDetectedDate: 'vulnerabilities.firstDetectedDate',
-        lastSeenDate: 'vulnerabilities.lastSeenDate',
-        cvssScore: 'vulnerabilities.cvssScore',
-        epssScore: 'vulnerabilities.epssScore',
-        vprScore: 'vulnerabilities.vprScore',
-      };
-      queryBuilder.orderBy(sortColumns[sortBy], sortOrder);
+      queryBuilder.orderBy(`vulnerabilities.${sortBy}`, sortOrder);
     }
 
     this.applyVulnerabilityFilters(queryBuilder, {

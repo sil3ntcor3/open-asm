@@ -7,10 +7,10 @@ import { Job } from './job.entity';
 @Index('IDX_job_error_logs_jobId', ['jobId'])
 export class JobErrorLog extends BaseEntity {
   @ApiProperty()
-  @Column({ type: 'text' })
+  @Column()
   logMessage: string;
   @ApiProperty()
-  @Column({ type: 'text' })
+  @Column()
   payload: string;
   @ApiProperty()
   @Column({ nullable: true })

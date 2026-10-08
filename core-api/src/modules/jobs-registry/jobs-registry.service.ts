@@ -6,7 +6,6 @@ import {
 import {
   BullMQName,
   CATEGORY_DATA_SOURCE_MAP,
-  DnsResolutionStatus,
   EventTriggerType,
   JobPriority,
   JobRunType,
@@ -17,6 +16,7 @@ import {
   WorkerType,
 } from '@/common/enums/enum';
 import { RedisService } from '@/services/redis/redis.service';
+import bindingCommand from '@/utils/bindingCommand';
 import { getManyResponse } from '@/utils/getManyResponse';
 import { resolveSortColumn } from '@/utils/resolveSortColumn';
 import { WORKER_TIMEOUT } from '@/common/constants/app.constants';
@@ -32,14 +32,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
 import { randomUUID } from 'crypto';
-import {
-  DataSource,
-  DeepPartial,
-  EntityManager,
-  In,
-  Repository,
-} from 'typeorm';
-import { TARPIT_OPEN_PORT_THRESHOLD } from '@/common/constants/app.constants';
+import { DataSource, DeepPartial, In, Repository } from 'typeorm';
 import { AssetService } from '../assets/entities/asset-services.entity';
 import { Asset } from '../assets/entities/assets.entity';
 import { StorageService } from '../storage/storage.service';
@@ -49,10 +42,7 @@ import { builtInTools } from '../tools/tools-provider/built-in-tools';
 import { ToolsService } from '../tools/tools.service';
 import { WorkerInstance } from '../workers/entities/worker.entity';
 import { GetManyJobsRequestDto } from './dto/get-many-jobs-dto';
-import {
-  JobHistoryDetailResponseDto,
-  JobHistoryStepDetail,
-} from './dto/job-history-detail.dto';
+import { JobHistoryDetailResponseDto } from './dto/job-history-detail.dto';
 import { JobHistoryResponseDto } from './dto/job-history.dto';
 import {
   CreateJobs,
@@ -65,50 +55,10 @@ import {
   JobTimelineResponseDto,
   UpdateResultDto,
   WorkerControlResponseDto,
-  ToolExecutionDto,
 } from './dto/jobs-registry.dto';
 import { JobErrorLog } from './entities/job-error-log.entity';
 import { JobHistory } from './entities/job-history.entity';
 import { Job } from './entities/job.entity';
-
-/**
- * Display-priority order for a jobs listing: active work first (running, then
- * queued, then paused), terminal jobs last. Used as the PRIMARY sort key in
- * {@link JobsRegistryService.getManyJobs} so in-flight jobs pin to the top of
- * page 1 instead of scattering across pages by creation time. Within a single
- * priority rank the client-requested column (e.g. createdAt DESC) still orders
- * the rows. The index in this array IS the rank (lower = higher up the list).
- */
-export const JOB_STATUS_DISPLAY_PRIORITY: readonly JobStatus[] = [
-  JobStatus.IN_PROGRESS,
-  JobStatus.PENDING,
-  JobStatus.PAUSED,
-  JobStatus.COMPLETED,
-  JobStatus.FAILED,
-  JobStatus.CANCELLED,
-] as const;
-
-/**
- * Builds a SQL CASE expression that maps each job status to its
- * {@link JOB_STATUS_DISPLAY_PRIORITY} rank. In {@link
- * JobsRegistryService.getManyJobs} it is added as a computed SELECT column and
- * ordered by its alias (not passed straight to orderBy — see the call site for
- * why). Any status not in the list falls to the bottom.
- *
- * The status literals are our own enum constants — never client input — so
- * interpolating them directly is safe. This mirrors how TypeORM's `orderBy`
- * interpolates its column expression (see {@link resolveSortColumn}) rather
- * than parameterizing it, so the surrounding query's bound parameters are
- * unaffected.
- *
- * @param column The aliased status column, e.g. `job.status`.
- */
-export function buildJobStatusOrderByCase(column: string): string {
-  const whenClauses = JOB_STATUS_DISPLAY_PRIORITY.map(
-    (status, rank) => `WHEN '${status}' THEN ${rank}`,
-  ).join(' ');
-  return `CASE ${column} ${whenClauses} ELSE ${JOB_STATUS_DISPLAY_PRIORITY.length} END`;
-}
 
 /** Columns a client is allowed to sort `jobs` rows by. */
 const JOB_SORT_COLUMNS = [
@@ -138,94 +88,6 @@ const ISO_WEEKDAY_BY_SHORT_NAME: Record<string, number> = {
   Sat: 6,
   Sun: 7,
 };
-
-const BUILT_IN_EXECUTION_TOOLS = new Set(builtInTools.map((tool) => tool.name));
-
-export function createToolExecutionPlan(job: Job): ToolExecutionDto | null {
-  const toolName = job.tool?.name;
-  const target = job.assetService?.value ?? job.asset?.value;
-  if (!toolName || !BUILT_IN_EXECUTION_TOOLS.has(toolName) || !target) {
-    return null;
-  }
-  return {
-    toolName,
-    target,
-    port: job.assetService?.port,
-  };
-}
-
-/** Per-status job counts for a single job history. */
-export interface JobHistoryStatusCounts {
-  total: number;
-  pending: number;
-  inProgress: number;
-  paused: number;
-  completed: number;
-  failed: number;
-  cancelled: number;
-}
-
-/**
- * Derives the aggregate status of a job history from its child job counts.
- *
- * A discovery run (job history) is only *terminal* once no work remains. Any
- * `pending` or `in_progress` child keeps the whole history active, so a run is
- * never reported as `failed`/`completed`/`cancelled` while sibling jobs are
- * still executing. This ordering — active states before terminal states — is
- * the fix for histories showing "failed" (with a premature "Ended At") the
- * moment a single child job failed, even though the run was still in flight.
- * It mirrors the precedence already used by {@link getJobsTimeline}.
- */
-export function deriveJobHistoryStatus(
-  counts: JobHistoryStatusCounts,
-): JobStatus {
-  // No jobs at all: nothing has run yet.
-  if (counts.total === 0) {
-    return JobStatus.PENDING;
-  }
-
-  // --- Active states: work is still outstanding, so the run is not terminal.
-  if (counts.inProgress > 0) {
-    return JobStatus.IN_PROGRESS;
-  }
-  if (counts.pending > 0) {
-    // Some jobs already finished but more are queued => the run is underway.
-    // Nothing has started yet (everything pending) => still queued.
-    const finished = counts.completed + counts.failed + counts.cancelled;
-    return finished > 0 ? JobStatus.IN_PROGRESS : JobStatus.PENDING;
-  }
-
-  // No active work left, but held (paused) jobs can still be resumed, so the
-  // run is paused rather than finished.
-  if (counts.paused > 0) {
-    return JobStatus.PAUSED;
-  }
-
-  // --- Terminal states: every job has reached a final status.
-  // A run is only branded FAILED when it produced *no* successful work. A
-  // single (or several) failed child tasks must not fail the whole run: a
-  // discovery job that screenshotted 20 services and had 6 tool failures still
-  // delivered results, so it is COMPLETED. Checking `completed` before `failed`
-  // is what prevents one failed task from turning the whole registry entry red;
-  // the per-status counts (failedJobs, etc.) still surface the failures on the
-  // run-detail view.
-  if (counts.completed > 0) {
-    // At least one success => the run delivered results, regardless of any
-    // sibling failures or cancellations.
-    return JobStatus.COMPLETED;
-  }
-  if (counts.failed > 0) {
-    // No successes at all, but something failed => the run genuinely failed
-    // (any cancellations alongside the failures do not soften that).
-    return JobStatus.FAILED;
-  }
-  if (counts.cancelled === counts.total) {
-    return JobStatus.CANCELLED;
-  }
-
-  // Defensive fallback (should be unreachable given the checks above).
-  return JobStatus.PENDING;
-}
 
 @Injectable()
 export class JobsRegistryService {
@@ -277,25 +139,9 @@ export class JobsRegistryService {
       );
     }
 
-    // Surface active work first: order by status priority (running > queued >
-    // paused > terminal) BEFORE the client-requested column. Without this
-    // primary key, running jobs sort purely by createdAt and scatter across
-    // pages — the run-detail view showed in-progress tasks on page 3 instead of
-    // pinned to the top of page 1. The secondary sort keeps the requested
-    // ordering (e.g. createdAt DESC) within each status group.
-    //
-    // The rank is added as a computed SELECT column and ordered by its alias
-    // rather than passing the raw CASE straight to orderBy(): under skip/take
-    // pagination over the joined entities (the errorLogs collection forces
-    // TypeORM's distinct-id subquery), orderBy() alias-resolves its argument as
-    // `alias.column` and mis-parses `CASE job.status` into a phantom alias
-    // ("CASE job" alias was not found), 500-ing the endpoint. A dotless alias
-    // sidesteps that resolution.
     qb.take(query.limit)
       .skip((page - 1) * limit)
-      .addSelect(buildJobStatusOrderByCase('job.status'), 'job_status_rank')
-      .orderBy('job_status_rank', 'ASC')
-      .addOrderBy(`job.${sortBy}`, sortOrder);
+      .orderBy(`job.${sortBy}`, sortOrder);
 
     const [data, total] = await qb.getManyAndCount();
 
@@ -326,35 +172,22 @@ export class JobsRegistryService {
     jobName,
     isPublishEvent,
     jobRunType,
-    manager,
   }: CreateJobs): Promise<Job[]> {
     if (!tool) {
       throw new Error('Tool is required for creating a job');
     }
 
-    // Every repository below resolves through this. When a caller hands us a
-    // transactional manager we must stay on its connection: taking a second one
-    // from the pool while the caller still holds the first is what deadlocked
-    // the workflow step transition (pool max 10, processor concurrency 10).
-    const dbSource: DataSource | EntityManager = manager ?? this.dataSource;
-
     if (!tool.category) {
       throw new Error('Tool category is required for creating a job');
     }
 
-    // Resolve priority, falling back to the tool's default when the caller gave
-    // none or gave one outside the enum range. The checks must be nullish-aware,
-    // not truthiness-based: CRITICAL is 0, so `priority || fallback` and
-    // `if (!priority)` both discarded the single most urgent value and silently
-    // demoted it to the tool default (or BACKGROUND) — CRITICAL was unreachable.
-    const fallbackPriority = tool.priority ?? JobPriority.BACKGROUND;
     if (
-      priority === undefined ||
-      priority === null ||
-      priority < JobPriority.CRITICAL ||
-      priority > JobPriority.BACKGROUND
+      priority &&
+      (priority < JobPriority.CRITICAL || priority > JobPriority.BACKGROUND)
     ) {
-      priority = fallbackPriority;
+      priority = tool.priority || JobPriority.BACKGROUND;
+    } else if (!priority) {
+      priority = tool.priority || JobPriority.BACKGROUND;
     }
     // Step 1: create job history
     let jobHistory: JobHistory;
@@ -362,15 +195,12 @@ export class JobsRegistryService {
     if (existingJobHistory) {
       jobHistory = existingJobHistory;
     } else {
-      const jobHistoryRepo = manager
-        ? manager.getRepository(JobHistory)
-        : this.jobHistoryRepo;
-      jobHistory = jobHistoryRepo.create({
+      jobHistory = this.jobHistoryRepo.create({
         workflow,
         jobRunType,
         jobHistoryName: jobName,
       });
-      await jobHistoryRepo.save(jobHistory);
+      await this.jobHistoryRepo.save(jobHistory);
       this.eventEmitter.emit(EventTriggerType.WORKFLOW_START, {
         tool,
         targetIds,
@@ -386,14 +216,13 @@ export class JobsRegistryService {
       });
     }
 
-    const jobRepo = dbSource.getRepository(Job);
+    const jobRepo = this.dataSource.getRepository(Job);
     const jobsToInsert: Job[] = [];
 
     // Step 2: find appropriate data source based on tool category
     if (
       tool.category === ToolCategory.HTTP_PROBE ||
-      tool.category === ToolCategory.SCREENSHOT ||
-      tool.category === ToolCategory.SERVICE_DISCOVERY
+      tool.category === ToolCategory.SCREENSHOT
     ) {
       // For HTTP_PROBE, use asset services
       const assetServices = await this.findAssetServicesForJob(
@@ -401,7 +230,6 @@ export class JobsRegistryService {
         assetIds,
         workspaceId,
         tool.category,
-        dbSource,
       );
 
       // Step 3: iterate tools and create jobs
@@ -419,11 +247,13 @@ export class JobsRegistryService {
           status: JobStatus.PENDING,
           category: tool.category,
           tool,
-          priority,
+          priority: priority ?? 4,
           jobHistory,
-          // Command is display-only. Workers receive a typed execution plan
-          // and never evaluate this string in a shell.
-          command: defaultCommand ?? tool.name,
+          command: bindingCommand(defaultCommand ?? '', {
+            // Use the default command template for HTTP_PROBE
+            value: assetService.value,
+            port: assetService.port.toString(),
+          }),
           isSaveRawResult: isSaveRawResult ?? false,
           isPublishEvent,
         } as DeepPartial<Job>);
@@ -440,7 +270,6 @@ export class JobsRegistryService {
         assetIds,
         workspaceId,
         tool.category,
-        dbSource,
       );
 
       const filteredAssets = this.filterAssetsByCategory(assets, tool.category);
@@ -458,11 +287,11 @@ export class JobsRegistryService {
           status: JobStatus.PENDING,
           category: tool.category,
           tool,
-          priority,
+          priority: priority ?? 4,
           jobHistory,
-          // Command is display-only. Workers receive a typed execution plan
-          // and never evaluate this string in a shell.
-          command: defaultCommand ?? tool.name,
+          command: bindingCommand(defaultCommand ?? '', {
+            value: asset.value,
+          }),
           isSaveRawResult: isSaveRawResult ?? false,
           isPublishEvent,
         } as DeepPartial<Job>);
@@ -491,22 +320,11 @@ export class JobsRegistryService {
     assetIds?: string[],
     workspaceId?: string,
     category?: ToolCategory,
-    dbSource: DataSource | EntityManager = this.dataSource,
   ): Promise<Asset[]> {
-    const assetsQueryBuilder = dbSource
+    const assetsQueryBuilder = this.dataSource
       .getRepository(Asset)
       .createQueryBuilder('assets')
       .where('assets.isEnabled = true');
-
-    if (
-      category === ToolCategory.PORTS_SCANNER ||
-      category === ToolCategory.VULNERABILITIES
-    ) {
-      assetsQueryBuilder.andWhere(
-        'assets.dnsResolutionStatus != :unresolvedDnsStatus',
-        { unresolvedDnsStatus: DnsResolutionStatus.UNRESOLVED },
-      );
-    }
 
     // Idempotency guard: skip assets that already have an open (pending or
     // in-progress) job for this category, so repeated triggers cannot fan out
@@ -561,65 +379,12 @@ export class JobsRegistryService {
     assetIds?: string[],
     workspaceId?: string,
     category?: ToolCategory,
-    dbSource: DataSource | EntityManager = this.dataSource,
   ): Promise<AssetService[]> {
-    const assetServicesQueryBuilder = dbSource
+    const assetServicesQueryBuilder = this.dataSource
       .getRepository(AssetService)
       .createQueryBuilder('assetServices')
       .innerJoinAndSelect('assetServices.asset', 'asset')
       .where('asset.isEnabled = true');
-
-    // Tarpit guard, second layer. portsScanner already declines to create asset
-    // services for a host whose open-port count is implausible, but rows banked
-    // before that guard existed (or imported another way) would still be fanned
-    // out here — one job per service, for every per-service step in the workflow.
-    // Excluding them at selection keeps a historical tarpit result from
-    // multiplying the queue by tens of thousands.
-    if (Number.isFinite(TARPIT_OPEN_PORT_THRESHOLD)) {
-      assetServicesQueryBuilder.andWhere(
-        `"assetServices"."assetId" NOT IN (
-          SELECT "tarpit"."assetId" FROM "asset_services" "tarpit"
-          GROUP BY "tarpit"."assetId"
-          HAVING count(*) > :tarpitThreshold
-        )`,
-        { tarpitThreshold: TARPIT_OPEN_PORT_THRESHOLD },
-      );
-    }
-
-    if (
-      category === ToolCategory.HTTP_PROBE ||
-      category === ToolCategory.SCREENSHOT ||
-      category === ToolCategory.SERVICE_DISCOVERY
-    ) {
-      assetServicesQueryBuilder.andWhere(
-        'asset.dnsResolutionStatus != :unresolvedDnsStatus',
-        { unresolvedDnsStatus: DnsResolutionStatus.UNRESOLVED },
-      );
-    }
-
-    // Best-effort web-service gate for screenshots. The nmap service-discovery
-    // step runs before screenshot in the workflow and, when it can reach the
-    // port, sets asset_services.scheme for endpoints it identified as http/https
-    // (on ANY port — nmap does not use a port allow-list, so odd-port web
-    // services are still captured) and asset_services.service for every port it
-    // classified (web or not).
-    //
-    // Requiring scheme alone is too fragile: target-side scan detection routinely
-    // filters nmap during the naabu storm, so a genuine web service comes back
-    // unclassified (scheme AND service both NULL) and would be screenshotted
-    // never — even though the block is transient and the endpoint is reachable
-    // again by the time the screenshot step runs. We therefore screenshot a
-    // service when nmap identified it as web (scheme set) OR when nmap could not
-    // classify it at all (service NULL), and only skip services nmap positively
-    // identified as non-web (service set, no web scheme — e.g. ssh/ftp/smtp). The
-    // headless browser is the ground-truth web detector and returns "No
-    // screenshot" for any non-web endpoint that slips through, and the
-    // idempotency guard below keeps the fan-out from duplicating.
-    if (category === ToolCategory.SCREENSHOT) {
-      assetServicesQueryBuilder.andWhere(
-        '(assetServices.scheme IS NOT NULL OR assetServices.service IS NULL)',
-      );
-    }
 
     // Idempotency guard: skip asset services that already have an open (pending
     // or in-progress) job for this category, so repeated triggers cannot fan
@@ -723,7 +488,7 @@ export class JobsRegistryService {
         .createQueryBuilder(Job, 'jobs')
         .innerJoinAndSelect('jobs.asset', 'asset')
         .innerJoin('asset.target', 'target')
-        .leftJoinAndSelect('jobs.tool', 'tool')
+        .leftJoin('jobs.tool', 'tool')
         .where('jobs.status = :status', { status: JobStatus.PENDING })
         // Scheduling window: a job is only dispatchable while its target's
         // scan window (evaluated in the target's timezone) is open. Targets
@@ -752,13 +517,8 @@ export class JobsRegistryService {
             )
           )`,
         )
-        // Compound sort: most urgent first, then oldest first (FIFO within a
-        // priority band). JobPriority ascends in value as it DESCENDS in urgency
-        // (CRITICAL=0 .. BACKGROUND=4), so the urgent end is ASC, not DESC.
-        // Ordering DESC handed out BACKGROUND work ahead of CRITICAL work: in the
-        // enerbank.com run Nuclei (LOW=3) drained the queue ahead of naabu and
-        // nmap (MEDIUM=2), and nmap never started a single one of its 773 jobs.
-        .orderBy('jobs.priority', 'ASC')
+        // [OPT-1] Use addOrderBy for compound sort (priority first, then createdAt)
+        .orderBy('jobs.priority', 'DESC')
         .addOrderBy('jobs.createdAt', 'ASC');
 
       // [OPT-3] Only join workspaceTargets/workspaces when actually needed
@@ -777,17 +537,6 @@ export class JobsRegistryService {
         if (worker.scope !== WorkerScope.CLOUD) {
           queryBuilder.andWhere('workspaces.id = :workspaceId', {
             workspaceId: worker.workspace.id,
-          });
-        }
-
-        // A Nuclei bootstrap/upstream outage must not block unrelated tools.
-        // Stale means a validated last-known-good set is still available.
-        if (
-          worker.nucleiTemplateStatus !== 'ready' &&
-          worker.nucleiTemplateStatus !== 'stale'
-        ) {
-          queryBuilder.andWhere('tool.name != :unreadyNucleiTool', {
-            unreadyNucleiTool: 'nuclei',
           });
         }
       } else {
@@ -826,8 +575,7 @@ export class JobsRegistryService {
         return null;
       }
 
-      const execution = createToolExecutionPlan(job);
-      if (!execution) {
+      if (isBuiltInTools && !job.command) {
         await queryRunner.rollbackTransaction();
         return null;
       }
@@ -849,7 +597,6 @@ export class JobsRegistryService {
         priority: job.priority,
         command: job.command,
         asset: job.asset,
-        execution,
       };
     } catch (error) {
       Logger.error(
@@ -977,22 +724,11 @@ export class JobsRegistryService {
   }
 
   public async handleJobError(dto: UpdateResultDto, job: Job, error: Error) {
-    const logMessage = error.message.slice(0, 4096);
-    const diagnosticPayload = JSON.stringify({
-      outcome: dto.data.outcome,
-      exitCode: dto.data.exitCode,
-      failureMessage: dto.data.failureMessage,
-      stderr: dto.data.stderr?.slice(0, 4096),
-      stdoutTruncated: dto.data.stdoutTruncated,
-      stderrTruncated: dto.data.stderrTruncated,
-    }).slice(0, 8192);
-
     await this.repo.save({
       ...job,
       status: JobStatus.FAILED,
-      error: logMessage,
+      error: error.message,
       retryCount: job.retryCount + 1,
-      completedAt: new Date(),
     });
 
     // Deduplicate error logs - only create new log if message differs from last error
@@ -1001,11 +737,11 @@ export class JobsRegistryService {
       order: { createdAt: 'DESC' },
     });
 
-    if (!lastErrorLog || lastErrorLog.logMessage !== logMessage) {
+    if (!lastErrorLog || lastErrorLog.logMessage !== error.message) {
       await this.jobErrorLogRepo.save({
         job,
-        logMessage,
-        payload: diagnosticPayload,
+        logMessage: error.message,
+        payload: JSON.stringify(dto.data),
       });
     }
   }
@@ -1103,26 +839,6 @@ export class JobsRegistryService {
   }
 
   /**
-   * Whether a run still has work that has not reached a terminal state. Drives
-   * the workflow step barrier: a step is finished only when none of its jobs are
-   * pending or in progress.
-   * @param repo repository to read through (pass a transactional one to read
-   * inside an open transaction rather than checking out another connection)
-   * @param jobHistoryId the run to inspect
-   */
-  private async hasOpenJobsForRun(
-    repo: Repository<Job>,
-    jobHistoryId: string,
-  ): Promise<boolean> {
-    return repo.exists({
-      where: {
-        jobHistory: { id: jobHistoryId },
-        status: In([JobStatus.PENDING, JobStatus.IN_PROGRESS]),
-      },
-    });
-  }
-
-  /**
    * Gets the next step for a job based on workflow definition.
    * @param job the completed job
    * @returns number of new jobs created (0 means no more steps in workflow)
@@ -1137,112 +853,30 @@ export class JobsRegistryService {
     const currentJobMetadata = jobs.find((j) => j.run === currentTool);
     if (!currentJobMetadata) return 0;
 
-    const indexCurrentTool = jobs.findIndex(
+    const indexCurrentTool = workflow?.content.jobs.findIndex(
       (j) => j.name === currentJobMetadata.name,
     );
+    const nextTool = workflow?.content.jobs[indexCurrentTool + 1]?.run;
+    if (!nextTool) return 0;
 
-    const jobHistoryId = job.jobHistory.id;
-
-    // A workflow step is a barrier: it begins only once the previous step has
-    // fully drained across the whole run. Advancing per-completion (the previous
-    // behaviour) let the FIRST asset to finish drag the whole pipeline forward —
-    // in the enerbank.com run the 4th of 338 naabu completions landed on an asset
-    // with no discovered services, so nmap/httpx/screenshot each yielded zero
-    // jobs for that one asset, the forward-walk fell through to Nuclei, and 338
-    // vulnerability jobs were created while 334 port scans were still pending.
-    //
-    // Unlocked fast path first. Every job saves its own terminal status before
-    // getting here, so whichever job commits LAST is guaranteed to observe a
-    // drained run — no completion can be missed by checking without a lock. The
-    // other 337 completions answer from this one indexed query and never open a
-    // transaction, which matters: the pg pool and the result processor are both
-    // sized at 10, so routing every completion through a locking transaction
-    // would let ten waiters pin the entire pool.
-    if (await this.hasOpenJobsForRun(this.repo, jobHistoryId)) return 0;
-
-    // Slow path: this completion believes it drained the step. Serialize the
-    // check-and-advance so two jobs finishing together cannot both fan out the
-    // next step.
-    return this.dataSource.transaction(async (manager) => {
-      await manager.query(
-        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
-        [`workflow-step:${jobHistoryId}`],
-      );
-
-      // Re-check under the lock: the pre-check above raced by definition.
-      // Returning 0 is safe — markWorkflowDone independently re-checks for open
-      // jobs before completing the run.
-      if (await this.hasOpenJobsForRun(manager.getRepository(Job), jobHistoryId))
-        return 0;
-
-      // Resume from the furthest step the run has actually reached, not from the
-      // completing job's own step. The last job to finish can belong to an
-      // earlier step (steps overlap when an earlier one is retried or re-run),
-      // and walking from its index would re-create steps that already completed.
-      const toolsInRun = await manager
-        .getRepository(Job)
-        .createQueryBuilder('job')
-        .select('DISTINCT tool.name', 'name')
-        .innerJoin('job.tool', 'tool')
-        .where('job."jobHistoryId" = :jobHistoryId', { jobHistoryId })
-        .getRawMany<{ name: string }>();
-
-      const resumeIndex = toolsInRun.reduce((furthest, { name }) => {
-        const index = jobs.findIndex((j) => j.run === name);
-        return index > furthest ? index : furthest;
-      }, indexCurrentTool);
-
-      // Walk forward through the remaining workflow steps. A step that yields zero
-      // jobs must NOT terminate the pipeline: the gate that excluded every
-      // candidate (e.g. the screenshot web-service gate when nmap classified no
-      // web services) is step-local and must not silently strand the downstream
-      // steps. When the next step creates nothing we skip to the following step so
-      // vulnerability scanning (Nuclei) still runs across the full attack surface.
-      // Only a step that actually creates jobs stops the walk; those jobs'
-      // completions then drive the next transition. This is the fix for "pipeline
-      // stops after httpx": previously a zero-job next step returned 0 and the
-      // workflow was immediately marked done.
-      for (let index = resumeIndex + 1; index < jobs.length; index++) {
-        const nextTool = jobs[index]?.run;
-        if (!nextTool) continue;
-
-        const tools = await this.toolsService.getToolByNames({
-          names: [nextTool],
-        });
-
-        const createPromises = tools.map((tool) =>
-          this.createNewJob({
-            tool,
-            targetIds: [job.asset.target.id],
-            // Every step is fanned out target-wide. Now that a transition fires
-            // once per run rather than once per completing asset, scoping to
-            // [job.asset.id] would strand every other asset in the target at this
-            // step — only the host that happened to finish last would advance.
-            // The idempotency guards in findAssetsForJob/findAssetServicesForJob
-            // keep the fan-out from duplicating existing open jobs.
-            assetIds: [],
-            workflow: job.jobHistory.workflow,
-            jobHistory: job.jobHistory,
-            priority: tool.priority,
-            workspaceId: workflow.workspace.id,
-            // Stay on the locked transaction's connection — see CreateJobs.manager.
-            manager,
-          }),
-        );
-
-        const results = await Promise.all(createPromises);
-        const createdCount = results.reduce(
-          (total, created) => total + created.length,
-          0,
-        );
-
-        if (createdCount > 0) {
-          return createdCount;
-        }
-      }
-
-      return 0;
+    const tools = await this.toolsService.getToolByNames({
+      names: [nextTool],
     });
+
+    const createPromises = tools.map((tool) =>
+      this.createNewJob({
+        tool,
+        targetIds: [job.asset.target.id],
+        assetIds: [job.asset.id],
+        workflow: job.jobHistory.workflow,
+        jobHistory: job.jobHistory,
+        priority: tool.priority,
+        workspaceId: workflow.workspace.id,
+      }),
+    );
+
+    const results = await Promise.all(createPromises);
+    return results.reduce((total, jobs) => total + jobs.length, 0);
   }
 
   /**
@@ -1332,33 +966,22 @@ export class JobsRegistryService {
       'createdAt',
     );
 
-    // Define interface for raw query result. Per-status counts are returned
-    // raw and the aggregate status / action-eligibility are derived in TS via
-    // deriveJobHistoryStatus, so the precedence rules live in one testable
-    // place instead of an inline SQL CASE.
+    // Define interface for raw query result
     interface RawJobHistoryResult {
       id: string;
       createdAt: Date;
       updatedAt: Date;
       totalJobs: string; // COUNT returns string in some databases
-      pendingJobs: string;
-      inProgressJobs: string;
-      pausedJobs: string;
-      completedJobs: string;
-      failedJobs: string;
-      cancelledJobs: string;
+      pauseEligibleJobs: string;
+      resumeEligibleJobs: string;
+      cancelEligibleJobs: string;
+      status: JobStatus;
       workflowName: string;
       jobHistoryName: string;
       jobRunType: JobRunType;
     }
 
-    // Per-status count for the history's jobs. Correlated subqueries (rather
-    // than aggregating the joined rows) count every job in the history, not
-    // just the workspace-filtered rows produced by the joins above.
-    const statusCount = (status: JobStatus): string =>
-      `(SELECT COUNT(*) FROM jobs WHERE "jobHistoryId" = "jobHistory".id AND status = '${status}')`;
-
-    // Query job histories with calculated counts using subqueries
+    // Query job histories with calculated counts and statuses using subqueries
     const qb = this.jobHistoryRepo
       .createQueryBuilder('jobHistory')
       .innerJoin('jobHistory.jobs', 'job')
@@ -1372,24 +995,41 @@ export class JobsRegistryService {
         '"jobHistory".id as "id"',
         '"jobHistory"."createdAt" as "createdAt"',
         '"jobHistory"."jobHistoryName" as "jobHistoryName"',
-        `COALESCE(
-          (
-            SELECT MAX(COALESCE("completedAt", "updatedAt"))
-            FROM jobs
-            WHERE "jobHistoryId" = "jobHistory".id
-          ),
-          "jobHistory"."updatedAt"
-        ) as "updatedAt"`,
+        '"jobHistory"."updatedAt" as "updatedAt"',
         '"workflow"."name" as "workflowName"',
         '"jobHistory"."jobRunType" as "jobRunType"',
         // Subquery to count total jobs for this job history
         '(SELECT COUNT(*) FROM jobs WHERE "jobHistoryId" = "jobHistory".id) as "totalJobs"',
-        `${statusCount(JobStatus.PENDING)} as "pendingJobs"`,
-        `${statusCount(JobStatus.IN_PROGRESS)} as "inProgressJobs"`,
-        `${statusCount(JobStatus.PAUSED)} as "pausedJobs"`,
-        `${statusCount(JobStatus.COMPLETED)} as "completedJobs"`,
-        `${statusCount(JobStatus.FAILED)} as "failedJobs"`,
-        `${statusCount(JobStatus.CANCELLED)} as "cancelledJobs"`,
+        `(
+          SELECT COUNT(*) FROM jobs
+          WHERE "jobHistoryId" = "jobHistory".id
+          AND status IN ('${JobStatus.PENDING}', '${JobStatus.IN_PROGRESS}')
+        ) as "pauseEligibleJobs"`,
+        `(
+          SELECT COUNT(*) FROM jobs
+          WHERE "jobHistoryId" = "jobHistory".id
+          AND status = '${JobStatus.PAUSED}'
+        ) as "resumeEligibleJobs"`,
+        `(
+          SELECT COUNT(*) FROM jobs
+          WHERE "jobHistoryId" = "jobHistory".id
+          AND status IN ('${JobStatus.PENDING}', '${JobStatus.IN_PROGRESS}', '${JobStatus.PAUSED}')
+        ) as "cancelEligibleJobs"`,
+        // Subquery with CASE to calculate status based on job statuses
+        `(
+          SELECT 
+            CASE 
+              WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.FAILED}') > 0 THEN '${JobStatus.FAILED}'
+              WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.IN_PROGRESS}') > 0 THEN '${JobStatus.IN_PROGRESS}'
+              WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.PAUSED}') > 0 THEN '${JobStatus.PAUSED}'
+              WHEN COUNT(*) FILTER (WHERE status = '${JobStatus.CANCELLED}') = COUNT(*) AND COUNT(*) > 0 THEN '${JobStatus.CANCELLED}'
+              WHEN COUNT(*) FILTER (WHERE status IN ('${JobStatus.COMPLETED}', '${JobStatus.CANCELLED}')) = COUNT(*) 
+                AND COUNT(*) FILTER (WHERE status = '${JobStatus.COMPLETED}') > 0 THEN '${JobStatus.COMPLETED}'
+              ELSE '${JobStatus.PENDING}'
+            END
+          FROM jobs 
+          WHERE "jobHistoryId" = "jobHistory".id
+        ) as "status"`,
       ])
       .groupBy('jobHistory.id')
       .addGroupBy('workflow.name')
@@ -1408,35 +1048,20 @@ export class JobsRegistryService {
       .where('workspace.id = :workspaceId', { workspaceId })
       .getCount();
 
-    // Transform raw results to match the response DTO structure. Aggregate
-    // status and action-eligibility counts are derived from the same per-status
-    // counts, so they can never disagree.
-    const transformedData = rawResults.map((raw) => {
-      const counts: JobHistoryStatusCounts = {
-        total: parseInt(raw.totalJobs, 10),
-        pending: parseInt(raw.pendingJobs, 10),
-        inProgress: parseInt(raw.inProgressJobs, 10),
-        paused: parseInt(raw.pausedJobs, 10),
-        completed: parseInt(raw.completedJobs, 10),
-        failed: parseInt(raw.failedJobs, 10),
-        cancelled: parseInt(raw.cancelledJobs, 10),
-      };
-
-      return {
-        id: raw.id,
-        createdAt: raw.createdAt,
-        updatedAt: raw.updatedAt,
-        totalJobs: counts.total,
-        // Pause acts on outstanding work; resume on held work; cancel on both.
-        pauseEligibleJobs: counts.pending + counts.inProgress,
-        resumeEligibleJobs: counts.paused,
-        cancelEligibleJobs: counts.pending + counts.inProgress + counts.paused,
-        status: deriveJobHistoryStatus(counts),
-        workflowName: raw.workflowName,
-        jobHistoryName: raw.jobHistoryName,
-        jobRunType: raw.jobRunType,
-      };
-    });
+    // Transform raw results to match the response DTO structure
+    const transformedData = rawResults.map((raw) => ({
+      id: raw.id,
+      createdAt: raw.createdAt,
+      updatedAt: raw.updatedAt,
+      totalJobs: parseInt(raw.totalJobs),
+      pauseEligibleJobs: parseInt(raw.pauseEligibleJobs),
+      resumeEligibleJobs: parseInt(raw.resumeEligibleJobs),
+      cancelEligibleJobs: parseInt(raw.cancelEligibleJobs),
+      status: raw.status,
+      workflowName: raw.workflowName,
+      jobHistoryName: raw.jobHistoryName,
+      jobRunType: raw.jobRunType,
+    }));
 
     return getManyResponse({ query, data: transformedData, total });
   }
@@ -1451,6 +1076,9 @@ export class JobsRegistryService {
       },
       relations: {
         workflow: true,
+        jobs: {
+          tool: true,
+        },
       },
     });
 
@@ -1487,63 +1115,6 @@ export class JobsRegistryService {
       })
       .filter((tool) => tool !== undefined);
 
-    // Per-step job counts for the pipeline indicator, aggregated in SQL over the
-    // WHOLE run. The client used to infer step state from the first page of the
-    // paginated job list, which cannot work once a run outgrows one page: that
-    // list is ordered active-work-first, so on a large discovery page one holds
-    // nothing but the currently-running step and every finished step reads back
-    // as "pending". Counting here also drops the previous `jobs: { tool: true }`
-    // relation load, which materialised every job row (thousands of them) just
-    // to render six icons.
-    const statusCounts = await this.repo
-      .createQueryBuilder('job')
-      .select('tool.name', 'toolName')
-      .addSelect('job.status', 'status')
-      .addSelect('COUNT(*)', 'count')
-      .innerJoin('job.tool', 'tool')
-      .where('job."jobHistoryId" = :id', { id })
-      .groupBy('tool.name')
-      .addGroupBy('job.status')
-      .getRawMany<{ toolName: string; status: JobStatus; count: string }>();
-
-    const countsByTool = new Map<string, JobHistoryStepDetail>();
-    const emptyStep = (toolId: string, toolName: string) => ({
-      toolId,
-      toolName,
-      total: 0,
-      pending: 0,
-      inProgress: 0,
-      paused: 0,
-      completed: 0,
-      failed: 0,
-      cancelled: 0,
-    });
-
-    const steps = (tools ?? []).map((tool) => {
-      const toolName = tool.name ?? '';
-      const step = emptyStep(tool.id ?? '', toolName);
-      countsByTool.set(toolName, step);
-      return step;
-    });
-
-    const statusField: Record<JobStatus, keyof JobHistoryStepDetail> = {
-      [JobStatus.PENDING]: 'pending',
-      [JobStatus.IN_PROGRESS]: 'inProgress',
-      [JobStatus.PAUSED]: 'paused',
-      [JobStatus.COMPLETED]: 'completed',
-      [JobStatus.FAILED]: 'failed',
-      [JobStatus.CANCELLED]: 'cancelled',
-    };
-
-    for (const row of statusCounts) {
-      const step = countsByTool.get(row.toolName);
-      if (!step) continue;
-      const field = statusField[row.status];
-      const count = parseInt(row.count, 10) || 0;
-      if (field) (step[field] as number) += count;
-      step.total += count;
-    }
-
     const {
       id: historyId,
       createdAt,
@@ -1559,7 +1130,6 @@ export class JobsRegistryService {
       createdAt,
       updatedAt,
       tools,
-      steps,
     };
   }
 
@@ -1674,10 +1244,7 @@ export class JobsRegistryService {
     const result = await this.repo
       .createQueryBuilder()
       .update(Job)
-      .set({
-        status: JobStatus.CANCELLED,
-        completedAt: () => 'CURRENT_TIMESTAMP',
-      })
+      .set({ status: JobStatus.CANCELLED })
       .where('"jobHistoryId" = :jobHistoryId', { jobHistoryId })
       .andWhere('status IN (:...statuses)', {
         statuses: [JobStatus.PENDING, JobStatus.IN_PROGRESS, JobStatus.PAUSED],
@@ -1720,9 +1287,7 @@ export class JobsRegistryService {
 
       // Update job status, clear workerId, and increment retryCount
       job.status = JobStatus.PENDING;
-      job.workerId = null;
-      job.pickJobAt = null;
-      job.completedAt = null;
+      job.workerId = undefined;
       job.retryCount = job.retryCount + 1;
 
       await queryRunner.manager.save(job);
@@ -1764,7 +1329,6 @@ export class JobsRegistryService {
       // kills the process; the late/partial result is dropped because result
       // processing only accepts IN_PROGRESS jobs.
       job.status = JobStatus.CANCELLED;
-      job.completedAt = new Date();
 
       await queryRunner.manager.save(job);
 

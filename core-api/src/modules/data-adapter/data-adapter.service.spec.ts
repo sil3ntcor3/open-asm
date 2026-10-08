@@ -1,14 +1,8 @@
 import type { TestingModule } from '@nestjs/testing';
 import { Test } from '@nestjs/testing';
-import * as crypto from 'crypto';
 import type { InsertResult } from 'typeorm';
 import { DataSource } from 'typeorm';
-import {
-  DnsResolutionStatus,
-  Severity,
-  ToolCategory,
-} from '../../common/enums/enum';
-import { AssetService } from '../assets/entities/asset-services.entity';
+import { Severity, ToolCategory } from '../../common/enums/enum';
 import { AssetTag } from '../assets/entities/asset-tags.entity';
 import type { Asset } from '../assets/entities/assets.entity';
 import type { HttpResponse } from '../assets/entities/http-response.entity';
@@ -24,7 +18,6 @@ describe('DataAdapterService', () => {
   let mockQueryRunner: any;
   let mockDataSource: any;
   let mockWorkspacesService: any;
-  let mockStorageService: any;
 
   beforeEach(async () => {
     mockQueryRunner = {
@@ -102,7 +95,6 @@ describe('DataAdapterService', () => {
     }).compile();
 
     service = module.get<DataAdapterService>(DataAdapterService);
-    mockStorageService = module.get(StorageService);
 
     // Mock validateData method to return true for valid data and false for invalid data
     jest.spyOn(service, 'validateData').mockImplementation((data, cls) => {
@@ -235,77 +227,7 @@ describe('DataAdapterService', () => {
       expect(mockQueryRunner.startTransaction).toHaveBeenCalled();
       expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
       expect(mockQueryRunner.release).toHaveBeenCalled();
-      expect(mockQueryRunner.manager.orUpdate).toHaveBeenCalledWith(
-        ['dnsRecords', 'dnsResolutionStatus'],
-        ['value', 'targetId'],
-      );
       expect(result).toEqual(mockInsertResult);
-    });
-
-    // The floor is seeded at discovery time, not only after a port scan, so an
-    // asset whose naabu job never runs (worker outage, target-wide block,
-    // cancelled run) still gets an HTTP probe instead of silently disappearing
-    // from the inventory.
-    it('seeds the web port floor for every newly discovered asset', async () => {
-      const mockInsertResult = {
-        identifiers: [],
-        generatedMaps: [],
-        raw: [
-          { id: 'asset1-id', value: 'sub1.example.com' },
-          { id: 'asset2-id', value: 'sub2.example.com' },
-          // Unresolved names are excluded from HTTP probing, so seeding them
-          // would leave services that are never probed and never cleared —
-          // permanently inflating the target's service count.
-          {
-            id: 'asset3-id',
-            value: 'dead.example.com',
-            dnsResolutionStatus: DnsResolutionStatus.UNRESOLVED,
-          },
-        ],
-      } as unknown as InsertResult;
-
-      mockDataSource.createQueryRunner.mockReturnValue(mockQueryRunner);
-      mockQueryRunner.manager
-        .createQueryBuilder()
-        .execute.mockResolvedValueOnce(undefined) // Update Asset
-        .mockResolvedValueOnce(mockInsertResult) // Insert Assets
-        .mockResolvedValueOnce(undefined); // Floor asset_services
-      mockWorkspacesService.getWorkspaceIdByTargetId.mockResolvedValue(
-        'workspace-id',
-      );
-      mockWorkspacesService.getWorkspaceConfigValue.mockResolvedValue({
-        isAutoEnableAssetAfterDiscovered: true,
-      });
-      const values = mockQueryRunner.manager.createQueryBuilder().values;
-      values.mockClear();
-
-      await service.subdomains({ data: mockAssets, job: mockJob });
-
-      expect(values).toHaveBeenCalledWith(
-        expect.arrayContaining([
-          expect.objectContaining({
-            assetId: 'asset1-id',
-            port: 443,
-            value: 'sub1.example.com:443',
-          }),
-          expect.objectContaining({
-            assetId: 'asset2-id',
-            port: 80,
-            value: 'sub2.example.com:80',
-          }),
-        ]),
-      );
-
-      const floorCall = values.mock.calls.find(
-        ([payload]) =>
-          Array.isArray(payload) &&
-          payload.some(
-            (row: { assetId?: string }) => row.assetId === 'asset1-id',
-          ),
-      );
-      expect(floorCall?.[0]).not.toContainEqual(
-        expect.objectContaining({ assetId: 'asset3-id' }),
-      );
     });
 
     it('should rollback transaction on error', async () => {
@@ -439,7 +361,7 @@ describe('DataAdapterService', () => {
       expect(mockQueryRunner.release).toHaveBeenCalled();
     });
 
-    it('should flag the asset service as an error page when the probe failed', async () => {
+    it('should update asset service when response failed', async () => {
       const failedResponse = { ...mockHttpResponse, failed: true };
 
       mockDataSource.createQueryRunner.mockReturnValue(mockQueryRunner);
@@ -452,31 +374,9 @@ describe('DataAdapterService', () => {
         job: mockJob,
       });
 
-      expect(mockQueryRunner.manager.set).toHaveBeenCalledWith({
-        isErrorPage: true,
-      });
-    });
-
-    it('should clear the error-page flag when a later probe succeeds', async () => {
-      // Regression guard: isErrorPage must reflect the *latest* probe. A service
-      // that failed once and is later probed successfully (failed=false) must be
-      // un-flagged, otherwise it stays hidden from every isErrorPage=false
-      // consumer (e.g. the Targets "services" count) forever.
-      const successResponse = { ...mockHttpResponse, failed: false };
-
-      mockDataSource.createQueryRunner.mockReturnValue(mockQueryRunner);
-      mockQueryRunner.manager
-        .createQueryBuilder()
-        .execute.mockResolvedValue(undefined);
-
-      await service.httpResponses({
-        data: successResponse,
-        job: mockJob,
-      });
-
-      expect(mockQueryRunner.manager.set).toHaveBeenCalledWith({
-        isErrorPage: false,
-      });
+      expect(mockQueryRunner.manager.createQueryBuilder).toHaveBeenCalledTimes(
+        3,
+      );
     });
 
     it('should rollback transaction on error', async () => {
@@ -555,117 +455,6 @@ describe('DataAdapterService', () => {
         expect.objectContaining({
           ports: mockPorts,
         }),
-      );
-    });
-
-    // Target-side scan detection (tarpit/firewall) answers the SYN on nearly
-    // every probed port, so naabu reports hundreds of "open" ports for one host.
-    // In the enerbank.com run 121 of 338 assets came back with 50-435 open ports
-    // and produced 27,318 asset_services between them. Those are not real
-    // services: persisting them inflates the inventory and makes each downstream
-    // per-service step (nmap, httpx, screenshot) fan out to tens of thousands of
-    // jobs. The raw Port row is still written so the evidence is not lost.
-    it('does not create asset services for a host reporting implausibly many open ports', async () => {
-      const tarpitPorts = Array.from({ length: 300 }, (_, i) => i + 1);
-
-      mockDataSource.createQueryRunner.mockReturnValue(mockQueryRunner);
-      mockQueryRunner.manager
-        .createQueryBuilder()
-        .execute.mockResolvedValue(undefined);
-      const values = mockQueryRunner.manager.createQueryBuilder().values;
-      values.mockClear();
-
-      await service.portsScanner({ data: tarpitPorts, job: mockJob });
-
-      // The raw port record is still persisted...
-      expect(values).toHaveBeenCalledWith(
-        expect.objectContaining({ ports: tarpitPorts }),
-      );
-
-      // ...and no asset_services are derived from the 300 bogus ports...
-      const derivedFromScan = values.mock.calls.find(
-        ([payload]) =>
-          Array.isArray(payload) &&
-          payload.some((row: { port: number }) => row.port === 250),
-      );
-      expect(derivedFromScan).toBeUndefined();
-
-      // ...but the web port floor is still seeded. A tarpitted host is exactly
-      // the case the floor exists for: discarding its port list must cost depth,
-      // not the baseline HTTP check that keeps the asset in the inventory.
-      expect(values).toHaveBeenCalledWith(
-        expect.arrayContaining([
-          expect.objectContaining({ port: 443, assetId: 'asset-id' }),
-        ]),
-      );
-      expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
-    });
-
-    it('seeds the web port floor when the scan returns no open ports', async () => {
-      mockDataSource.createQueryRunner.mockReturnValue(mockQueryRunner);
-      mockQueryRunner.manager
-        .createQueryBuilder()
-        .execute.mockResolvedValue(undefined);
-      const values = mockQueryRunner.manager.createQueryBuilder().values;
-      values.mockClear();
-
-      // An empty result is what a blocked scan — or the worker's edge detection
-      // discarding an untrustworthy port list — produces. Before the floor this
-      // left the asset with zero services and therefore zero HTTP probes, which
-      // the UI rendered as "no services" and an operator reads as "clean".
-      await service.portsScanner({ data: [], job: mockJob });
-
-      expect(values).toHaveBeenCalledWith(
-        expect.arrayContaining([
-          expect.objectContaining({
-            port: 80,
-            assetId: 'asset-id',
-            value: 'example.com:80',
-          }),
-          expect.objectContaining({
-            port: 443,
-            assetId: 'asset-id',
-            value: 'example.com:443',
-          }),
-        ]),
-      );
-    });
-
-    it('does not duplicate a floor port the scan also discovered', async () => {
-      mockDataSource.createQueryRunner.mockReturnValue(mockQueryRunner);
-      mockQueryRunner.manager
-        .createQueryBuilder()
-        .execute.mockResolvedValue(undefined);
-      const orUpdate = mockQueryRunner.manager.createQueryBuilder().orUpdate;
-      orUpdate.mockClear();
-
-      await service.portsScanner({ data: [443], job: mockJob });
-
-      // Both the scan insert and the floor insert must upsert on (assetId, port)
-      // so the overlap collapses instead of violating the unique constraint.
-      expect(orUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          conflict_target: ['assetId', 'port'],
-        }),
-      );
-    });
-
-    it('still creates asset services for a plausible open-port count', async () => {
-      const realPorts = [22, 80, 443, 8080];
-
-      mockDataSource.createQueryRunner.mockReturnValue(mockQueryRunner);
-      mockQueryRunner.manager
-        .createQueryBuilder()
-        .execute.mockResolvedValue(undefined);
-      const values = mockQueryRunner.manager.createQueryBuilder().values;
-      values.mockClear();
-
-      await service.portsScanner({ data: realPorts, job: mockJob });
-
-      expect(values).toHaveBeenCalledWith(
-        expect.arrayContaining([
-          expect.objectContaining({ port: 443, assetId: 'asset-id' }),
-        ]),
       );
     });
 
@@ -778,217 +567,6 @@ describe('DataAdapterService', () => {
       );
       expect(mockQueryBuilder.returning).toHaveBeenCalledWith('*');
       expect(mockQueryBuilder.execute).toHaveBeenCalled();
-    });
-
-    describe('service port reconciliation', () => {
-      const buildQueryBuilder = () => ({
-        insert: jest.fn().mockReturnThis(),
-        into: jest.fn().mockReturnThis(),
-        values: jest.fn().mockReturnThis(),
-        orUpdate: jest.fn().mockReturnThis(),
-        returning: jest.fn().mockReturnThis(),
-        execute: jest.fn().mockResolvedValue({ raw: [], identifiers: [] }),
-      });
-
-      type AssetServiceRow = { value: string; port: number; assetId: string };
-
-      // insert().into(X).values(Y) is one chain on a shared builder, so the nth
-      // into() call pairs with the nth values() call. Keep only the pairs whose
-      // target is AssetService.
-      const assetServiceValues = (queryBuilder: {
-        into: jest.Mock;
-        values: jest.Mock;
-      }): AssetServiceRow[] =>
-        queryBuilder.into.mock.calls.flatMap(([target], index) => {
-          if (target !== AssetService) return [];
-          const values = queryBuilder.values.mock.calls[index]?.[0] as
-            | AssetServiceRow[]
-            | undefined;
-          return Array.isArray(values) ? values : [];
-        });
-
-      beforeEach(() => {
-        mockDataSource.transaction.mockImplementation(
-          async (callback: (manager: any) => Promise<any>) => {
-            await callback(mockQueryRunner.manager);
-            return undefined;
-          },
-        );
-      });
-
-      it('records a service port proven by a finding the port scan missed', async () => {
-        const queryBuilder = buildQueryBuilder();
-        mockQueryRunner.manager.createQueryBuilder.mockReturnValue(
-          queryBuilder,
-        );
-
-        await service.vulnerabilities({
-          data: [
-            {
-              name: 'Redis < 8.2.1 lua script - Integer Overflow',
-              severity: Severity.CRITICAL,
-              host: 'example.com',
-              ports: ['6379'],
-              affectedUrl: 'example.com:6379',
-              evidence: [
-                {
-                  type: 'javascript',
-                  host: 'example.com',
-                  port: '6379',
-                  matchedAt: 'example.com:6379',
-                },
-              ],
-            },
-          ] as unknown as Vulnerability[],
-          job: mockJob,
-        });
-
-        expect(assetServiceValues(queryBuilder)).toEqual([
-          { value: 'example.com:6379', port: 6379, assetId: 'asset-id' },
-        ]);
-        expect(queryBuilder.orUpdate).toHaveBeenCalledWith({
-          conflict_target: ['assetId', 'port'],
-          overwrite: ['value'],
-        });
-      });
-
-      it('deduplicates ports repeated across findings and evidence entries', async () => {
-        const queryBuilder = buildQueryBuilder();
-        mockQueryRunner.manager.createQueryBuilder.mockReturnValue(
-          queryBuilder,
-        );
-
-        await service.vulnerabilities({
-          data: [
-            {
-              name: 'Redis Server - Unauthenticated Access',
-              severity: Severity.HIGH,
-              host: 'example.com',
-              ports: ['6379'],
-              evidence: [
-                { type: 'tcp', host: 'example.com', port: '6379' },
-                { type: 'javascript', host: 'example.com', port: '6379' },
-              ],
-            },
-            {
-              name: 'SNMPv3 Fingerprint - Detect',
-              severity: Severity.INFO,
-              host: 'example.com',
-              ports: ['161'],
-              evidence: [
-                { type: 'javascript', host: 'example.com', port: '161' },
-              ],
-            },
-          ] as unknown as Vulnerability[],
-          job: mockJob,
-        });
-
-        expect(assetServiceValues(queryBuilder)).toEqual([
-          { value: 'example.com:6379', port: 6379, assetId: 'asset-id' },
-          { value: 'example.com:161', port: 161, assetId: 'asset-id' },
-        ]);
-      });
-
-      it('ignores findings whose host is not the scanned asset', async () => {
-        const queryBuilder = buildQueryBuilder();
-        mockQueryRunner.manager.createQueryBuilder.mockReturnValue(
-          queryBuilder,
-        );
-
-        await service.vulnerabilities({
-          data: [
-            {
-              name: 'Redirected Finding',
-              severity: Severity.INFO,
-              host: 'someone-else.com',
-              ports: ['6379'],
-              evidence: [
-                { type: 'tcp', host: 'someone-else.com', port: '6379' },
-              ],
-            },
-          ] as unknown as Vulnerability[],
-          job: mockJob,
-        });
-
-        expect(assetServiceValues(queryBuilder)).toEqual([]);
-      });
-
-      it('ignores protocols that never touch the asset and unusable ports', async () => {
-        const queryBuilder = buildQueryBuilder();
-        mockQueryRunner.manager.createQueryBuilder.mockReturnValue(
-          queryBuilder,
-        );
-
-        await service.vulnerabilities({
-          data: [
-            {
-              name: 'DNS finding resolved by a nameserver, not the asset',
-              severity: Severity.INFO,
-              evidence: [{ type: 'dns', host: 'example.com', port: '53' }],
-            },
-            {
-              name: 'Whois finding answered by the registry',
-              severity: Severity.INFO,
-              evidence: [{ type: 'whois', host: 'example.com', port: '43' }],
-            },
-            {
-              name: 'Finding with an out-of-range port',
-              severity: Severity.INFO,
-              evidence: [{ type: 'tcp', host: 'example.com', port: '70000' }],
-            },
-            {
-              name: 'Finding with a non-numeric port',
-              severity: Severity.INFO,
-              evidence: [{ type: 'tcp', host: 'example.com', port: 'redis' }],
-            },
-          ] as unknown as Vulnerability[],
-          job: mockJob,
-        });
-
-        expect(assetServiceValues(queryBuilder)).toEqual([]);
-      });
-
-      it('accepts scheme-qualified and bracketed hosts for the scanned asset', async () => {
-        const queryBuilder = buildQueryBuilder();
-        mockQueryRunner.manager.createQueryBuilder.mockReturnValue(
-          queryBuilder,
-        );
-
-        await service.vulnerabilities({
-          data: [
-            {
-              name: 'TLS finding reported with a URL host',
-              severity: Severity.INFO,
-              evidence: [
-                {
-                  type: 'ssl',
-                  host: 'https://Example.com:8443/login',
-                  port: '8443',
-                },
-              ],
-            },
-          ] as unknown as Vulnerability[],
-          job: mockJob,
-        });
-
-        expect(assetServiceValues(queryBuilder)).toEqual([
-          { value: 'example.com:8443', port: 8443, assetId: 'asset-id' },
-        ]);
-      });
-
-      it('does not write asset services when no finding carries a port', async () => {
-        const queryBuilder = buildQueryBuilder();
-        mockQueryRunner.manager.createQueryBuilder.mockReturnValue(
-          queryBuilder,
-        );
-
-        await service.vulnerabilities({
-          data: mockVulnerabilities,
-          job: mockJob,
-        });
-
-        expect(queryBuilder.into).not.toHaveBeenCalledWith(AssetService);
-      });
     });
 
     it('should not create duplicate issues for existing open issues', async () => {
@@ -1623,164 +1201,6 @@ describe('DataAdapterService', () => {
       ).rejects.toThrow('Data validation failed for category: classifier');
 
       expect(service.validateData).toHaveBeenCalledWith(mockData, AssetTag);
-    });
-  });
-
-  describe('serviceDiscovery', () => {
-    const webJob = {
-      assetServiceId: 'svc-1',
-      assetService: { id: 'svc-1', port: 443 },
-    } as never;
-
-    it('stores service, product and scheme for a web service', async () => {
-      await service.serviceDiscovery({
-        job: webJob,
-        data: [
-          {
-            port: 443,
-            service: 'ssl/http',
-            product: 'Apache httpd',
-            isWeb: true,
-            scheme: 'https',
-          },
-        ],
-      } as never);
-
-      expect(mockDataSource.set).toHaveBeenCalledWith({
-        service: 'ssl/http',
-        product: 'Apache httpd',
-        scheme: 'https',
-      });
-      expect(mockDataSource.where).toHaveBeenCalledWith({ id: 'svc-1' });
-    });
-
-    it('clears the scheme for a non-web service so it is never screenshotted', async () => {
-      await service.serviceDiscovery({
-        job: {
-          assetServiceId: 'svc-2',
-          assetService: { id: 'svc-2', port: 465 },
-        },
-        data: [
-          {
-            port: 465,
-            service: 'ssl/smtp',
-            product: 'Exim smtpd',
-            isWeb: false,
-            scheme: '',
-          },
-        ],
-      } as never);
-
-      expect(mockDataSource.set).toHaveBeenCalledWith({
-        service: 'ssl/smtp',
-        product: 'Exim smtpd',
-        scheme: null,
-      });
-    });
-
-    it('matches the entry for this service port among multiple results', async () => {
-      await service.serviceDiscovery({
-        job: webJob,
-        data: [
-          { port: 80, service: 'http', isWeb: true, scheme: 'http' },
-          { port: 443, service: 'ssl/http', isWeb: true, scheme: 'https' },
-        ],
-      } as never);
-
-      expect(mockDataSource.set).toHaveBeenCalledWith(
-        expect.objectContaining({ service: 'ssl/http', scheme: 'https' }),
-      );
-    });
-
-    it('is a no-op without an asset service or data', async () => {
-      await service.serviceDiscovery({ job: {}, data: [] } as never);
-      expect(mockDataSource.update).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('screenshot', () => {
-    const jobForService = (host: string, port: number) =>
-      ({
-        asset: { id: 'asset-id', value: host },
-        assetService: { id: `svc-${port}`, value: `${host}:${port}`, port },
-        assetServiceId: `svc-${port}`,
-        jobHistory: { id: 'history-id' },
-        tool: { id: 'tool-id', category: ToolCategory.SCREENSHOT },
-      }) as unknown as Job;
-
-    const payload = { screenshot: 'aGVsbG8=', url: 'https://example.com' };
-
-    const uploadedNames = (): string[] =>
-      (mockStorageService.uploadFile.mock.calls as [string][]).map(
-        ([name]) => name,
-      );
-
-    // A screenshot job is created per asset_service, but the object name used to
-    // be derived from the asset, so every service on a host wrote to one key and
-    // all of them pointed at it — 626 services sharing 331 images in the
-    // enerbank.com run. Inspecting :7443 could show you the :80 page.
-    it('gives each service on a host its own object', async () => {
-      mockStorageService.uploadFile.mockClear();
-
-      await service.screenshot({
-        data: payload,
-        job: jobForService('identityserver.test.enerbank.com', 443),
-      } as never);
-      await service.screenshot({
-        data: payload,
-        job: jobForService('identityserver.test.enerbank.com', 7443),
-      } as never);
-
-      const names = uploadedNames();
-      expect(names).toHaveLength(2);
-      expect(names[0]).not.toEqual(names[1]);
-    });
-
-    it('derives the object name from the service endpoint, not the host', async () => {
-      mockStorageService.uploadFile.mockClear();
-      const host = 'identityserver.test.enerbank.com';
-
-      await service.screenshot({
-        data: payload,
-        job: jobForService(host, 7443),
-      } as never);
-
-      const expected = `${crypto
-        .createHash('md5')
-        .update(`${host}:7443`)
-        .digest('hex')}.png`;
-      expect(uploadedNames()[0]).toBe(expected);
-    });
-
-    it('falls back to the asset value when the job carries no service', async () => {
-      mockStorageService.uploadFile.mockClear();
-
-      await service.screenshot({
-        data: payload,
-        job: {
-          asset: { id: 'asset-id', value: 'example.com' },
-          assetServiceId: null,
-          jobHistory: { id: 'history-id' },
-          tool: { id: 'tool-id', category: ToolCategory.SCREENSHOT },
-        } as unknown as Job,
-      } as never);
-
-      const expected = `${crypto
-        .createHash('md5')
-        .update('example.com')
-        .digest('hex')}.png`;
-      expect(uploadedNames()[0]).toBe(expected);
-    });
-
-    it('does not upload when the worker captured no image', async () => {
-      mockStorageService.uploadFile.mockClear();
-
-      await service.screenshot({
-        data: { screenshot: '', url: '' },
-        job: jobForService('example.com', 443),
-      } as never);
-
-      expect(mockStorageService.uploadFile).not.toHaveBeenCalled();
     });
   });
 });

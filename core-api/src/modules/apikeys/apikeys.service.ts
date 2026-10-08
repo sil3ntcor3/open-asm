@@ -40,7 +40,7 @@ export class ApiKeysService {
    * @param type - The type of the API key
    * @param refId - The reference ID of the API key
    * @returns The API key entity
-   * Returns null when no active key exists so callers can initialize one.
+   * @throws NotFoundException if the API key with the given type and reference ID is not found
    */
   public async getCurrentApiKey(
     type: ApiKeyType,
@@ -49,6 +49,10 @@ export class ApiKeysService {
     const apiKey = await this.apiKeysRepository.findOne({
       where: { type, ref, isRevoked: false },
     });
+
+    if (!apiKey) {
+      throw new Error('API key not found');
+    }
 
     return apiKey;
   }

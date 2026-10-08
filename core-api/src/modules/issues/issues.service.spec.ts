@@ -417,15 +417,11 @@ describe('IssuesService', () => {
   });
 
   describe('getById', () => {
-    it('scopes the issue lookup to the selected workspace', async () => {
+    it('should return an issue by id without workspaceId check', async () => {
       jest.spyOn(repository, 'findOne').mockResolvedValue(mockIssue as Issue);
 
-      const result = await service.getById('1', mockIssue.workspaceId);
+      const result = await service.getById('1');
       expect(result).toEqual(mockIssue);
-      expect(repository.findOne).toHaveBeenCalledWith({
-        where: { id: '1', workspaceId: mockIssue.workspaceId },
-        relations: ['createdBy'],
-      });
     });
 
     it('should return an issue when workspaceId matches', async () => {
@@ -435,20 +431,20 @@ describe('IssuesService', () => {
       expect(result).toEqual(mockIssue);
     });
 
-    it('does not reveal an issue in another workspace', async () => {
-      jest.spyOn(repository, 'findOne').mockResolvedValue(null);
+    it('should throw ForbiddenException when workspaceId does not match', async () => {
+      jest.spyOn(repository, 'findOne').mockResolvedValue(mockIssue as Issue);
 
       await expect(
         service.getById(mockIssue.id, 'different-workspace-id'),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('should throw NotFoundException if issue not found', async () => {
       jest.spyOn(repository, 'findOne').mockResolvedValue(null);
 
-      await expect(
-        service.getById('non-existent', mockIssue.workspaceId),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.getById('non-existent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -467,7 +463,6 @@ describe('IssuesService', () => {
         '123e4567-e89b-12d3-a456-426614174000',
         updateIssueDto,
         userId,
-        mockIssue.workspaceId,
       );
       expect(result.title).toBe('Updated Title');
     });
@@ -493,7 +488,6 @@ describe('IssuesService', () => {
         '123e4567-e89b-12d3-a456-426614174000',
         updateIssueDto,
         userId,
-        mockIssue.workspaceId,
       );
       expect(result.tags).toEqual(['new-tag1', 'new-tag2']);
     });
@@ -523,7 +517,6 @@ describe('IssuesService', () => {
         '123e4567-e89b-12d3-a456-426614174000',
         updateIssueDto,
         userId,
-        mockIssue.workspaceId,
       );
       expect(result.title).toBe('Updated Title');
       expect(result.tags).toEqual(['updated-tag1', 'updated-tag2']);
@@ -540,7 +533,6 @@ describe('IssuesService', () => {
           '123e4567-e89b-12d3-a456-426614174000',
           updateIssueDto,
           userId,
-          mockIssue.workspaceId,
         ),
       ).rejects.toThrow(ForbiddenException);
     });
@@ -561,7 +553,6 @@ describe('IssuesService', () => {
         '123e4567-e89b-12d3-a456-426614174000',
         changeIssueStatusDto,
         userId,
-        mockIssue.workspaceId,
       );
       expect(result.status).toBe(IssueStatus.CLOSED);
     });
@@ -577,7 +568,6 @@ describe('IssuesService', () => {
           '123e4567-e89b-12d3-a456-426614174000',
           changeIssueStatusDto,
           userId,
-          mockIssue.workspaceId,
         ),
       ).rejects.toThrow(ForbiddenException);
     });
@@ -604,7 +594,6 @@ describe('IssuesService', () => {
         '123e4567-e89b-12d3-a456-426614174000',
         changeIssueStatusDto,
         userId,
-        mockIssue.workspaceId,
       );
 
       // expect(vulnerabilityHandler.onStatusChange).toHaveBeenCalledWith(
@@ -619,7 +608,7 @@ describe('IssuesService', () => {
       jest.spyOn(repository, 'findOne').mockResolvedValue(mockIssue as Issue);
       jest.spyOn(repository, 'remove').mockResolvedValue(mockIssue as Issue);
 
-      const result = await service.delete('1', mockIssue.workspaceId);
+      const result = await service.delete('1');
       expect(result.message).toBe('Issue deleted successfully');
     });
   });
@@ -636,13 +625,11 @@ describe('IssuesService', () => {
       jest
         .spyOn(commentRepository, 'save')
         .mockResolvedValue(mockIssueComment as IssueComment);
-      jest.spyOn(repository, 'findOne').mockResolvedValue(mockIssue as Issue);
 
       const result = await service.createComment(
         createCommentDto,
         issueId,
         userId,
-        mockIssue.workspaceId,
       );
       expect(result).toEqual(mockIssueComment);
     });
@@ -661,7 +648,6 @@ describe('IssuesService', () => {
       jest.spyOn(commentRepository, 'createQueryBuilder').mockReturnValue({
         withDeleted: jest.fn().mockReturnThis(),
         leftJoinAndSelect: jest.fn().mockReturnThis(),
-        innerJoin: jest.fn().mockReturnThis(),
         leftJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
@@ -672,11 +658,7 @@ describe('IssuesService', () => {
         getManyAndCount: jest.fn().mockResolvedValue([[mockIssueComment], 1]),
       } as any);
 
-      const result = await service.getCommentsByIssueId(
-        issueId,
-        query,
-        mockIssue.workspaceId,
-      );
+      const result = await service.getCommentsByIssueId(issueId, query);
       expect(result.data.length).toBe(1);
     });
   });
@@ -699,7 +681,6 @@ describe('IssuesService', () => {
         '1',
         updateCommentDto,
         userId,
-        mockIssue.workspaceId,
       );
       expect(result.content).toBe('Updated Comment');
     });
@@ -714,12 +695,7 @@ describe('IssuesService', () => {
       } as IssueComment);
 
       await expect(
-        service.updateCommentById(
-          '1',
-          updateCommentDto,
-          userId,
-          mockIssue.workspaceId,
-        ),
+        service.updateCommentById('1', updateCommentDto, userId),
       ).rejects.toThrow(Error);
     });
   });
@@ -734,11 +710,7 @@ describe('IssuesService', () => {
       } as IssueComment);
       jest.spyOn(commentRepository, 'softDelete').mockResolvedValue({} as any);
 
-      const result = await service.deleteCommentById(
-        '1',
-        userId,
-        mockIssue.workspaceId,
-      );
+      const result = await service.deleteCommentById('1', userId);
       expect(result.message).toBe('Comment deleted successfully');
     });
 
@@ -750,9 +722,9 @@ describe('IssuesService', () => {
         createdBy: { id: 'another-user' },
       } as IssueComment);
 
-      await expect(
-        service.deleteCommentById('1', userId, mockIssue.workspaceId),
-      ).rejects.toThrow(Error);
+      await expect(service.deleteCommentById('1', userId)).rejects.toThrow(
+        Error,
+      );
     });
   });
 });

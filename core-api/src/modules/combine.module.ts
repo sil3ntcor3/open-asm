@@ -22,6 +22,7 @@ import { WorkersModule } from './workers/workers.module';
 import { WorkflowsModule } from './workflows/workflows.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
 import { AgentsModule } from './agents/agents.module';
+import { RemoteExecuteModule } from './remote-execute/remote-execute.module';
 import { ReportsModule } from './reports/reports.module';
 
 @Module({
@@ -51,6 +52,7 @@ import { ReportsModule } from './reports/reports.module';
     SystemConfigsModule,
     InternalNetworksModule,
     AgentsModule,
+    RemoteExecuteModule,
     ReportsModule,
   ],
 })

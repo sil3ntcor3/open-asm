@@ -20,10 +20,7 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
-import {
-  getStatisticControllerGetIssuesTimelineQueryKey,
-  useStatisticControllerGetIssuesTimeline,
-} from '@/services/apis/gen/queries';
+import { useStatisticControllerGetIssuesTimeline } from '@/services/apis/gen/queries';
 
 const chartConfig = {
   vuls: {
@@ -39,10 +36,7 @@ export default function IssuesTimeline() {
   const { data, isLoading } = useStatisticControllerGetIssuesTimeline({
     query: {
       enabled: !!selectedWorkspaceId,
-      queryKey: [
-        ...getStatisticControllerGetIssuesTimelineQueryKey(),
-        selectedWorkspaceId,
-      ],
+      queryKey: [selectedWorkspaceId],
     },
   });
 

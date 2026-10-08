@@ -1,14 +1,8 @@
 /* eslint-disable */
 
 import type { Severity } from '@/common/enums/enum';
-import {
-  DnsResolutionStatus,
-  JobPriority,
-  ToolCategory,
-} from '@/common/enums/enum';
+import { JobPriority, ToolCategory } from '@/common/enums/enum';
 import { randomUUID } from 'crypto';
-import { readFileSync } from 'fs';
-import { join } from 'path';
 import { Asset } from '../../assets/entities/assets.entity';
 import type {
   Vulnerability,
@@ -17,29 +11,6 @@ import type {
 import { Tool } from '../entities/tools.entity';
 
 type NucleiFinding = Record<string, unknown>;
-
-// Versions reported for archive-delivered tools are whatever the image actually
-// ships, read from the same pinned manifest that gates which archives workers
-// are allowed to download. Hardcoding them here silently misreports every tool
-// as soon as the pinned set is bumped.
-const pinnedToolVersions = (
-  JSON.parse(
-    readFileSync(
-      join(process.cwd(), 'public/archived/tool-manifest.json'),
-      'utf8',
-    ),
-  ) as { tools: Record<string, { version: string }> }
-).tools;
-
-function pinnedVersion(tool: string): string {
-  const version = pinnedToolVersions[tool]?.version;
-  if (!version) {
-    throw new Error(`No pinned archive version for ${tool}`);
-  }
-  return version;
-}
-
-const nucleiVersion = pinnedVersion('nuclei');
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -69,34 +40,6 @@ function asStringArray(value: unknown): string[] {
   }
 
   return [];
-}
-
-/**
- * Escapes U+0000 recursively from string values because PostgreSQL JSONB
- * cannot represent it. Nuclei schema keys stay unchanged to avoid collisions.
- * The literal escape keeps binary scanner evidence visible without dropping
- * the surrounding request, response, metadata, or raw finding.
- */
-function escapePostgresJsonbNullCharacters(value: unknown): unknown {
-  if (typeof value === 'string') {
-    return value.replace(/\u0000/g, '\\u0000');
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => escapePostgresJsonbNullCharacters(item));
-  }
-
-  const record = asRecord(value);
-  if (record) {
-    return Object.fromEntries(
-      Object.entries(record).map(([key, item]) => [
-        key,
-        escapePostgresJsonbNullCharacters(item),
-      ]),
-    );
-  }
-
-  return value;
 }
 
 function createNucleiEvidence(finding: NucleiFinding): VulnerabilityEvidence {
@@ -136,7 +79,7 @@ export const builtInTools: Tool[] = [
       'Subfinder is a subdomain discovery tool that returns valid subdomains for websites, using passive online sources.',
     logoUrl: '/static/images/subfinder.png',
     command:
-      '(echo {{value}} && subfinder -duc -all -d {{value}}) | dnsx -duc -a -aaaa -cname -mx -ns -soa -txt -resp',
+      '(echo {{value}} && subfinder -duc -d {{value}}) | dnsx -duc -a -aaaa -cname -mx -ns -soa -txt -resp',
     parser: (result: string) => {
       const parsed = {};
       result.split('\n').forEach((line) => {
@@ -154,13 +97,9 @@ export const builtInTools: Tool[] = [
         id: randomUUID(),
         value: i,
         dnsRecords: parsed[i],
-        dnsResolutionStatus:
-          (parsed[i].A?.length ?? 0) > 0 || (parsed[i].AAAA?.length ?? 0) > 0
-            ? DnsResolutionStatus.RESOLVED
-            : DnsResolutionStatus.UNRESOLVED,
       })) as Asset[];
     },
-    version: pinnedVersion('subfinder'),
+    version: '2.8.0',
     priority: JobPriority.MEDIUM,
   },
   {
@@ -170,9 +109,9 @@ export const builtInTools: Tool[] = [
       'Httpx is a fast and multi-purpose HTTP toolkit that allows running multiple probes using the retryable http library. It is designed to maintain result reliability with an increased number of threads.',
     logoUrl: '/static/images/httpx.png',
     command:
-      'httpx -duc -u {{value}} -status-code -favicon -asn -title -web-server -irr -tech-detect -ip -cname -location -tls-grab -cdn -probe -json -timeout 10 -retries 2 -threads 100 -silent',
+      'httpx -duc -u {{value}} -status-code -favicon -asn -title -web-server -irr -tech-detect -ip -cname -location -tls-grab -cdn -probe -json -follow-redirects -timeout 10 -threads 100 -silent',
     parser: JSON.parse,
-    version: pinnedVersion('httpx'),
+    version: '1.7.1',
     priority: JobPriority.MEDIUM,
   },
   {
@@ -191,7 +130,7 @@ export const builtInTools: Tool[] = [
     description:
       'A fast port scanner written in go with a focus on reliability and simplicity. Designed to be used in combination with other tools for attack surface discovery in bug bounties and pentests.',
     logoUrl: '/static/images/naabu.png',
-    command: 'naabu -host {{value}} -silent -top-ports 1000 -rate 150',
+    command: 'naabu -host {{value}} -silent -top-ports 2000',
     parser: (result: string) => {
       const parsed = result
         .trim()
@@ -201,21 +140,7 @@ export const builtInTools: Tool[] = [
         .sort();
       return parsed;
     },
-    version: pinnedVersion('naabu'),
-    priority: JobPriority.MEDIUM,
-  },
-  {
-    name: 'nmap',
-    category: ToolCategory.SERVICE_DISCOVERY,
-    description:
-      'Nmap service detection (-sV) identifies the protocol and product running on each open port, reliably distinguishing web services (http/https, on any port) from non-web services (ftp, smtp, imap, pop3, ssh, ...). The worker returns parsed JSON, so this parser is a passthrough.',
-    logoUrl: '/static/images/nmap.png',
-    // Display only; the worker runs nmap against the (host, port) of each
-    // asset_service and returns parsed service JSON.
-    command:
-      'nmap -sV -Pn -T3 --version-intensity 2 -oG - -p {{port}} {{value}}',
-    parser: JSON.parse,
-    version: '7.99',
+    version: '2.3.5',
     priority: JobPriority.MEDIUM,
   },
   {
@@ -224,15 +149,13 @@ export const builtInTools: Tool[] = [
     description:
       'Nuclei is a fast, customizable vulnerability scanner powered by the global security community and built on a simple YAML-based DSL, enabling collaboration to tackle trending vulnerabilities on the internet. It helps you find vulnerabilities in your applications, APIs, networks, DNS, and cloud configurations.',
     logoUrl: '/static/images/nuclei.png',
-    command: 'nuclei -duc -t nuclei-templates -u {{value}} -j --silent',
+    command: 'nuclei -duc -u {{value}} -j --silent',
     parser: (result: string) => {
       const initialVulnerabilities = result
         .split('\n')
         .filter((line) => line.trim())
         .map((line) => {
-          const finding = escapePostgresJsonbNullCharacters(
-            JSON.parse(line.trim()),
-          ) as NucleiFinding;
+          const finding = JSON.parse(line.trim()) as NucleiFinding;
           const info = asRecord(finding.info) ?? {};
           const classification = asRecord(info.classification);
           const port = asString(finding.port);
@@ -309,7 +232,7 @@ export const builtInTools: Tool[] = [
       return data;
     },
 
-    version: nucleiVersion,
+    version: '3.4.7',
     priority: JobPriority.LOW,
   },
 ];
