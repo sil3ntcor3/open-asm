@@ -1,4 +1,3 @@
-import { Role } from '@/common/enums/enum';
 import { RedisService } from '@/services/redis/redis.service';
 import { ConfigService } from '@nestjs/config';
 import type { TestingModule } from '@nestjs/testing';
@@ -9,24 +8,18 @@ import { RootService } from './root.service';
 
 describe('RootService', () => {
   let service: RootService;
-  let redisGet: jest.Mock;
-  let adminExists: jest.Mock;
 
   beforeEach(async () => {
-    redisGet = jest.fn();
-    adminExists = jest.fn().mockResolvedValue(true);
-    const configValues: Record<string, string | undefined> = {
-      APP_VERSION: '0.1.0-dev.42+abc123',
-      APP_CHANNEL: 'dev',
-      APP_COMMIT: 'abc123',
-    };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RootService,
         {
           provide: UsersService,
           useValue: {
-            usersRepository: { exists: adminExists },
+            createFirstAdmin: jest.fn(),
+            usersRepository: {
+              count: jest.fn(),
+            },
           },
         },
         {
@@ -41,12 +34,24 @@ describe('RootService', () => {
         {
           provide: ConfigService,
           useValue: {
-            get: jest.fn((key: string) => configValues[key]),
+            get: jest.fn((key: string) => {
+              if (key === 'APP_VERSION') return '1.0.0';
+              if (key === 'NODE_ENV') return 'test';
+              return null;
+            }),
           },
         },
         {
           provide: RedisService,
-          useValue: { get: redisGet },
+          useValue: {
+            get: jest.fn().mockResolvedValue(
+              JSON.stringify({
+                tag_name: 'v1.0.0',
+                body: 'Test release notes',
+                published_at: '2024-01-01T00:00:00Z',
+              }),
+            ),
+          },
         },
       ],
     }).compile();
@@ -56,67 +61,5 @@ describe('RootService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
-  });
-
-  it('reports initialization from current database state without stale caching', async () => {
-    await expect(service.getMetadata()).resolves.toEqual({
-      isInit: true,
-      isAssistant: false,
-      name: 'Open ASM',
-      logoPath: undefined,
-      currentVersion: '0.1.0-dev.42+abc123',
-    });
-    expect(adminExists).toHaveBeenCalledWith({
-      where: { role: Role.ADMIN },
-    });
-  });
-
-  it('returns the installed build identity and cached update status', async () => {
-    redisGet.mockImplementation((key: string) => {
-      if (key === 'version:latest') {
-        return Promise.resolve(
-          JSON.stringify({
-            tag_name: 'v0.1.0',
-            body: 'Test release notes',
-            published_at: '2026-07-03T15:37:06Z',
-            html_url:
-              'https://github.com/sil3ntcor3/open-asm/releases/tag/v0.1.0',
-          }),
-        );
-      }
-      if (key === 'version:last_check') {
-        return Promise.resolve('2026-07-19T14:00:00.000Z');
-      }
-      return Promise.resolve(null);
-    });
-
-    await expect(service.getLatestVersion()).resolves.toEqual({
-      currentVersion: '0.1.0-dev.42+abc123',
-      currentCommit: 'abc123',
-      channel: 'dev',
-      latestVersion: '0.1.0',
-      isLatest: true,
-      notes: 'Test release notes',
-      releaseDate: '2026-07-03T15:37:06Z',
-      releaseUrl:
-        'https://github.com/sil3ntcor3/open-asm/releases/tag/v0.1.0',
-      lastCheckedAt: '2026-07-19T14:00:00.000Z',
-    });
-  });
-
-  it('reports an unavailable update check without hiding the installed version', async () => {
-    redisGet.mockResolvedValue(null);
-
-    await expect(service.getLatestVersion()).resolves.toEqual({
-      currentVersion: '0.1.0-dev.42+abc123',
-      currentCommit: 'abc123',
-      channel: 'dev',
-      latestVersion: null,
-      isLatest: null,
-      notes: null,
-      releaseDate: null,
-      releaseUrl: null,
-      lastCheckedAt: null,
-    });
   });
 });

@@ -10,14 +10,13 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { useWorkspacePermissions } from '@/hooks/useWorkspacePermissions';
 import {
   useToolsControllerGetToolApiKey,
   useToolsControllerRotateToolApiKey,
-  type Tool,
+  type Tool
 } from '@/services/apis/gen/queries';
 import { Copy, Key, RotateCw } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 interface ToolApiKeyDialogProps {
@@ -25,37 +24,41 @@ interface ToolApiKeyDialogProps {
 }
 
 export function ToolApiKeyDialog({ tool }: ToolApiKeyDialogProps) {
-  const { can } = useWorkspacePermissions();
-  const canManageSecrets = can('secret.manage');
   const [isRotating, setIsRotating] = useState(false);
   const [open, setOpen] = useState<boolean>(false);
 
   // Fetch API key when dialog opens
-  const { data, isLoading, isError, refetch } = useToolsControllerGetToolApiKey(
+  const { data, isLoading, refetch } = useToolsControllerGetToolApiKey(
     tool.id,
     {
       query: {
-        enabled: open && !!tool.id && canManageSecrets,
+        enabled: open && !!tool.id, // Only fetch when dialog is open and toolId exists
       },
-    },
+    }
   );
 
   // Rotate API key mutation
-  const { mutate: rotateApiKey, isPending: isRotatingPending } =
-    useToolsControllerRotateToolApiKey({
-      mutation: {
-        onSuccess: () => {
-          toast('API key rotated successfully');
-          // Refetch the new API key after rotation
-          refetch();
-          setIsRotating(false);
-        },
-        onError: () => {
-          toast('Failed to rotate API key');
-          setIsRotating(false);
-        },
+  const { mutate: rotateApiKey, isPending: isRotatingPending } = useToolsControllerRotateToolApiKey({
+    mutation: {
+      onSuccess: () => {
+        toast('API key rotated successfully');
+        // Refetch the new API key after rotation
+        refetch();
+        setIsRotating(false);
       },
-    });
+      onError: () => {
+        toast('Failed to rotate API key');
+        setIsRotating(false);
+      },
+    },
+  });
+
+  // Refetch data when dialog opens to ensure we have the latest data
+  useEffect(() => {
+    if (open) {
+      refetch();
+    }
+  }, [open, refetch]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(data?.apiKey || '');
@@ -66,8 +69,6 @@ export function ToolApiKeyDialog({ tool }: ToolApiKeyDialogProps) {
     setIsRotating(true);
     rotateApiKey({ id: tool.id });
   };
-
-  if (!canManageSecrets) return null;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -88,13 +89,7 @@ export function ToolApiKeyDialog({ tool }: ToolApiKeyDialogProps) {
           <div className="grid flex-1 gap-2">
             <Input
               readOnly
-              value={
-                isLoading
-                  ? 'Loading...'
-                  : isError
-                    ? 'Unable to load API key'
-                    : (data?.apiKey ?? '')
-              }
+              value={isLoading ? 'Loading...' : (data?.apiKey || '')}
               className="font-mono"
             />
           </div>
@@ -120,7 +115,7 @@ export function ToolApiKeyDialog({ tool }: ToolApiKeyDialogProps) {
                 variant="outline"
                 disabled={isRotatingPending || isRotating}
               >
-                {isRotatingPending || isRotating ? (
+                {(isRotatingPending || isRotating) ? (
                   <>
                     <RotateCw className="w-4 h-4 mr-2 animate-spin" />
                     Rotating...
@@ -134,11 +129,7 @@ export function ToolApiKeyDialog({ tool }: ToolApiKeyDialogProps) {
               </Button>
             }
           />
-          <Button
-            variant="outline"
-            type="button"
-            onClick={() => setOpen(false)}
-          >
+          <Button variant="outline" type="button" onClick={() => setOpen(false)}>
             Close
           </Button>
         </DialogFooter>

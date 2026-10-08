@@ -2,33 +2,16 @@ import { BOT_EMAIL, BOT_ID, BOT_NAME } from '@/common/constants/app.constants';
 import { Role } from '@/common/enums/enum';
 import { ForbiddenException, Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { User } from '../auth/entities/user.entity';
 import { AuthService } from './../auth/auth.service';
-
-type AdminAuth = {
-  api: {
-    createUser(args: {
-      body: {
-        name: string;
-        email: string;
-        password: string;
-        role: Role.ADMIN;
-        data: { emailVerified: boolean };
-      };
-    }): Promise<{ user: { id: string } }>;
-  };
-};
-
-const FIRST_ADMIN_LOCK_ID = 725_019_002;
 
 @Injectable()
 export class UsersService implements OnModuleInit {
   constructor(
     @InjectRepository(User)
     public usersRepository: Repository<User>,
-    private authService: AuthService<AdminAuth>,
-    private readonly dataSource: DataSource,
+    private authService: AuthService,
   ) {}
 
   async onModuleInit() {
@@ -56,28 +39,32 @@ export class UsersService implements OnModuleInit {
    * @returns The newly created user object.
    */
   public async createFirstAdmin(email: string, password: string) {
-    await this.dataSource.transaction(async (manager) => {
-      await manager.query('SELECT pg_advisory_xact_lock($1)', [
-        FIRST_ADMIN_LOCK_ID,
-      ]);
-      const usersRepository = manager.getRepository(User);
-      if (
-        (await usersRepository.count({
-          where: { role: Role.ADMIN },
-        })) > 0
-      ) {
-        throw new ForbiddenException();
-      }
+    if (
+      (await this.usersRepository.count({
+        where: { role: Role.ADMIN },
+      })) > 0
+    ) {
+      throw new ForbiddenException();
+    }
 
-      await this.authService.api.createUser({
-        body: {
-          name: 'Admin',
-          email: email.trim().toLowerCase(),
-          password,
-          role: Role.ADMIN,
-          data: { emailVerified: true },
-        },
-      });
+    const result = await this.authService.api.signUpEmail({
+      body: {
+        name: 'Admin',
+        email,
+        password,
+      },
+    });
+
+    await this.usersRepository.update(result.user.id, {
+      role: Role.ADMIN,
+      emailVerified: true,
+    });
+
+    return this.authService.api.signInEmail({
+      body: {
+        email,
+        password,
+      },
     });
   }
 }

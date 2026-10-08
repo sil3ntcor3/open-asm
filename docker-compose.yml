@@ -1,23 +1,4 @@
 services:
-  credential-check:
-    image: alpine:3.22.1
-    network_mode: none
-    environment:
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET to a generated secret of at least 32 characters}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to a generated secret of at least 32 characters}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD to a generated URI-safe secret of at least 32 characters}
-      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:?Set RUSTFS_ACCESS_KEY to a unique access key of at least 16 characters}
-      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:?Set RUSTFS_SECRET_KEY to a generated secret of at least 32 characters}
-    volumes:
-      - ./scripts/validate-compose-secrets.sh:/usr/local/bin/validate-compose-secrets.sh:ro
-    command: ['/bin/sh', '/usr/local/bin/validate-compose-secrets.sh']
-    restart: 'no'
-    read_only: true
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-
   console:
     container_name: console
     image: oasm/oasm-console:latest
@@ -47,32 +28,19 @@ services:
     build:
       context: ./core-api
       dockerfile: Dockerfile
-      args:
-        APP_VERSION: ${APP_VERSION:-development}
-        APP_CHANNEL: ${APP_CHANNEL:-development}
-        APP_COMMIT: ${APP_COMMIT:-local}
     networks:
       - oasm
     env_file:
       - ./core-api/.env
     ports:
       - '6276:6276'
+      - '16276:16276'
     environment:
-      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET to a generated secret of at least 32 characters}
       - POSTGRES_HOST=postgres
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to a generated secret of at least 32 characters}
-      - REDIS_URL=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD to a generated URI-safe secret of at least 32 characters}@redis:6379/0
+      - REDIS_URL=redis://:password@redis:6379/0
       - GEO_IP_URL=geo-ip:4360
-      - OASM_CLOUD_APIKEY=${WORKER_ENROLLMENT_TOKEN:?Set WORKER_ENROLLMENT_TOKEN to a secret of at least 32 characters}
-      - GRPC_BIND_HOST=0.0.0.0
-      - GRPC_REFLECTION_ENABLED=false
-      - GRPC_TLS_ENABLED=${GRPC_TLS_ENABLED:-false}
-      - GRPC_TLS_CA_FILE=${GRPC_TLS_CA_FILE:-}
-      - GRPC_TLS_CERT_FILE=${GRPC_TLS_CERT_FILE:-}
-      - GRPC_TLS_KEY_FILE=${GRPC_TLS_KEY_FILE:-}
+      - OASM_CLOUD_APIKEY=change_me
       - RUSTFS_ENDPOINT=http://rustfs:9000
-      - RUSTFS_ACCESS_KEY=${RUSTFS_ACCESS_KEY:?Set RUSTFS_ACCESS_KEY to a unique access key of at least 16 characters}
-      - RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY:?Set RUSTFS_SECRET_KEY to a generated secret of at least 32 characters}
     restart: 'always'
     logging:
       driver: json-file
@@ -96,36 +64,6 @@ services:
       timeout: 30s
       retries: 10
 
-  admin-provisioner:
-    profiles: ['setup']
-    image: oasm/oasm-api:latest
-    networks:
-      - oasm
-    environment:
-      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET to a generated secret of at least 32 characters}
-      - BETTER_AUTH_URL=${BETTER_AUTH_URL:-http://admin-provisioner}
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
-      - POSTGRES_USERNAME=${POSTGRES_USERNAME:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to a generated secret of at least 32 characters}
-      - POSTGRES_DB=${POSTGRES_DB:-open_asm}
-      - POSTGRES_SSL=${POSTGRES_SSL:-false}
-      - REDIS_URL=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD to a generated URI-safe secret of at least 32 characters}@redis:6379/0
-    command: ['node', 'dist/provision-admin.js']
-    restart: 'no'
-    read_only: true
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    depends_on:
-      migration:
-        condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
   oasm-worker:
     image: oasm/oasm-worker:latest
     build:
@@ -136,19 +74,11 @@ services:
     env_file:
       - ./worker/.env
     environment:
-      - WORKER_API_KEY=${WORKER_ENROLLMENT_TOKEN:?Set WORKER_ENROLLMENT_TOKEN to a secret of at least 32 characters}
+      - WORKER_API_KEY=change_me
       - WORKER_GRPC_HOST=core-api
       - WORKER_GRPC_PORT=16276
-      - WORKER_GRPC_TLS_ENABLED=${GRPC_TLS_ENABLED:-false}
-      - WORKER_GRPC_TLS_CA_FILE=${WORKER_GRPC_TLS_CA_FILE:-}
-      - WORKER_GRPC_TLS_CERT_FILE=${WORKER_GRPC_TLS_CERT_FILE:-}
-      - WORKER_GRPC_TLS_KEY_FILE=${WORKER_GRPC_TLS_KEY_FILE:-}
-      - WORKER_GRPC_TLS_SERVER_NAME=${WORKER_GRPC_TLS_SERVER_NAME:-core-api}
       - WORKER_MAX_CONCURRENCY=10
       - WORKER_TOOL_PATH=/app/oasm-tools
-      - WORKER_JOB_TIMEOUT=30m
-      - WORKER_JOB_STDOUT_LIMIT_BYTES=16777216
-      - WORKER_JOB_STDERR_LIMIT_BYTES=16777216
     logging:
       driver: json-file
       options:
@@ -171,10 +101,11 @@ services:
       - ./core-api/.env
     environment:
       POSTGRES_USER: '${POSTGRES_USERNAME:-postgres}'
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to a generated secret of at least 32 characters}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-open_asm}
+      POSTGRES_HOST_AUTH_METHOD: trust
       PGUSER: '${POSTGRES_USERNAME:-postgres}'
-      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to a generated secret of at least 32 characters}
+      PGPASSWORD: '${POSTGRES_PASSWORD:-postgres}'
     logging:
       driver: json-file
       options:
@@ -182,11 +113,10 @@ services:
         max-file: '3'
     volumes:
       - pgdata:/var/lib/postgresql/data:rw
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
     networks:
       - oasm
-    depends_on:
-      credential-check:
-        condition: service_completed_successfully
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER:-postgres}" -d "$${POSTGRES_DB:-open_asm}"']
       interval: 1s
@@ -197,8 +127,8 @@ services:
     container_name: oasm-redis
     image: redis:alpine
     restart: always
-    environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD to a generated URI-safe secret of at least 32 characters}
+    ports:
+      - '6379:6379'
     networks:
       - oasm
     logging:
@@ -208,16 +138,13 @@ services:
         max-file: '3'
     volumes:
       - redis-data:/data
-    command: ['/bin/sh', '-ec', 'exec redis-server --requirepass "$$REDIS_PASSWORD"']
+    command: 'redis-server --requirepass password'
     healthcheck:
-      test: ['CMD-SHELL', 'redis-cli --no-auth-warning -a "$${REDIS_PASSWORD}" ping | grep -qx PONG']
+      test: ['CMD', 'redis-cli', '-a', 'password', 'ping']
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
-    depends_on:
-      credential-check:
-        condition: service_completed_successfully
     deploy:
       resources:
         limits:
@@ -243,9 +170,12 @@ services:
     image: rustfs/rustfs:latest
     networks:
       - oasm
+    ports:
+      - '9000:9000'
+      - '9001:9001'
     environment:
-      - RUSTFS_ACCESS_KEY=${RUSTFS_ACCESS_KEY:?Set RUSTFS_ACCESS_KEY to a unique access key of at least 16 characters}
-      - RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY:?Set RUSTFS_SECRET_KEY to a generated secret of at least 32 characters}
+      - RUSTFS_ACCESS_KEY=rustfsadmin
+      - RUSTFS_SECRET_KEY=rustfssecret
     volumes:
       - rustfs-data:/data:rw
     restart: 'always'
@@ -255,9 +185,6 @@ services:
         max-size: 10m
         max-file: '3'
     command: ['/data']
-    depends_on:
-      credential-check:
-        condition: service_completed_successfully
 
   migration:
     container_name: oasm-migration
@@ -270,9 +197,9 @@ services:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USERNAME=${POSTGRES_USERNAME:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to a generated secret of at least 32 characters}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-open_asm}
-      - REDIS_URL=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD to a generated URI-safe secret of at least 32 characters}@redis:6379/0
+      - REDIS_URL=redis://:password@redis:6379/0
     logging:
       driver: json-file
       options:

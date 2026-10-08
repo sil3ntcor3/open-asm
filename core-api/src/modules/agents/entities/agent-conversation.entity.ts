@@ -70,4 +70,9 @@ export class AgentConversation {
   @Column({ type: 'text', nullable: true })
   summary?: string;
 
+  @ApiProperty({ description: 'Pinned worker for remote execution', required: false })
+  @IsOptional()
+  @IsUUID()
+  @Column({ type: 'uuid', nullable: true })
+  workerId?: string;
 }

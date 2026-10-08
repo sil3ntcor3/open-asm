@@ -1,7 +1,5 @@
 import { Doc } from '@/common/doc/doc.decorator';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
-import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
-import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
 import {
   Body,
   Controller,
@@ -11,12 +9,14 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import {
   UserContext,
   WorkspaceId,
 } from '../../common/decorators/app.decorator';
+import { WorkspaceOwnerGuard } from '../../common/guards/workspace-owner.guard';
 import { UserContextPayload } from '../../common/interfaces/app.interface';
 import { CreateWorkflowDto } from './dto/create-workflow.dto';
 import {
@@ -40,11 +40,7 @@ export class WorkflowsController {
       serialization: GetManyResponseDto(String),
       description: 'List of workflow template filenames',
     },
-    request: {
-      getWorkspaceId: true,
-    },
   })
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   @Get('templates')
   listTemplates() {
     return this.workflowsService.listTemplates();
@@ -62,7 +58,7 @@ export class WorkflowsController {
       getWorkspaceId: true,
     },
   })
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
+  @UseGuards(WorkspaceOwnerGuard)
   @Get()
   async getManyWorkflows(
     @Query() query: GetManyWorkflowsQueryDto,
@@ -82,7 +78,7 @@ export class WorkflowsController {
       getWorkspaceId: true,
     },
   })
-  @WorkspacePolicy(WorkspaceAction.TEMPLATE_MANAGE)
+  @UseGuards(WorkspaceOwnerGuard)
   @Post()
   async createWorkflow(
     @Body() createWorkflowDto: CreateWorkflowDto,
@@ -108,7 +104,7 @@ export class WorkflowsController {
       getWorkspaceId: true,
     },
   })
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
+  @UseGuards(WorkspaceOwnerGuard)
   @Get(':id')
   async getWorkspaceWorkflow(
     @Param('id') id: string,
@@ -128,7 +124,7 @@ export class WorkflowsController {
       getWorkspaceId: true,
     },
   })
-  @WorkspacePolicy(WorkspaceAction.TEMPLATE_MANAGE)
+  @UseGuards(WorkspaceOwnerGuard)
   @Patch(':id')
   async updateWorkflow(
     @Param('id') id: string,
@@ -150,7 +146,7 @@ export class WorkflowsController {
       getWorkspaceId: true,
     },
   })
-  @WorkspacePolicy(WorkspaceAction.TEMPLATE_MANAGE)
+  @UseGuards(WorkspaceOwnerGuard)
   @Delete(':id')
   async deleteWorkflow(
     @Param('id') id: string,

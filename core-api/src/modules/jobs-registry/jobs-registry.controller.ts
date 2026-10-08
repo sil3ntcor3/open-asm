@@ -1,6 +1,4 @@
 import { WORKER_TOKEN_HEADER } from '@/common/constants/app.constants';
-import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
-import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
 import { Public, WorkspaceId } from '@/common/decorators/app.decorator';
 import { WorkerTokenAuth } from '@/common/decorators/worker-token-auth.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
@@ -12,14 +10,14 @@ import {
 import { IdQueryParamDto } from '@/common/dtos/id-query-param.dto';
 import { GrpcWorkerContext } from '@/common/guards/grpc-worker-context.service';
 import { GrpcWorkerTokenGuard } from '@/common/guards/grpc-worker-token.guard';
+import { WorkspaceOwnerGuard } from '@/common/guards/workspace-owner.guard';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
-import { Metadata, status as GrpcStatus } from '@grpc/grpc-js';
+import { Metadata } from '@grpc/grpc-js';
 import {
   Body,
   Controller,
   Delete,
   Get,
-  Logger,
   Param,
   Post,
   Query,
@@ -36,7 +34,6 @@ import { JobHistoryResponseDto } from './dto/job-history.dto';
 import {
   GetNextJobResponseDto,
   JobTimelineResponseDto,
-  ToolExecutionDto,
   UpdateResultDto,
   WorkerControlResponseDto,
   WorkerIdParams,
@@ -49,8 +46,6 @@ type WorkerAuthedRequest = { workerInstance?: WorkerInstance };
 
 @Controller('jobs-registry')
 export class JobsRegistryController {
-  private readonly logger = new Logger(JobsRegistryController.name);
-
   constructor(
     private readonly jobsRegistryService: JobsRegistryService,
     private readonly grpcWorkerContext: GrpcWorkerContext,
@@ -85,12 +80,8 @@ export class JobsRegistryController {
     },
   })
   @Get('')
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
-  getManyJobs(
-    @Query() query: GetManyJobsRequestDto,
-    @WorkspaceId() workspaceId: string,
-  ) {
-    return this.jobsRegistryService.getManyJobs({ ...query, workspaceId });
+  getManyJobs(@Query() query: GetManyJobsRequestDto) {
+    return this.jobsRegistryService.getManyJobs(query);
   }
 
   @Doc({
@@ -105,7 +96,6 @@ export class JobsRegistryController {
     },
   })
   @Get('/timeline')
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   getJobsTimeline(@WorkspaceId() workspaceId: string) {
     return this.jobsRegistryService.getJobsTimeline(workspaceId);
   }
@@ -162,7 +152,6 @@ export class JobsRegistryController {
     },
   })
   @Get('/histories')
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   getManyJobHistories(
     @WorkspaceId() workspaceId: string,
     @Query() query: GetManyBaseQueryParams,
@@ -182,7 +171,6 @@ export class JobsRegistryController {
     },
   })
   @Get('/histories/:id')
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   getJobHistoryDetail(
     @WorkspaceId() workspaceId: string,
     @Param('id') id: string,
@@ -190,7 +178,7 @@ export class JobsRegistryController {
     return this.jobsRegistryService.getJobHistoryDetail(workspaceId, id);
   }
 
-  @WorkspacePolicy(WorkspaceAction.SCAN_EXECUTE)
+  @UseGuards(WorkspaceOwnerGuard)
   @Doc({
     summary: 'Pause jobs in a job history',
     description:
@@ -210,7 +198,7 @@ export class JobsRegistryController {
     return this.jobsRegistryService.pauseJobHistoryJobs(workspaceId, params.id);
   }
 
-  @WorkspacePolicy(WorkspaceAction.SCAN_EXECUTE)
+  @UseGuards(WorkspaceOwnerGuard)
   @Doc({
     summary: 'Resume jobs in a job history',
     description:
@@ -233,7 +221,7 @@ export class JobsRegistryController {
     );
   }
 
-  @WorkspacePolicy(WorkspaceAction.SCAN_EXECUTE)
+  @UseGuards(WorkspaceOwnerGuard)
   @Doc({
     summary: 'Cancel jobs in a job history',
     description:
@@ -256,7 +244,7 @@ export class JobsRegistryController {
     );
   }
 
-  @WorkspacePolicy(WorkspaceAction.SCAN_EXECUTE)
+  @UseGuards(WorkspaceOwnerGuard)
   @Doc({
     summary: 'Delete jobs in a job history',
     description:
@@ -279,7 +267,7 @@ export class JobsRegistryController {
     );
   }
 
-  @WorkspacePolicy(WorkspaceAction.SCAN_EXECUTE)
+  @UseGuards(WorkspaceOwnerGuard)
   @Doc({
     summary: 'Re-run a job',
     description:
@@ -299,7 +287,7 @@ export class JobsRegistryController {
     return this.jobsRegistryService.reRunJob(workspaceId, params.id);
   }
 
-  @WorkspacePolicy(WorkspaceAction.SCAN_EXECUTE)
+  @UseGuards(WorkspaceOwnerGuard)
   @Doc({
     summary: 'Cancel a job',
     description: 'Cancel a job by its ID in the specified workspace',
@@ -318,7 +306,7 @@ export class JobsRegistryController {
     return this.jobsRegistryService.cancelJob(workspaceId, params.id);
   }
 
-  @WorkspacePolicy(WorkspaceAction.SCAN_EXECUTE)
+  @UseGuards(WorkspaceOwnerGuard)
   @Doc({
     summary: 'Pause a job',
     description:
@@ -338,7 +326,7 @@ export class JobsRegistryController {
     return this.jobsRegistryService.pauseJob(workspaceId, params.id);
   }
 
-  @WorkspacePolicy(WorkspaceAction.SCAN_EXECUTE)
+  @UseGuards(WorkspaceOwnerGuard)
   @Doc({
     summary: 'Resume a paused job',
     description:
@@ -358,7 +346,7 @@ export class JobsRegistryController {
     return this.jobsRegistryService.resumeJob(workspaceId, params.id);
   }
 
-  @WorkspacePolicy(WorkspaceAction.SCAN_EXECUTE)
+  @UseGuards(WorkspaceOwnerGuard)
   @Doc({
     summary: 'Delete a job',
     description: 'Delete a job by its ID in the specified workspace',
@@ -382,12 +370,7 @@ export class JobsRegistryController {
   async next(
     _worker: { id: string },
     metadata: Metadata,
-  ): Promise<{
-    id: string;
-    asset: Asset;
-    command?: string;
-    execution?: ToolExecutionDto;
-  }> {
+  ): Promise<{ id: string; asset: Asset; command?: string }> {
     // Use the ID bound to the validated token, not the client-supplied one.
     const workerId = this.authenticatedWorkerId(metadata);
     const job = await this.jobsRegistryService.getNextJob(workerId);
@@ -400,7 +383,6 @@ export class JobsRegistryController {
       id: job.id,
       asset: job.asset,
       command: job.command,
-      execution: job.execution,
     };
   }
 
@@ -433,40 +415,17 @@ export class JobsRegistryController {
       enableImplicitConversion: true,
       excludeExtraneousValues: true,
     });
-    try {
-      const result = await this.jobsRegistryService.updateResult(
-        workerId,
-        transformedData,
-      );
-      if (!result.jobId)
-        return {
-          success: false,
-        };
-
+    const result = await this.jobsRegistryService.updateResult(
+      workerId,
+      transformedData,
+    );
+    if (!result.jobId)
       return {
-        success: true,
+        success: false,
       };
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Unknown error occurred';
 
-      // Intake failures used to propagate untouched: the worker received a bare
-      // "Internal server error" and the API logged nothing at all, so the only
-      // visible symptom was a job re-running forever while the container still
-      // reported healthy. updateResult persists the payload to object storage
-      // before anything else, which makes a storage outage the most likely
-      // cause — and an infrastructure problem, not a bad result. Log the cause
-      // here, and answer with a retryable status so the worker can tell
-      // "try again" apart from "this result is unacceptable".
-      this.logger.error(
-        `Failed to accept result for job ${transformedData?.jobId ?? 'unknown'} from worker ${workerId}: ${message}`,
-        error instanceof Error ? error.stack : undefined,
-      );
-
-      throw new RpcException({
-        code: GrpcStatus.UNAVAILABLE,
-        message: `Result intake unavailable: ${message}`,
-      });
-    }
+    return {
+      success: true,
+    };
   }
 }

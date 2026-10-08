@@ -1,7 +1,4 @@
-import {
-  getStatisticControllerGetTimelineStatisticsQueryKey,
-  useStatisticControllerGetTimelineStatistics,
-} from '@/services/apis/gen/queries';
+import { useStatisticControllerGetTimelineStatistics } from '@/services/apis/gen/queries';
 import { useWorkspaceState } from './useWorkspaceSelector';
 
 export type TimelineStatistic = {
@@ -33,10 +30,7 @@ export const useTimelineTrend = () => {
   } = useWorkspaceState();
   const { data: timeline } = useStatisticControllerGetTimelineStatistics({
     query: {
-      queryKey: [
-        ...getStatisticControllerGetTimelineStatisticsQueryKey(),
-        selectedWorkspaceId,
-      ],
+      queryKey: [selectedWorkspaceId],
     },
   });
 

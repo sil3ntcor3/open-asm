@@ -1,6 +1,4 @@
 import { UserId, WorkspaceId } from '@/common/decorators/app.decorator';
-import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
-import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import { IdQueryParamDto } from '@/common/dtos/id-query-param.dto';
@@ -42,7 +40,6 @@ export class ReportsController {
       getWorkspaceId: true,
     },
   })
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   @Get()
   getMany(
     @Query() query: GetManyReportsQueryDto,
@@ -51,7 +48,6 @@ export class ReportsController {
     return this.reportsService.getMany(query, workspaceId);
   }
 
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   @Get('preview/summary')
   async previewSummaryReport(
     @Query() query: PreviewSummaryQueryDto,
@@ -70,7 +66,6 @@ export class ReportsController {
     res.end(buffer);
   }
 
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   @Get('preview/vulnerability')
   async previewVulReport(
     @Query() query: PreviewVulQueryDto,
@@ -101,7 +96,6 @@ export class ReportsController {
       getWorkspaceId: true,
     },
   })
-  @WorkspacePolicy(WorkspaceAction.REPORT_MANAGE)
   @Post('generate/summary')
   async generateSummaryReport(
     @Body() body: GenerateSummaryReportBodyDto,
@@ -134,7 +128,6 @@ export class ReportsController {
       getWorkspaceId: true,
     },
   })
-  @WorkspacePolicy(WorkspaceAction.REPORT_MANAGE)
   @Post('generate/vulnerability')
   async generateVulReport(
     @Body() body: GenerateVulReportBodyDto,
@@ -169,7 +162,6 @@ export class ReportsController {
       getWorkspaceId: true,
     },
   })
-  @WorkspacePolicy(WorkspaceAction.REPORT_MANAGE)
   @Delete(':id')
   async deleteReport(
     @Param() params: IdQueryParamDto,

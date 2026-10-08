@@ -6,6 +6,7 @@ import {
   WorkerScope,
   WorkerType,
 } from '@/common/enums/enum';
+import { RedisService } from '@/services/redis/redis.service';
 import { generateToken } from '@/utils/genToken';
 import { getManyResponse } from '@/utils/getManyResponse';
 import {
@@ -20,7 +21,7 @@ import { ConfigService } from '@nestjs/config';
 import { RpcException } from '@nestjs/microservices';
 import { Interval } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { randomUUID, timingSafeEqual } from 'crypto';
+import { randomUUID } from 'crypto';
 import { LessThan, Repository } from 'typeorm';
 import { ApiKeysService } from '../apikeys/apikeys.service';
 import { Asset } from '../assets/entities/assets.entity';
@@ -34,8 +35,6 @@ import { Workspace } from '../workspaces/entities/workspace.entity';
 import { AliveStreamManager } from './alive-stream-manager.service';
 import {
   GetManyWorkersDto,
-  ScannerStatusReportDto,
-  ToolStatusReportDto,
   UpdateWorkerSettingsDto,
   WorkerAliveDto,
   WorkerJoinDto,
@@ -71,6 +70,8 @@ export class WorkersService {
     @Inject(forwardRef(() => ToolsService))
     private toolsService: ToolsService,
 
+    private redisService: RedisService,
+
     private aliveStreamManager: AliveStreamManager,
   ) {}
 
@@ -94,191 +95,6 @@ export class WorkersService {
     await this.repo.update({ token: dto.token }, { lastSeenAt: new Date() });
 
     return this.repo.findOne({ where: { token: dto.token } });
-  }
-
-  /** Persists bounded scanner health reported by an authenticated worker. */
-  public async reportScannerStatus(
-    workerId: string,
-    status: ScannerStatusReportDto,
-  ): Promise<{ message: string }> {
-    const allowedStates = new Set(['ready', 'refreshing', 'stale', 'error']);
-    if (!allowedStates.has(status.state)) {
-      throw new RpcException('Unknown scanner status');
-    }
-
-    const engineVersion = this.scannerVersion(
-      'Nuclei engine version',
-      status.engineVersion,
-    );
-    const templateVersion = this.scannerVersion(
-      'Nuclei template version',
-      status.templateVersion,
-    );
-    if (status.templateSource !== 'projectdiscovery/nuclei-templates') {
-      throw new RpcException('Invalid Nuclei template source');
-    }
-    if (status.lastError && status.lastError.length > 2048) {
-      throw new RpcException('Nuclei scanner error exceeds 2048 characters');
-    }
-
-    const result = await this.repo.update(
-      { id: workerId },
-      {
-        nucleiEngineVersion: engineVersion,
-        nucleiTemplateVersion: templateVersion,
-        nucleiTemplateSource: status.templateSource,
-        nucleiTemplateStatus: status.state,
-        nucleiTemplateLastAttemptAt: this.scannerTimestamp(
-          status.lastUpdateAttemptAt,
-        ),
-        nucleiTemplateLastSuccessAt: this.scannerTimestamp(
-          status.lastUpdateSuccessAt,
-        ),
-        nucleiTemplateValidatedAt: this.scannerTimestamp(
-          status.lastValidatedAt,
-        ),
-        nucleiTemplateLastError: status.lastError || null,
-        scannerStatusUpdatedAt: new Date(),
-      },
-    );
-    if (!result.affected) {
-      throw new RpcException('Worker not found');
-    }
-    return { message: 'Scanner status recorded' };
-  }
-
-  /** Persists one allowlisted tool component status for an authenticated worker. */
-  public async reportToolStatus(
-    workerId: string,
-    status: ToolStatusReportDto,
-  ): Promise<{ message: string }> {
-    const allowedComponents = new Set([
-      'subfinder',
-      'dnsx',
-      'httpx',
-      'naabu',
-      'nuclei',
-      'nuclei-templates',
-      'nmap',
-      'screenshot',
-    ]);
-    const allowedStates = new Set([
-      'ready',
-      'pending',
-      'updating',
-      'succeeded',
-      'failed',
-    ]);
-    if (!allowedComponents.has(status.component)) {
-      throw new RpcException('Unknown tool component');
-    }
-    if (!allowedStates.has(status.state)) {
-      throw new RpcException('Unknown tool update status');
-    }
-    if (status.error && status.error.length > 2048) {
-      throw new RpcException('Tool update error exceeds 2048 characters');
-    }
-    if (
-      status.installedVersion &&
-      (status.installedVersion.length > 64 ||
-        !/^v?\d+\.\d+(?:\.\d+){0,2}(?:[-+][0-9A-Za-z.-]+)?$/.test(
-          status.installedVersion,
-        ))
-    ) {
-      throw new RpcException('Invalid installed tool version');
-    }
-    for (const version of [status.targetVersion, status.rollbackVersion]) {
-      if (
-        version &&
-        (version.length > 64 ||
-          !/^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version))
-      ) {
-        throw new RpcException('Invalid requested tool version');
-      }
-    }
-
-    const worker = await this.repo.findOne({ where: { id: workerId } });
-    if (!worker) {
-      throw new RpcException('Worker not found');
-    }
-    const componentStatus = {
-      installedVersion: status.installedVersion,
-      state: status.state as
-        | 'ready'
-        | 'pending'
-        | 'updating'
-        | 'succeeded'
-        | 'failed',
-      requestId: status.requestId,
-      targetVersion: status.targetVersion,
-      rollbackVersion: status.rollbackVersion,
-      lastAttemptAt: status.lastAttemptAt,
-      lastSuccessAt: status.lastSuccessAt,
-      error: status.error,
-    };
-    await this.repo.update(
-      { id: workerId },
-      {
-        toolStatuses: {
-          ...(worker.toolStatuses ?? {}),
-          [status.component]: componentStatus,
-        },
-      },
-    );
-    return { message: 'Tool status recorded' };
-  }
-
-  private scannerVersion(field: string, value: string): string | null {
-    if (!value) {
-      return null;
-    }
-    if (
-      value.length > 64 ||
-      !/^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(value)
-    ) {
-      throw new RpcException(`Invalid ${field}`);
-    }
-    return value;
-  }
-
-  /** Returns distinct Nuclei template versions visible to a workspace. */
-  public async getNucleiTemplateVersions(
-    workspaceId: string,
-  ): Promise<string[]> {
-    const workers = await this.repo.find({
-      select: { nucleiTemplateVersion: true },
-      where: [
-        {
-          type: WorkerType.BUILT_IN,
-          scope: WorkerScope.WORKSPACE,
-          workspaceId,
-        },
-        { type: WorkerType.BUILT_IN, scope: WorkerScope.CLOUD },
-      ],
-    });
-
-    return [
-      ...new Set(
-        workers
-          .map((worker) => worker.nucleiTemplateVersion)
-          .filter((version): version is string => Boolean(version)),
-      ),
-    ].sort();
-  }
-
-  /** Parses an optional worker timestamp and rejects malformed status data. */
-  private scannerTimestamp(value?: string): Date | null {
-    if (!value) {
-      return null;
-    }
-    if (value.length > 64) {
-      throw new RpcException('Invalid scanner status timestamp');
-    }
-    const timestamp = new Date(value);
-    if (Number.isNaN(timestamp.getTime())) {
-      throw new RpcException('Invalid scanner status timestamp');
-    }
-    return timestamp;
   }
 
   /**
@@ -363,14 +179,8 @@ export class WorkersService {
   public async updateWorkerSettings(
     id: string,
     dto: UpdateWorkerSettingsDto,
-    workspaceId: string,
   ): Promise<WorkerInstance> {
-    const worker = await this.repo.findOne({
-      where: [
-        { id, workspace: { id: workspaceId } },
-        { id, scope: WorkerScope.CLOUD },
-      ],
-    });
+    const worker = await this.repo.findOne({ where: { id } });
     if (!worker) {
       throw new NotFoundException('Worker not found');
     }
@@ -393,34 +203,6 @@ export class WorkersService {
     }
 
     return this.repo.findOneOrFail({ where: { id } });
-  }
-
-  /**
-   * Resolves the worker scope used for settings authorization without exposing
-   * a workspace worker that belongs to a different workspace.
-   */
-  public async getWorkerManagementScope(
-    id: string,
-    workspaceId: string,
-  ): Promise<WorkerScope> {
-    const worker = await this.repo.findOne({
-      where: { id },
-      select: {
-        id: true,
-        scope: true,
-        workspaceId: true,
-      },
-    });
-
-    if (
-      !worker ||
-      (worker.scope === WorkerScope.WORKSPACE &&
-        worker.workspaceId !== workspaceId)
-    ) {
-      throw new NotFoundException('Worker not found');
-    }
-
-    return worker.scope;
   }
 
   /**
@@ -601,59 +383,50 @@ export class WorkersService {
    * @returns A promise that resolves to the created worker instance.
    */
   public async join(dto: WorkerJoinDto): Promise<WorkerInstance> {
-    const { apiKey, token, metadata, ipAddress } = dto;
+    const { apiKey, signature, token, metadata, ipAddress } = dto;
 
-    if (token) {
-      const existingWorker = await this.repo.findOne({
-        where: { token },
-      });
-      if (!existingWorker) {
-        throw new UnauthorizedException('Invalid worker identity token');
-      }
+    // 1. Validate signature first (mandatory)
+    const workerSignature =
+      this.configService.get<string>('WORKER_SIGNATURE') || '';
 
-      await this.fallbackWorkerRejoin(existingWorker.id);
-      if (ipAddress) {
-        await this.repo.update({ id: existingWorker.id }, { ipAddress });
-      }
-      return existingWorker;
+    if (signature !== workerSignature) {
+      throw new UnauthorizedException('Invalid worker signature');
     }
 
-    if (apiKey.length < 32 || apiKey === 'change_me') {
-      throw new UnauthorizedException(
-        'Worker enrollment token must be at least 32 characters',
-      );
-    }
-
+    // 2. Validate API key
     const cloudApiKey = this.configService.get<string>('OASM_CLOUD_APIKEY');
-    const isCloudWorker = this.secretsMatch(cloudApiKey, apiKey);
+    const isCloudWorker = cloudApiKey === apiKey;
 
+    // 3. For regular workers, validate API key exists in database
     if (!isCloudWorker) {
       const apiKeyRecord = await this.apiKeyService.apiKeysRepository.findOne({
         where: { key: apiKey },
       });
       if (!apiKeyRecord) {
-        throw new RpcException('Worker enrollment token is invalid');
+        throw new RpcException(`API key not found: ${apiKey}`);
       }
     }
 
+    // 4. Token rejoin: if token exists and is valid, allow rejoin for both cloud and regular workers
+    if (token) {
+      const existingWorker = await this.repo.findOne({
+        where: { token },
+      });
+      if (existingWorker) {
+        await this.fallbackWorkerRejoin(existingWorker.id);
+        if (ipAddress) {
+          await this.repo.update({ id: existingWorker.id }, { ipAddress });
+        }
+        return existingWorker;
+      }
+    }
+
+    // 5. Create new worker after successful authentication
     if (isCloudWorker) {
       return this.createCloudWorker(metadata, ipAddress);
     }
 
     return this.createRegularWorker(apiKey, metadata, ipAddress);
-  }
-
-  private secretsMatch(expected: string | undefined, actual: string): boolean {
-    if (!expected || expected.length < 32 || expected === 'change_me') {
-      return false;
-    }
-
-    const expectedBytes = Buffer.from(expected);
-    const actualBytes = Buffer.from(actual);
-    return (
-      expectedBytes.length === actualBytes.length &&
-      timingSafeEqual(expectedBytes, actualBytes)
-    );
   }
 
   /**
@@ -709,7 +482,7 @@ export class WorkersService {
     });
 
     if (!apiKeyRecord) {
-      throw new RpcException('Worker enrollment token is invalid');
+      throw new RpcException(`API key not found: ${apiKey}`);
     }
 
     const workerId = randomUUID();
@@ -788,12 +561,7 @@ export class WorkersService {
           WHEN j.status = '${JobStatus.FAILED}' AND j."retryCount" < 4 THEN '${JobStatus.PENDING}'
           ELSE j.status
         END,
-        "workerId" = NULL,
-        "completedAt" = CASE
-          WHEN j.status = '${JobStatus.IN_PROGRESS}' THEN NULL
-          WHEN j.status = '${JobStatus.FAILED}' AND j."retryCount" < 4 THEN NULL
-          ELSE j."completedAt"
-        END
+        "workerId" = NULL
       WHERE (
           j.status = '${JobStatus.IN_PROGRESS}'
           AND (
@@ -847,10 +615,8 @@ export class WorkersService {
     if (!worker) {
       throw new RpcException(`Worker not found: ${workerId}`);
     }
-    const workerWorkspaceId = worker.workspace?.id ?? worker.workspaceId;
-    if (!workerWorkspaceId) {
-      throw new RpcException('Worker is not assigned to a workspace');
-    }
+    await this.repo.update(workerId, { internalNetwork: { id: networkId } });
+    const workerWorkspaceId = worker.workspace.id;
 
     // Find network and check workspace
     const network = await this.internalNetworkRepo.findOne({
@@ -864,8 +630,6 @@ export class WorkersService {
         `Network and worker belong to different workspaces`,
       );
     }
-
-    await this.repo.update(workerId, { internalNetwork: { id: networkId } });
 
     // Insert network interfaces, ignoring duplicates
     const interfacesToSave = networkInterfaces.map((ni) => ({
@@ -891,5 +655,29 @@ export class WorkersService {
 
   public async enableAgentMode(workerId: string): Promise<void> {
     await this.repo.update(workerId, { enabledAgentMode: true });
+  }
+
+  public async handleRemoteExecuteResult(result: {
+    id: string;
+    sessionId: string;
+    type: number;
+    data: Uint8Array;
+    exitCode: number;
+  }) {
+    const channel = `remote-execute:results:${result.sessionId}`;
+    const payload = JSON.stringify({
+      id: result.id,
+      sessionId: result.sessionId,
+      type: result.type,
+      data: Buffer.from(result.data).toString('utf-8'),
+      exitCode: result.exitCode,
+    });
+
+    Logger.log(
+      `[handleRemoteExecuteResult] Publishing to ${channel}: ${payload.substring(0, 100)}`,
+      'WorkersService',
+    );
+
+    await this.redisService.publish(channel, payload);
   }
 }

@@ -1,9 +1,4 @@
-import {
-  BullMQName,
-  JobStatus,
-  ToolCategory,
-  WorkerType,
-} from '@/common/enums/enum';
+import { BullMQName, JobStatus, WorkerType } from '@/common/enums/enum';
 import { JobDataResultType } from '@/common/types/app.types';
 import { DataAdapterService } from '@/modules/data-adapter/data-adapter.service';
 import { StorageService } from '@/modules/storage/storage.service';
@@ -52,74 +47,44 @@ export class JobResultProcessor extends WorkerHost {
     // resultRef is in format "bucket/filename"
     const [bucket, ...rest] = resultRef.split('/');
     const fileName = rest.join('/');
-    let data: DataPayloadResult | undefined;
 
     try {
-      data = await this.storageService.readJsonFile<DataPayloadResult>(
+      const data = await this.storageService.readJsonFile<DataPayloadResult>(
         fileName,
         bucket,
       );
 
-      // Screenshots are best-effort enrichment: a capture failure (the target is
-      // not a web service, is unreachable, or timed out) must not fail the job or
-      // the whole discovery run. The headless browser is the ground-truth web
-      // detector, so "no screenshot" is the normal outcome for a non-web service
-      // (surfaced as "No screenshot" in the UI). Treat such a failure as a
-      // completed, no-data step so the pipeline still advances to the next tool
-      // (e.g. nuclei) instead of stalling and reporting the run as failed.
-      const isScreenshotBestEffortFailure =
-        !!data.error && job.tool.category === ToolCategory.SCREENSHOT;
+      const isBuiltInTools = job.tool.type === WorkerType.BUILT_IN;
 
-      if (data.error && !isScreenshotBestEffortFailure) {
-        const failureMessage =
-          data.failureMessage?.trim() || 'Job reported error';
-        const stderr = data.stderr?.trim();
-        throw new Error(
-          stderr && !failureMessage.includes(stderr)
-            ? `${failureMessage}: ${stderr}`
-            : failureMessage,
+      let dataForSync: JobDataResultType;
+
+      if (isBuiltInTools) {
+        const builtInStep = builtInTools.find(
+          (tool) => tool.name === job.tool.name,
         );
-      }
 
-      if (isScreenshotBestEffortFailure) {
-        this.logger.warn(
-          `No screenshot captured for ${
-            job.assetService?.value ?? job.asset?.value ?? job.id
-          }: ${data.failureMessage?.trim() || 'no web response'}`,
-        );
-      }
-
-      if (!isScreenshotBestEffortFailure) {
-        const isBuiltInTools = job.tool.type === WorkerType.BUILT_IN;
-
-        let dataForSync: JobDataResultType;
-
-        if (isBuiltInTools) {
-          const builtInStep = builtInTools.find(
-            (tool) => tool.name === job.tool.name,
-          );
-
-          if (!builtInStep) {
-            throw new Error(
-              `Worker step not found for worker: ${job.tool.name}`,
-            );
-          }
-
-          if (!data.raw && !builtInStep) {
-            throw new BadGatewayException('Raw data is required');
-          }
-          dataForSync = builtInStep?.parser?.(data.raw ?? undefined);
-        } else {
-          dataForSync = data.payload;
+        if (!builtInStep) {
+          throw new Error(`Worker step not found for worker: ${job.tool.name}`);
         }
 
-        if (job.isSaveData) {
-          await this.dataAdapterService.syncData({
-            data: dataForSync,
-            job,
-          });
+        if (!data.raw && !builtInStep) {
+          throw new BadGatewayException('Raw data is required');
         }
+        dataForSync = builtInStep?.parser?.(data.raw ?? undefined);
+      } else {
+        dataForSync = data.payload;
       }
+
+      if (job.isSaveData) {
+        await this.dataAdapterService.syncData({
+          data: dataForSync,
+          job,
+        });
+      }
+      if (data?.error) {
+        throw new Error('Job reported error');
+      }
+
       const completedJob = await this.jobRepo.save({
         ...job,
         status: JobStatus.COMPLETED,
@@ -150,41 +115,15 @@ export class JobResultProcessor extends WorkerHost {
         );
       }
     } catch (e) {
-      const error = e instanceof Error ? e : new Error(String(e));
       const isLastAttempt =
         bullJob.attemptsMade + 1 >= (bullJob.opts.attempts || 1);
 
       if (isLastAttempt) {
         await this.jobsRegistryService.handleJobError(
-          {
-            jobId,
-            data: data ?? ({ error: true } as DataPayloadResult),
-          },
+          { jobId, data: {} as DataPayloadResult },
           job,
-          error,
+          e,
         );
-
-        // A failed job is a terminal outcome for its workflow step, exactly like
-        // a completed one. getNextStepForJob only advances once every job of the
-        // step has left pending/in-progress, so when the LAST job of a step
-        // fails, this is the only thing that can fire the transition — without
-        // it the run stalls at that step forever. Failures are routine here
-        // (unreachable hosts, filtered ports), so this path is load-bearing, not
-        // an edge case.
-        try {
-          const nextStepJobCount =
-            await this.jobsRegistryService.getNextStepForJob(job);
-
-          if (nextStepJobCount === 0) {
-            await this.jobsRegistryService.markWorkflowDone(job.jobHistory.id);
-          }
-        } catch (advanceError) {
-          // Never let a transition problem mask the original job failure.
-          this.logger.error(
-            `Failed to advance workflow after job ${jobId} failed:`,
-            advanceError,
-          );
-        }
 
         // Final failure: delete the result file
         try {
@@ -198,7 +137,7 @@ export class JobResultProcessor extends WorkerHost {
       }
 
       // Throw error to let BullMQ handle retry logic
-      throw error;
+      throw e;
     }
   }
 }

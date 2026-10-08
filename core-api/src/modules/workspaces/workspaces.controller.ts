@@ -1,10 +1,4 @@
 import { UserContext, WorkspaceId } from '@/common/decorators/app.decorator';
-import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
-import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
-import {
-  WORKSPACE_ACTION_DEFINITIONS,
-  WorkspacePolicyService,
-} from '@/common/authorization/workspace-policy.service';
 import { Doc } from '@/common/doc/doc.decorator';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import { IdQueryParamDto } from '@/common/dtos/id-query-param.dto';
@@ -28,34 +22,20 @@ import { Request, Response } from 'express';
 import { GetWorkspaceConfigsDto } from './dto/get-workspace-configs.dto';
 import { UpdateWorkspaceConfigsDto } from './dto/update-workspace-configs.dto';
 import {
-  AddWorkspaceMemberDto,
   ArchiveWorkspaceDto,
-  CreateWorkspaceRoleDto,
   CreateWorkspaceDto,
   GetApiKeyResponseDto,
   GetManyWorkspacesDto,
-  UpdateWorkspaceMemberRoleDto,
   UpdateWorkspaceDto,
-  WorkspaceMemberParamsDto,
-  WorkspaceMemberResponseDto,
-  WorkspaceRolePermissionsResponseDto,
-  WorkspaceRoleParamsDto,
-  WorkspaceRoleResponseDto,
-  UpdateWorkspaceRoleDto,
   WorkspaceResponseDto,
 } from './dto/workspaces.dto';
 import { Workspace } from './entities/workspace.entity';
 import { WorkspacesService } from './workspaces.service';
-import { WorkspaceRolesService } from './workspace-roles.service';
 
 @ApiTags('Workspaces')
 @Controller('workspaces')
 export class WorkspacesController {
-  constructor(
-    private readonly workspacesService: WorkspacesService,
-    private readonly workspacePolicyService: WorkspacePolicyService,
-    private readonly workspaceRolesService: WorkspaceRolesService,
-  ) {}
+  constructor(private readonly workspacesService: WorkspacesService) {}
 
   @Doc({
     summary: 'Create Workspace',
@@ -85,7 +65,6 @@ export class WorkspacesController {
     },
   })
   @Get('api-key')
-  @WorkspacePolicy(WorkspaceAction.SECRET_MANAGE)
   getWorkspaceApiKey(
     @WorkspaceId() workspaceId: string,
     @UserContext() userContext: UserContextPayload,
@@ -105,7 +84,6 @@ export class WorkspacesController {
     },
   })
   @Get('configs')
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   getWorkspaceConfigs(
     @WorkspaceId() workspaceId: string,
     @UserContext() userContext: UserContextPayload,
@@ -125,7 +103,6 @@ export class WorkspacesController {
     },
   })
   @Patch('configs')
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_MANAGE)
   updateWorkspaceConfigs(
     @WorkspaceId() workspaceId: string,
     @Body() dto: UpdateWorkspaceConfigsDto,
@@ -162,138 +139,6 @@ export class WorkspacesController {
   }
 
   @Doc({
-    summary: 'Get workspace role permissions',
-    description:
-      'Returns the canonical five-role permission matrix enforced by workspace authorization.',
-    response: {
-      serialization: WorkspaceRolePermissionsResponseDto,
-    },
-  })
-  @Get('role-permissions')
-  getWorkspaceRolePermissions(): WorkspaceRolePermissionsResponseDto {
-    return {
-      roles: this.workspacePolicyService.getRolePermissions(),
-      actions: WORKSPACE_ACTION_DEFINITIONS.map((definition) => ({
-        ...definition,
-      })),
-    };
-  }
-
-  @Doc({
-    summary: 'Get workspace members',
-    description: 'Lists members and their roles in the selected workspace.',
-    response: {
-      serialization: WorkspaceMemberResponseDto,
-      isArray: true,
-    },
-  })
-  @Get(':id/members')
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ, { workspaceParam: 'id' })
-  getWorkspaceMembers(@Param() { id }: IdQueryParamDto) {
-    return this.workspacesService.getWorkspaceMembers(id);
-  }
-
-  @Doc({
-    summary: 'Add workspace member',
-    description:
-      'Adds an existing account to a workspace with an assignable workspace role.',
-    response: {
-      serialization: WorkspaceMemberResponseDto,
-    },
-  })
-  @Post(':id/members')
-  @WorkspacePolicy(WorkspaceAction.MEMBER_MANAGE, { workspaceParam: 'id' })
-  addWorkspaceMember(
-    @Param() { id }: IdQueryParamDto,
-    @Body() dto: AddWorkspaceMemberDto,
-  ) {
-    return this.workspacesService.addWorkspaceMember(id, dto);
-  }
-
-  @Doc({
-    summary: 'Update workspace member role',
-    description: 'Changes an existing member role. Owner transfer is excluded.',
-    response: {
-      serialization: WorkspaceMemberResponseDto,
-    },
-  })
-  @Patch(':id/members/:userId')
-  @WorkspacePolicy(WorkspaceAction.MEMBER_MANAGE, { workspaceParam: 'id' })
-  updateWorkspaceMemberRole(
-    @Param() { id, userId }: WorkspaceMemberParamsDto,
-    @Body() dto: UpdateWorkspaceMemberRoleDto,
-  ) {
-    return this.workspacesService.updateWorkspaceMemberRole(id, userId, dto);
-  }
-
-  @Doc({
-    summary: 'Remove workspace member',
-    description: 'Removes a non-owner member from the workspace.',
-    response: {
-      serialization: DefaultMessageResponseDto,
-    },
-  })
-  @Delete(':id/members/:userId')
-  @WorkspacePolicy(WorkspaceAction.MEMBER_MANAGE, { workspaceParam: 'id' })
-  removeWorkspaceMember(@Param() { id, userId }: WorkspaceMemberParamsDto) {
-    return this.workspacesService.removeWorkspaceMember(id, userId);
-  }
-
-  @Doc({
-    summary: 'Get workspace roles',
-    description:
-      'Lists protected defaults and custom roles available in a workspace.',
-    response: { serialization: WorkspaceRoleResponseDto, isArray: true },
-  })
-  @Get(':id/roles')
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ, { workspaceParam: 'id' })
-  getWorkspaceRoles(@Param() { id }: IdQueryParamDto) {
-    return this.workspaceRolesService.getRoles(id);
-  }
-
-  @Doc({
-    summary: 'Create workspace role',
-    description: 'Creates a custom role scoped to one workspace.',
-    response: { serialization: WorkspaceRoleResponseDto },
-  })
-  @Post(':id/roles')
-  @WorkspacePolicy(WorkspaceAction.ROLE_MANAGE, { workspaceParam: 'id' })
-  createWorkspaceRole(
-    @Param() { id }: IdQueryParamDto,
-    @Body() dto: CreateWorkspaceRoleDto,
-  ) {
-    return this.workspaceRolesService.createRole(id, dto);
-  }
-
-  @Doc({
-    summary: 'Update workspace role',
-    description: 'Updates a custom workspace role.',
-    response: { serialization: WorkspaceRoleResponseDto },
-  })
-  @Patch(':id/roles/:roleId')
-  @WorkspacePolicy(WorkspaceAction.ROLE_MANAGE, { workspaceParam: 'id' })
-  updateWorkspaceRole(
-    @Param() { id, roleId }: WorkspaceRoleParamsDto,
-    @Body() dto: UpdateWorkspaceRoleDto,
-  ) {
-    return this.workspaceRolesService.updateRole(id, roleId, dto);
-  }
-
-  @Doc({
-    summary: 'Delete workspace role',
-    description: 'Deletes an unassigned custom workspace role.',
-    response: { serialization: DefaultMessageResponseDto },
-  })
-  @Delete(':id/roles/:roleId')
-  @WorkspacePolicy(WorkspaceAction.ROLE_MANAGE, { workspaceParam: 'id' })
-  async deleteWorkspaceRole(
-    @Param() { id, roleId }: WorkspaceRoleParamsDto,
-  ): Promise<DefaultMessageResponseDto> {
-    await this.workspaceRolesService.deleteRole(id, roleId);
-    return { message: 'Workspace role deleted successfully' };
-  }
-
-  @Doc({
     summary: 'Get Workspace By ID',
     description:
       'Fetches detailed information about a specific security workspace using its unique identifier, including all associated metadata and configuration.',
@@ -302,7 +147,6 @@ export class WorkspacesController {
     },
   })
   @Get(':id')
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ, { workspaceParam: 'id' })
   async getWorkspaceById(
     @Param() { id }: IdQueryParamDto,
     @UserContext() userContext: UserContextPayload,
@@ -328,9 +172,6 @@ export class WorkspacesController {
     },
   })
   @Patch(':id')
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_MANAGE, {
-    workspaceParam: 'id',
-  })
   updateWorkspace(
     @Param() { id }: IdQueryParamDto,
     @Body() dto: UpdateWorkspaceDto,
@@ -348,9 +189,6 @@ export class WorkspacesController {
     },
   })
   @Delete(':id')
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_MANAGE, {
-    workspaceParam: 'id',
-  })
   deleteWorkspace(
     @Param() { id }: IdQueryParamDto,
     @UserContext() userContext: UserContextPayload,
@@ -367,7 +205,6 @@ export class WorkspacesController {
     },
   })
   @Post(':id/api-key/rotate')
-  @WorkspacePolicy(WorkspaceAction.SECRET_MANAGE, { workspaceParam: 'id' })
   rotateApiKey(
     @Param() { id }: IdQueryParamDto,
     @UserContext() userContext: UserContextPayload,
@@ -384,9 +221,6 @@ export class WorkspacesController {
     },
   })
   @Patch(':id/archived')
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_MANAGE, {
-    workspaceParam: 'id',
-  })
   makeArchived(
     @Param() { id }: IdQueryParamDto,
     @Body() dto: ArchiveWorkspaceDto,

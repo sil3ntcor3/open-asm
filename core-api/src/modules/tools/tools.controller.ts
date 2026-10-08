@@ -1,8 +1,5 @@
-import { Roles, UserId, WorkspaceId } from '@/common/decorators/app.decorator';
-import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
-import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
+import { WorkspaceId } from '@/common/decorators/app.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
-import { Role } from '@/common/enums/enum';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
 import {
   BadRequestException,
@@ -10,7 +7,6 @@ import {
   Controller,
   Get,
   Param,
-  ParseUUIDPipe,
   Post,
   Query,
 } from '@nestjs/common';
@@ -27,46 +23,12 @@ import { ToolsQueryDto } from './dto/tools-query.dto';
 import { AddToolToWorkspaceDto } from './dto/tools.dto';
 import { Tool } from './entities/tools.entity';
 import { WorkspaceTool } from './entities/workspace_tools.entity';
-import { ToolUpdateState } from './entities/tool-update-state.entity';
-import { ToolUpdateService } from './tool-update.service';
 import { ToolsService } from './tools.service';
 
 @ApiTags('Tools')
 @Controller('tools')
 export class ToolsController {
-  constructor(
-    private readonly toolsService: ToolsService,
-    private readonly toolUpdateService: ToolUpdateService,
-  ) {}
-
-  @Doc({
-    summary: 'Check official tool release channels',
-    description:
-      'Checks the allowlisted official stable release channel for each independently managed tool component without installing updates.',
-  })
-  @Post('check-updates')
-  @Roles(Role.ADMIN)
-  checkForUpdates() {
-    return this.toolUpdateService.checkAll();
-  }
-
-  @Doc({
-    summary: 'Request an individual tool component update',
-    description:
-      'Creates a deployment-wide, idempotent rollout request for one verified tool component. Workers apply it independently and report progress.',
-    response: {
-      serialization: ToolUpdateState,
-    },
-  })
-  @Post(':id/update/:component')
-  @Roles(Role.ADMIN)
-  requestToolUpdate(
-    @Param('id', new ParseUUIDPipe()) id: string,
-    @Param('component') component: string,
-    @UserId() userId: string,
-  ) {
-    return this.toolUpdateService.requestUpdate(id, component, userId);
-  }
+  constructor(private readonly toolsService: ToolsService) {}
 
   @Doc({
     summary: 'Create a new tool',
@@ -77,7 +39,6 @@ export class ToolsController {
     },
   })
   @Post()
-  @WorkspacePolicy(WorkspaceAction.TOOL_MANAGE)
   createTool(@Body() dto: CreateToolDto) {
     return this.toolsService.createTool(dto);
   }
@@ -110,9 +71,6 @@ export class ToolsController {
     },
   })
   @Post('add-to-workspace')
-  @WorkspacePolicy(WorkspaceAction.TOOL_MANAGE, {
-    workspaceBody: 'workspaceId',
-  })
   async addToolToWorkspace(@Body() dto: AddToolToWorkspaceDto) {
     return this.toolsService.addToolToWorkspace(dto);
   }
@@ -126,9 +84,6 @@ export class ToolsController {
     },
   })
   @Post('install')
-  @WorkspacePolicy(WorkspaceAction.TOOL_MANAGE, {
-    workspaceBody: 'workspaceId',
-  })
   async installTool(@Body() dto: InstallToolDto) {
     return this.toolsService.installTool(dto);
   }
@@ -142,9 +97,6 @@ export class ToolsController {
     },
   })
   @Post('uninstall')
-  @WorkspacePolicy(WorkspaceAction.TOOL_MANAGE, {
-    workspaceBody: 'workspaceId',
-  })
   async uninstallTool(@Body() dto: InstallToolDto) {
     return this.toolsService.uninstallTool(dto);
   }
@@ -159,7 +111,6 @@ export class ToolsController {
     deprecated: true,
   })
   @Get('built-in-tools')
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   async getBuiltInTools() {
     return this.toolsService.getBuiltInTools();
   }
@@ -176,7 +127,6 @@ export class ToolsController {
     },
   })
   @Get()
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   async getManyTools(
     @Query() query: ToolsQueryDto,
     @WorkspaceId() workspaceId?: string,
@@ -201,7 +151,6 @@ export class ToolsController {
     },
   })
   @Get('installed')
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   async getInstalledTools(
     @Query() dto: GetInstalledToolsDto,
     @WorkspaceId() workspaceId?: string,
@@ -221,7 +170,6 @@ export class ToolsController {
     },
   })
   @Get(':id')
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   getToolById(
     @Param() { id }: GetToolByIdDto,
     @WorkspaceId() workspaceId: string,
@@ -241,12 +189,8 @@ export class ToolsController {
     },
   })
   @Get(':id/api-key')
-  @WorkspacePolicy(WorkspaceAction.SECRET_MANAGE)
-  getToolApiKey(
-    @Param() { id }: IdQueryParamDto,
-    @WorkspaceId() workspaceId: string,
-  ) {
-    return this.toolsService.getToolApiKey(id, workspaceId);
+  getToolApiKey(@Param() { id }: IdQueryParamDto) {
+    return this.toolsService.getToolApiKey(id);
   }
 
   @Doc({
@@ -258,11 +202,7 @@ export class ToolsController {
     },
   })
   @Post(':id/api-key/rotate')
-  @WorkspacePolicy(WorkspaceAction.SECRET_MANAGE)
-  rotateToolApiKey(
-    @Param() { id }: IdQueryParamDto,
-    @WorkspaceId() workspaceId: string,
-  ) {
-    return this.toolsService.rotateToolApiKey(id, workspaceId);
+  rotateToolApiKey(@Param() { id }: IdQueryParamDto) {
+    return this.toolsService.rotateToolApiKey(id);
   }
 }

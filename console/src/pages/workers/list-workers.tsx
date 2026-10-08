@@ -9,16 +9,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import WorkerSettingsControl from '@/components/ui/worker-settings-control';
 import { useNavigateWithParams } from '@/hooks/useNavigateWithParams';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
-import { useWorkspacePermissions } from '@/hooks/useWorkspacePermissions';
 import { useWorkersControllerGetWorkers } from '@/services/apis/gen/queries';
 import type { WorkersControllerGetWorkersParams } from '@/services/apis/gen/queries';
-import { useSession } from '@/utils/authClient';
-import { canManageWorkerScope } from '@/utils/workspace-roles';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { Loader2Icon, Server } from 'lucide-react';
-import { NucleiScannerStatus } from './components/nuclei-scanner-status';
 dayjs.extend(relativeTime);
 
 const COMMON_PARAMS = {
@@ -35,27 +31,15 @@ const QueryOptions = {
 const VALID_TABS = ['global', 'workspace'] as const;
 type TabValue = (typeof VALID_TABS)[number];
 
-/** Renders global and workspace workers with runtime and scanner health. */
 const ListWorkers = () => {
   const {
     state: { selectedWorkspaceId },
   } = useWorkspaceState();
   const navigateWithParams = useNavigateWithParams();
-  const { can } = useWorkspacePermissions();
-  const { data: session } = useSession();
-  const canManageWorkspaceWorkers = can('worker.manage');
-  const search = useSearch({ strict: false }) as Record<
-    string,
-    string | undefined
-  >;
+  const search = useSearch({ strict: false }) as Record<string, string | undefined>;
   const activeTab: TabValue = VALID_TABS.includes(search.tab as TabValue)
     ? (search.tab as TabValue)
     : 'global';
-  const canManageWorkers = canManageWorkerScope(
-    activeTab === 'global' ? 'cloud' : 'workspace',
-    session?.user.role === 'admin',
-    canManageWorkspaceWorkers,
-  );
 
   const navigate = useNavigate();
   const setActiveTab = (tab: TabValue) => {
@@ -88,8 +72,7 @@ const ListWorkers = () => {
     );
 
   const data = activeTab === 'global' ? globalData : workspaceData;
-  const isLoading =
-    activeTab === 'global' ? isGlobalLoading : isWorkspaceLoading;
+  const isLoading = activeTab === 'global' ? isGlobalLoading : isWorkspaceLoading;
 
   const renderSkeleton = () => (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -141,22 +124,15 @@ const ListWorkers = () => {
     );
   };
 
-  const renderWorkerGrid = (
-    workers: NonNullable<typeof globalData>['data'],
-  ) => {
-    const isWorkerOnline = (
-      w: NonNullable<typeof globalData>['data'][number],
-    ) =>
+  const renderWorkerGrid = (workers: NonNullable<typeof globalData>['data']) => {
+    const isWorkerOnline = (w: NonNullable<typeof globalData>['data'][number]) =>
       w.isOnline ??
       new Date().getTime() - new Date(w.lastSeenAt).getTime() < 30000;
 
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
         {workers.map((worker) => (
-          <Card
-            key={worker.id}
-            className={`p-1 transition-opacity ${isWorkerOnline(worker) ? '' : 'opacity-50'}`}
-          >
+          <Card key={worker.id} className={`p-1 transition-opacity ${isWorkerOnline(worker) ? '' : 'opacity-50'}`}>
             <CardContent className="p-3 space-y-4">
               <CardTitle className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -258,17 +234,10 @@ const ListWorkers = () => {
                   )}
                 </div>
               </div>
-              <NucleiScannerStatus worker={worker} />
               <div className="flex items-center justify-between border-t pt-2">
-                {canManageWorkers ? (
-                  <div onClick={(e) => e.stopPropagation()}>
-                    <WorkerSettingsControl worker={worker} />
-                  </div>
-                ) : (
-                  <span className="text-xs text-muted-foreground">
-                    Read only
-                  </span>
-                )}
+                <div onClick={(e) => e.stopPropagation()}>
+                  <WorkerSettingsControl worker={worker} />
+                </div>
                 <span className="text-sm text-muted-foreground">
                   Created {dayjs(worker.createdAt).fromNow()}
                 </span>
@@ -395,18 +364,13 @@ const ListWorkers = () => {
 
   return (
     <Page title="Workers">
-      <Tabs
-        value={activeTab}
-        onValueChange={(v) => setActiveTab(v as 'global' | 'workspace')}
-      >
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'global' | 'workspace')}>
         <div className="flex items-center justify-between">
           <TabsList>
             <TabsTrigger value="global">Global</TabsTrigger>
             <TabsTrigger value="workspace">Workspace</TabsTrigger>
           </TabsList>
-          {activeTab === 'workspace' && hasWorkspaceWorkers && (
-            <ConnectWorkerTrigger />
-          )}
+          {activeTab === 'workspace' && hasWorkspaceWorkers && <ConnectWorkerTrigger />}
         </div>
         <TabsContent value="global">{renderTabContent()}</TabsContent>
         <TabsContent value="workspace">{renderTabContent()}</TabsContent>

@@ -1,10 +1,8 @@
 import { UserContext, WorkspaceId } from '@/common/decorators/app.decorator';
-import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
-import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
-import { WorkspacePolicyService } from '@/common/authorization/workspace-policy.service';
 import { Doc } from '@/common/doc/doc.decorator';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import { IdQueryParamDto } from '@/common/dtos/id-query-param.dto';
+import { WorkspaceOwnerGuard } from '@/common/guards/workspace-owner.guard';
 import { UserContextPayload } from '@/common/interfaces/app.interface';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
 import {
@@ -18,6 +16,7 @@ import {
   Post,
   Query,
   Res,
+  UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
 import {
@@ -34,10 +33,7 @@ import { TargetsService } from './targets.service';
 
 @Controller('targets')
 export class TargetsController {
-  constructor(
-    private readonly targetsService: TargetsService,
-    private readonly workspacePolicyService: WorkspacePolicyService,
-  ) {}
+  constructor(private readonly targetsService: TargetsService) {}
 
   @Doc({
     summary: 'Create multiple targets in bulk',
@@ -51,20 +47,11 @@ export class TargetsController {
     },
   })
   @Post('bulk')
-  @WorkspacePolicy(WorkspaceAction.TARGET_CREATE)
-  async createMultipleTargets(
+  createMultipleTargets(
     @Body() dto: CreateMultipleTargetsDto,
     @UserContext() userContext: UserContextPayload,
     @WorkspaceId() workspaceId: string,
-  ): Promise<BulkTargetResultDto> {
-    if (dto.startDiscovery !== false) {
-      await this.workspacePolicyService.assertAllowed(
-        { id: userContext.id, role: userContext.role },
-        workspaceId,
-        WorkspaceAction.SCAN_EXECUTE,
-      );
-    }
-
+  ) {
     return this.targetsService.createMultipleTargets(
       dto,
       workspaceId,
@@ -84,7 +71,6 @@ export class TargetsController {
     },
   })
   @Post('discover')
-  @WorkspacePolicy(WorkspaceAction.SCAN_EXECUTE)
   discoverTargets(
     @Body() dto: DiscoverTargetsDto,
     @UserContext() userContext: UserContextPayload,
@@ -105,7 +91,6 @@ export class TargetsController {
     },
   })
   @Get()
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   getTargetsInWorkspace(
     @Query() query: GetManyWorkspaceQueryParamsDto,
     @WorkspaceId() workspaceId: string,
@@ -124,8 +109,8 @@ export class TargetsController {
       getWorkspaceId: true,
     },
   })
+  @UseGuards(WorkspaceOwnerGuard)
   @Get('export')
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   async exportTargetsToCSV(
     @WorkspaceId() workspaceId: string,
     @Res() res: Response,
@@ -182,7 +167,6 @@ export class TargetsController {
     },
   })
   @Get(':id')
-  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   getTargetById(
     @Param() { id }: IdQueryParamDto,
     @WorkspaceId() workspaceId: string,
@@ -199,15 +183,17 @@ export class TargetsController {
     },
   })
   @Delete(':id/workspace/:workspaceId')
-  @WorkspacePolicy(WorkspaceAction.TARGET_MANAGE, {
-    workspaceParam: 'workspaceId',
-  })
   deleteTargetFromWorkspace(
     @Param() { id }: IdQueryParamDto,
     @Param('workspaceId', new ParseUUIDPipe({ version: '4' }))
     workspaceId: string,
+    @UserContext() userContext: UserContextPayload,
   ) {
-    return this.targetsService.deleteTargetFromWorkspace(id, workspaceId);
+    return this.targetsService.deleteTargetFromWorkspace(
+      id,
+      workspaceId,
+      userContext,
+    );
   }
 
   @Doc({
@@ -219,12 +205,8 @@ export class TargetsController {
     },
   })
   @Post(':id/re-scan')
-  @WorkspacePolicy(WorkspaceAction.SCAN_EXECUTE)
-  reScanTarget(
-    @Param() { id }: IdQueryParamDto,
-    @WorkspaceId() workspaceId: string,
-  ) {
-    return this.targetsService.reScanTarget(id, workspaceId);
+  reScanTarget(@Param() { id }: IdQueryParamDto) {
+    return this.targetsService.assetService.reScan(id);
   }
 
   @Doc({
@@ -236,12 +218,7 @@ export class TargetsController {
     },
   })
   @Patch(':id')
-  @WorkspacePolicy(WorkspaceAction.TARGET_MANAGE)
-  updateTarget(
-    @Param() { id }: IdQueryParamDto,
-    @Body() dto: UpdateTargetDto,
-    @WorkspaceId() workspaceId: string,
-  ) {
-    return this.targetsService.updateTarget(id, dto, workspaceId);
+  updateTarget(@Param() { id }: IdQueryParamDto, @Body() dto: UpdateTargetDto) {
+    return this.targetsService.updateTarget(id, dto);
   }
 }

@@ -11,11 +11,8 @@ export enum Role {
 }
 
 export enum WorkspaceRole {
-  VIEWER = 'viewer',
-  ANALYST = 'analyst',
-  OPERATOR = 'operator',
-  SECURITY_ADMIN = 'security_admin',
   OWNER = 'owner',
+  MEMBER = 'member',
 }
 
 /**
@@ -27,20 +24,8 @@ export enum ToolCategory {
   PORTS_SCANNER = 'ports_scanner',
   VULNERABILITIES = 'vulnerabilities',
   SCREENSHOT = 'screenshot',
-  SERVICE_DISCOVERY = 'service_discovery',
   CLASSIFIER = 'classifier',
   ASSISTANT = 'assistant',
-}
-
-/**
- * Whether the most recent DNS discovery produced an IP address for an asset.
- * Unknown preserves compatibility for manually entered IPs and assets that
- * have not been through DNS discovery yet.
- */
-export enum DnsResolutionStatus {
-  UNKNOWN = 'unknown',
-  RESOLVED = 'resolved',
-  UNRESOLVED = 'unresolved',
 }
 
 /**
@@ -219,7 +204,6 @@ export const CATEGORY_DATA_SOURCE_MAP: Record<ToolCategory, DataSource> = {
   [ToolCategory.PORTS_SCANNER]: DataSource.ASSET,
   [ToolCategory.VULNERABILITIES]: DataSource.ASSET,
   [ToolCategory.SCREENSHOT]: DataSource.ASSET_SERVICE,
-  [ToolCategory.SERVICE_DISCOVERY]: DataSource.ASSET_SERVICE,
   [ToolCategory.CLASSIFIER]: DataSource.ASSET,
   [ToolCategory.ASSISTANT]: DataSource.ASSET,
 };

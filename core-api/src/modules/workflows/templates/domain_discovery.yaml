@@ -10,9 +10,6 @@ jobs:
   - name: Port Scan
     run: naabu
 
-  - name: Service Discovery
-    run: nmap
-
   - name: HTTP Probe
     run: httpx
 

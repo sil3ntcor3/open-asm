@@ -32,6 +32,9 @@ export class AgentMessageToolCall extends BaseEntity {
   @Column({ type: 'integer', nullable: true })
   durationMs?: number | null;
 
+  @Column({ type: 'uuid', nullable: true })
+  workerId?: string | null;
+
   @ManyToOne(() => AgentMessage, (msg) => msg.toolCalls, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'messageId' })
   message: AgentMessage;

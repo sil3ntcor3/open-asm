@@ -34,7 +34,7 @@ export class SystemConfigsService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    await this.checkForUpdates();
+    await this.checkUpdate();
   }
 
   /**
@@ -120,7 +120,7 @@ export class SystemConfigsService implements OnModuleInit {
    * - Last check was more than 12 hours ago
    */
   @Cron('0 3 * * *')
-  public async checkForUpdates(force = false): Promise<boolean> {
+  private async checkUpdate(): Promise<void> {
     const now = new Date();
     const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
 
@@ -142,7 +142,7 @@ export class SystemConfigsService implements OnModuleInit {
         }
       }
 
-      if (force || shouldFetch) {
+      if (shouldFetch) {
         const latestVersion = await this.getLatestVersion();
 
         if (latestVersion) {
@@ -157,7 +157,6 @@ export class SystemConfigsService implements OnModuleInit {
           this.logger.log(
             `Version checked and updated: ${latestVersion.tag_name}`,
           );
-          return true;
         }
       } else {
         this.logger.log('Version check skipped (within 12 hours)');
@@ -165,8 +164,6 @@ export class SystemConfigsService implements OnModuleInit {
     } catch (error) {
       this.logger.error('Error during version check:', error);
     }
-
-    return false;
   }
 
   private async getLatestVersion(): Promise<ReleaseVersion | null> {

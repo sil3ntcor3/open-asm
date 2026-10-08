@@ -7,16 +7,9 @@ import { randomUUID } from 'crypto';
 import 'dotenv/config';
 import { Pool } from 'pg';
 
-// The one-shot provisioner must be able to exit after its final idle query.
-// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
-const authDatabasePool = new Pool({
-  ...databaseConnectionConfig,
-  allowExitOnIdle: true,
-});
-
 export const auth: unknown = betterAuth({
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  database: authDatabasePool,
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+  database: new Pool(databaseConnectionConfig),
   plugins: [
     admin({
       defaultRole: Role.USER,
@@ -51,7 +44,6 @@ export const auth: unknown = betterAuth({
   },
   emailAndPassword: {
     enabled: true,
-    disableSignUp: true,
   },
   session: {
     freshAge: 10,

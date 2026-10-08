@@ -22,11 +22,6 @@ import { AxiosError } from 'axios';
 import { toast } from 'sonner';
 import { handleServerError } from './lib/handle-server-error';
 import { SESSION_QUERY_KEY, useSession, type User } from './utils/authClient';
-import {
-  isSensitiveQueryKey,
-  LEGACY_PERSISTED_QUERY_CACHE_KEY,
-  PERSISTED_QUERY_CACHE_KEY,
-} from './utils/query-cache';
 
 // Deduplicate 401 handling — multiple queries may fail at once during logout.
 let isHandling401 = false;
@@ -74,15 +69,9 @@ const queryClient = new QueryClient({
   }),
 });
 
-try {
-  window.localStorage.removeItem(LEGACY_PERSISTED_QUERY_CACHE_KEY);
-} catch {
-  // Storage can be unavailable in privacy-focused browser configurations.
-}
-
 const localStoragePersister = createSyncStoragePersister({
   storage: window.localStorage,
-  key: PERSISTED_QUERY_CACHE_KEY,
+  key: 'rq-persist',
 });
 
 persistQueryClient({
@@ -92,7 +81,6 @@ persistQueryClient({
   dehydrateOptions: {
     shouldDehydrateQuery: (query) => {
       if (query.state.status === 'pending') return false;
-      if (isSensitiveQueryKey(query.queryKey)) return false;
       const queryKey = JSON.stringify(query.queryKey);
       const sessionKey = JSON.stringify(SESSION_QUERY_KEY);
       return queryKey !== sessionKey;
