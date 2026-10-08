@@ -7,6 +7,10 @@ import {
   IsString,
   IsUUID,
   IsObject,
+  IsIn,
+  IsDateString,
+  Matches,
+  MaxLength,
   Max,
   Min,
   ValidateNested,
@@ -15,8 +19,8 @@ import { Type, Transform } from 'class-transformer';
 
 export class WorkerManifestResponseDto {
   @ApiProperty({
-    description: 'Commands to initialize worker tools',
-    example: ['nuclei -ut'],
+    description: 'Commands to initialize worker tools (disabled by default)',
+    example: [],
     type: [String],
   })
   initCommands: string[];
@@ -41,10 +45,6 @@ export class WorkerJoinDto {
 
   @ApiProperty({ required: false })
   @IsString()
-  signature: string;
-
-  @ApiProperty({ required: false })
-  @IsString()
   @IsOptional()
   token?: string;
 
@@ -65,6 +65,131 @@ export class WorkerAliveDto {
   @ApiProperty()
   @IsString()
   token: string;
+}
+
+export class ScannerStatusReportDto {
+  @ApiProperty()
+  @IsString()
+  @MaxLength(64)
+  @Matches(/^$|^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/)
+  engineVersion: string;
+
+  @ApiProperty()
+  @IsString()
+  @MaxLength(64)
+  @Matches(/^$|^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/)
+  templateVersion: string;
+
+  @ApiProperty()
+  @IsString()
+  @MaxLength(128)
+  @Matches(/^projectdiscovery\/nuclei-templates$/)
+  templateSource: string;
+
+  @ApiProperty({ enum: ['ready', 'refreshing', 'stale', 'error'] })
+  @IsString()
+  @IsIn(['ready', 'refreshing', 'stale', 'error'])
+  @MaxLength(16)
+  state: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsDateString()
+  @MaxLength(64)
+  @IsOptional()
+  lastUpdateAttemptAt?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsDateString()
+  @MaxLength(64)
+  @IsOptional()
+  lastUpdateSuccessAt?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsDateString()
+  @MaxLength(64)
+  @IsOptional()
+  lastValidatedAt?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @MaxLength(2048)
+  @IsOptional()
+  lastError?: string;
+}
+
+export class ToolStatusReportDto {
+  @ApiProperty()
+  @IsString()
+  @MaxLength(64)
+  component: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @MaxLength(64)
+  @Matches(/^$|^v?\d+\.\d+(?:\.\d+){0,2}(?:[-+][0-9A-Za-z.-]+)?$/)
+  @IsOptional()
+  installedVersion?: string;
+
+  @ApiProperty({
+    enum: ['ready', 'pending', 'updating', 'succeeded', 'failed'],
+  })
+  @IsString()
+  @IsIn(['ready', 'pending', 'updating', 'succeeded', 'failed'])
+  state: string;
+
+  @ApiProperty({ required: false })
+  @IsUUID()
+  @IsOptional()
+  requestId?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @MaxLength(64)
+  @Matches(/^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/)
+  @IsOptional()
+  targetVersion?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @MaxLength(64)
+  @Matches(/^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/)
+  @IsOptional()
+  rollbackVersion?: string;
+
+  @ApiProperty({ required: false })
+  @IsDateString()
+  @MaxLength(64)
+  @IsOptional()
+  lastAttemptAt?: string;
+
+  @ApiProperty({ required: false })
+  @IsDateString()
+  @MaxLength(64)
+  @IsOptional()
+  lastSuccessAt?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @MaxLength(2048)
+  @IsOptional()
+  error?: string;
+}
+
+export class ToolUpdatePlanRequestDto {
+  @ApiProperty()
+  @IsString()
+  @MaxLength(16)
+  @Matches(/^[a-z0-9_]+$/)
+  os: string;
+
+  @ApiProperty()
+  @IsString()
+  @MaxLength(16)
+  @Matches(/^[a-z0-9_]+$/)
+  arch: string;
 }
 
 export class GetManyWorkersDto extends GetManyBaseQueryParams {
@@ -96,7 +221,13 @@ export class UpdateWorkerSettingsDto {
    * finish (running jobs are never killed). Null resets the worker to its
    * local WORKER_MAX_CONCURRENCY configuration.
    */
-  @ApiProperty({ required: false, nullable: true, minimum: 1, maximum: 100 })
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    type: Number,
+    minimum: 1,
+    maximum: 100,
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()

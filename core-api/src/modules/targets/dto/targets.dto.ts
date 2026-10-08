@@ -179,7 +179,7 @@ export class GetManyWorkspaceQueryParamsDto extends GetManyBaseQueryParams {
 }
 
 export class UpdateTargetDto {
-  @ApiProperty({ enum: CronSchedule })
+  @ApiProperty({ required: false, enum: CronSchedule })
   @IsString()
   @IsEnum(CronSchedule)
   @IsOptional()
@@ -191,12 +191,12 @@ export class UpdateTargetDto {
    * open; both start and end must be set for the window to apply. Set both
    * to null to return to continuous scanning.
    */
-  @ApiProperty({ required: false, nullable: true, example: '22:00' })
+  @ApiProperty({ required: false, nullable: true, type: String, example: '22:00' })
   @IsOptional()
   @IsMilitaryTime()
   scanWindowStart?: string | null;
 
-  @ApiProperty({ required: false, nullable: true, example: '06:00' })
+  @ApiProperty({ required: false, nullable: true, type: String, example: '06:00' })
   @IsOptional()
   @IsMilitaryTime()
   scanWindowEnd?: string | null;
@@ -205,7 +205,12 @@ export class UpdateTargetDto {
    * IANA timezone the window is evaluated in. Validated here because an
    * unknown zone name would make the dispatch query error at runtime.
    */
-  @ApiProperty({ required: false, nullable: true, example: 'America/Chicago' })
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    type: String,
+    example: 'America/Chicago',
+  })
   @IsOptional()
   @IsTimeZone()
   scanWindowTimezone?: string | null;

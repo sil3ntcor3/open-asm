@@ -1,0 +1,121 @@
+name: Check Scanner Tool Updates
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    name: Propose verified ${{ matrix.tool }} release
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tool: [dnsx, httpx, naabu, nuclei, subfinder]
+    concurrency:
+      group: scanner-release-update-${{ matrix.tool }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout dev
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: Compare official and pinned releases
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TOOL: ${{ matrix.tool }}
+        run: |
+          latest_tag="$(gh api "repos/projectdiscovery/$TOOL/releases/latest" --jq '.tag_name')"
+          latest_version="${latest_tag#v}"
+          current_version="$(jq -r --arg tool "$TOOL" '.tools[$tool]' scripts/tool-versions.json)"
+
+          if [[ ! "$latest_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Latest $TOOL tag is not semantic: $latest_tag"
+            exit 1
+          fi
+          if [[ ! "$current_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Pinned $TOOL version is not semantic: $current_version"
+            exit 1
+          fi
+
+          echo "version=$latest_version" >> "$GITHUB_OUTPUT"
+          if [ "$latest_version" = "$current_version" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "$TOOL v$current_version is already pinned."
+          elif [ "$(printf '%s\n%s\n' "$current_version" "$latest_version" | sort -V | tail -n 1)" != "$latest_version" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Official latest v$latest_version is older than pinned v$current_version; refusing downgrade."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "$TOOL update available: v$current_version -> v$latest_version"
+          fi
+
+      - name: Download and verify release artifacts
+        if: steps.release.outputs.changed == 'true'
+        run: scripts/update-tool-artifacts.sh "${{ matrix.tool }}=${{ steps.release.outputs.version }}"
+
+      - name: Test artifact updater
+        if: steps.release.outputs.changed == 'true'
+        run: scripts/update-tool-artifacts.test.sh
+
+      - name: Set up Node.js
+        if: steps.release.outputs.changed == 'true'
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install workspace dependencies
+        if: steps.release.outputs.changed == 'true'
+        run: npm ci --ignore-scripts
+
+      - name: Verify tool metadata and artifact serving
+        if: steps.release.outputs.changed == 'true'
+        run: npm test -- --runInBand modules/tools/tools-provider/built-in-tools.spec.ts modules/workers/tool-artifact.service.spec.ts
+        working-directory: core-api
+
+      - name: Set up Go
+        if: steps.release.outputs.changed == 'true'
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: worker/go.mod
+          cache-dependency-path: worker/go.sum
+
+      - name: Verify worker compatibility
+        if: steps.release.outputs.changed == 'true'
+        run: go test ./...
+        working-directory: worker
+
+      - name: Create or update dev pull request
+        if: steps.release.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TOOL: ${{ matrix.tool }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          branch="automation/${TOOL}-v${VERSION}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$branch"
+          git add core-api/public/archived scripts/tool-versions.json
+          git commit -m "chore(tools): update ${TOOL} to v${VERSION}"
+          git push --force-with-lease origin "$branch"
+
+          existing_pr="$(gh pr list --head "$branch" --base dev --state open --json url --jq '.[0].url // empty')"
+          if [ -n "$existing_pr" ]; then
+            echo "Updated $existing_pr"
+          else
+            gh pr create \
+              --base dev \
+              --head "$branch" \
+              --title "chore(tools): update ${TOOL} to v${VERSION}" \
+              --body "Automated, checksum-verified ${TOOL} update: refreshes the archives baked into the api image so newly deployed workers run v${VERSION} without a post-deployment upgrade. Merge into dev after CI and UAT pass; main remains unchanged until the normal promotion process."
+          fi

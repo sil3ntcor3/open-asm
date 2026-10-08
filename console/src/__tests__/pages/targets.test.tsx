@@ -17,11 +17,11 @@ describe('Targets Page', () => {
       expect(screen.getByText('192.168.1.1')).toBeInTheDocument();
     });
 
-    expect(screen.getByText('Target')).toBeInTheDocument();
-    expect(screen.getByText('Type')).toBeInTheDocument();
-    expect(screen.getByText('Services')).toBeInTheDocument();
-    expect(screen.getByText('DOMAIN')).toBeInTheDocument();
-    expect(screen.getByText('IP')).toBeInTheDocument();
+    expect(await screen.findByText('Target')).toBeInTheDocument();
+    expect(await screen.findByText('Type')).toBeInTheDocument();
+    expect(await screen.findByText('Services')).toBeInTheDocument();
+    expect(await screen.findByText('DOMAIN')).toBeInTheDocument();
+    expect(await screen.findByText('IP')).toBeInTheDocument();
   });
 
   it('shows empty state when no targets', async () => {
@@ -91,12 +91,12 @@ describe('Targets Page', () => {
       expect(screen.getByText('example.com')).toBeInTheDocument();
     });
 
-    const startDiscoveryButton = screen.getByRole('button', {
+    const startDiscoveryButton = await screen.findByRole('button', {
       name: /start discovery/i,
     });
     expect(startDiscoveryButton).toBeDisabled();
 
-    const rowCheckboxes = screen.getAllByLabelText('Select row');
+    const rowCheckboxes = await screen.findAllByLabelText('Select row');
     await user.click(rowCheckboxes[0]);
     await user.click(rowCheckboxes[1]);
     await user.click(startDiscoveryButton);

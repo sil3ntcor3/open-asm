@@ -118,16 +118,21 @@ export class Target extends BaseEntity {
    * running when the window closes are paused by worker control until the
    * window opens again.
    */
-  @ApiProperty({ required: false, nullable: true, example: '22:00' })
+  @ApiProperty({ required: false, nullable: true, type: String, example: '22:00' })
   @Column({ type: 'time', nullable: true })
   scanWindowStart?: string | null;
 
-  @ApiProperty({ required: false, nullable: true, example: '06:00' })
+  @ApiProperty({ required: false, nullable: true, type: String, example: '06:00' })
   @Column({ type: 'time', nullable: true })
   scanWindowEnd?: string | null;
 
   /** IANA timezone the window is evaluated in (defaults to UTC). */
-  @ApiProperty({ required: false, nullable: true, example: 'America/Chicago' })
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    type: String,
+    example: 'America/Chicago',
+  })
   @Column({ type: 'varchar', nullable: true })
   scanWindowTimezone?: string | null;
 

@@ -224,10 +224,11 @@ export class AssetGroupService {
   async addManyWorkflows(
     groupId: string,
     workflowIds: string[],
+    workspaceId: string,
   ): Promise<DefaultMessageResponseDto> {
     try {
       const assetGroup = await this.assetGroupRepo.findOne({
-        where: { id: groupId },
+        where: { id: groupId, workspace: { id: workspaceId } },
       });
       if (!assetGroup) {
         this.logger.warn(`Asset group with ID "${groupId}" not found`);
@@ -237,7 +238,9 @@ export class AssetGroupService {
       }
 
       // Verify that all workflows exist
-      const workflows = await this.workflowRepo.findByIds(workflowIds);
+      const workflows = await this.workflowRepo.find({
+        where: { id: In(workflowIds), workspace: { id: workspaceId } },
+      });
       if (workflows.length !== workflowIds.length) {
         const foundWorkflowIds = workflows.map((workflow) => workflow.id);
         const missingWorkflowIds = workflowIds.filter(
@@ -255,7 +258,7 @@ export class AssetGroupService {
       const existingAssociations = await this.assetGroupWorkflowRepo.find({
         where: {
           assetGroup: { id: groupId },
-          workflow: { id: In(workflowIds) },
+          workflow: { id: In(workflowIds), workspace: { id: workspaceId } },
         },
       });
 
@@ -317,11 +320,12 @@ export class AssetGroupService {
   async addManyAssets(
     groupId: string,
     assetIds: string[],
+    workspaceId: string,
   ): Promise<DefaultMessageResponseDto> {
     try {
       // Verify that the asset group exists
       const assetGroup = await this.assetGroupRepo.findOne({
-        where: { id: groupId },
+        where: { id: groupId, workspace: { id: workspaceId } },
       });
       if (!assetGroup) {
         this.logger.warn(`Asset group with ID "${groupId}" not found`);
@@ -331,7 +335,14 @@ export class AssetGroupService {
       }
 
       // Verify that all assets exist
-      const assets = await this.assetRepo.findByIds(assetIds);
+      const assets = await this.assetRepo.find({
+        where: {
+          id: In(assetIds),
+          target: {
+            workspaceTargets: { workspace: { id: workspaceId } },
+          },
+        },
+      });
       if (assets.length !== assetIds.length) {
         const foundAssetIds = assets.map((asset) => asset.id);
         const missingAssetIds = assetIds.filter(
@@ -349,7 +360,12 @@ export class AssetGroupService {
       const existingAssociations = await this.assetGroupAssetRepo.find({
         where: {
           assetGroup: { id: groupId },
-          asset: { id: In(assetIds) },
+          asset: {
+            id: In(assetIds),
+            target: {
+              workspaceTargets: { workspace: { id: workspaceId } },
+            },
+          },
         },
       });
 
@@ -393,13 +409,14 @@ export class AssetGroupService {
   async removeManyWorkflows(
     groupId: string,
     workflowIds: string[],
+    workspaceId: string,
   ): Promise<DefaultMessageResponseDto> {
     try {
       // Find existing associations
       const associations = await this.assetGroupWorkflowRepo.find({
         where: {
-          assetGroup: { id: groupId },
-          workflow: { id: In(workflowIds) },
+          assetGroup: { id: groupId, workspace: { id: workspaceId } },
+          workflow: { id: In(workflowIds), workspace: { id: workspaceId } },
         },
         relations: ['workflow', 'assetGroup'],
       });
@@ -452,13 +469,19 @@ export class AssetGroupService {
   async removeManyAssets(
     groupId: string,
     assetIds: string[],
+    workspaceId: string,
   ): Promise<DefaultMessageResponseDto> {
     try {
       // Find existing associations
       const associations = await this.assetGroupAssetRepo.find({
         where: {
-          assetGroup: { id: groupId },
-          asset: { id: In(assetIds) },
+          assetGroup: { id: groupId, workspace: { id: workspaceId } },
+          asset: {
+            id: In(assetIds),
+            target: {
+              workspaceTargets: { workspace: { id: workspaceId } },
+            },
+          },
         },
         relations: ['asset', 'assetGroup'],
       });
@@ -498,10 +521,13 @@ export class AssetGroupService {
   /**
    * Permanently removes an asset group
    */
-  async delete(id: string): Promise<DefaultMessageResponseDto> {
+  async delete(
+    id: string,
+    workspaceId: string,
+  ): Promise<DefaultMessageResponseDto> {
     try {
       const assetGroup = await this.assetGroupRepo.findOne({
-        where: { id },
+        where: { id, workspace: { id: workspaceId } },
         relations: ['assetGroupAssets', 'assetGroupWorkflows'],
       });
 
@@ -773,11 +799,16 @@ export class AssetGroupService {
       schedule?: CronSchedule;
       jobId?: string;
     }>,
+    workspaceId: string,
   ): Promise<AssetGroupWorkflow> {
     try {
       // Find the existing relationship by ID
       const assetGroupWorkspace = await this.assetGroupWorkflowRepo.findOne({
-        where: { id: assetGroupWorkflowId },
+        where: {
+          id: assetGroupWorkflowId,
+          assetGroup: { workspace: { id: workspaceId } },
+          workflow: { workspace: { id: workspaceId } },
+        },
         relations: ['assetGroup', 'workflow'],
       });
 
@@ -828,9 +859,10 @@ export class AssetGroupService {
   public async runGroupWorkflowScheduler(
     assetGroupWorkflowId: string,
     jobRunType: JobRunType,
+    workspaceId?: string,
   ): Promise<DefaultMessageResponseDto> {
     // Get the asset group workflow to access the workflow and asset group
-    const assetGroupWorkflow = await this.assetGroupWorkflowRepo
+    const assetGroupWorkflow = this.assetGroupWorkflowRepo
       .createQueryBuilder('assetGroupWorkflow')
       .innerJoinAndSelect('assetGroupWorkflow.workflow', 'workflow')
       .leftJoinAndSelect('workflow.workspace', 'workspace')
@@ -838,16 +870,25 @@ export class AssetGroupService {
       .where('assetGroupWorkflow.id = :assetGroupWorkflowId', {
         assetGroupWorkflowId,
       })
-      .getOne();
+      .andWhere('workspace.id = assetGroup.workspaceId');
 
-    if (!assetGroupWorkflow) {
+    if (workspaceId) {
+      assetGroupWorkflow.andWhere('workspace.id = :workspaceId', {
+        workspaceId,
+      });
+    }
+
+    const resolvedAssetGroupWorkflow = await assetGroupWorkflow.getOne();
+
+    if (!resolvedAssetGroupWorkflow) {
       throw new NotFoundException(
         `Asset group workflow with ID "${assetGroupWorkflowId}" not found`,
       );
     }
 
-    const workflow = assetGroupWorkflow.workflow;
-    const assetGroupName = assetGroupWorkflow.assetGroup.name;
+    const workflow = resolvedAssetGroupWorkflow.workflow;
+    const assetGroupName = resolvedAssetGroupWorkflow.assetGroup.name;
+    const resolvedWorkspaceId = workflow.workspace.id;
 
     // Get all assets associated with the specific asset group workflow
     const assets = await this.assetRepo
@@ -856,6 +897,9 @@ export class AssetGroupService {
       .innerJoin('asset_groups', 'ag', 'ag.id = aga."assetGroupId"')
       .innerJoin('asset_group_workflows', 'agw', 'agw."assetGroupId" = ag.id')
       .where('agw.id = :assetGroupWorkflowId', { assetGroupWorkflowId })
+      .andWhere('ag.workspaceId = :workspaceId', {
+        workspaceId: resolvedWorkspaceId,
+      })
       .getMany();
 
     if (assets.length === 0) {
@@ -891,7 +935,7 @@ export class AssetGroupService {
       assetIds: assets.map((a) => a.id),
       workflow: workflow,
       priority: tool.priority,
-      workspaceId: workflow.workspace.id,
+      workspaceId: resolvedWorkspaceId,
       jobName: assetGroupName,
       jobRunType,
     });

@@ -1,7 +1,10 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import ViewCode from '@/pages/assets/components/view-code';
-import { useWorkspacesControllerGetWorkspaceApiKey } from '@/services/apis/gen/queries';
+import {
+  getWorkspacesControllerGetWorkspaceApiKeyQueryKey,
+  useWorkspacesControllerGetWorkspaceApiKey,
+} from '@/services/apis/gen/queries';
 import { RefreshCw } from 'lucide-react';
 
 /**
@@ -14,7 +17,10 @@ export default function McpConnect() {
   const { data: apiKeyData, isLoading } =
     useWorkspacesControllerGetWorkspaceApiKey({
       query: {
-        queryKey: [selectedWorkspaceId],
+        queryKey: [
+          ...getWorkspacesControllerGetWorkspaceApiKeyQueryKey(),
+          selectedWorkspaceId,
+        ],
         enabled: !!selectedWorkspaceId,
       },
     });

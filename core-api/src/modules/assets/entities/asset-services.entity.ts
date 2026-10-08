@@ -73,4 +73,25 @@ export class AssetService extends BaseEntity {
   @Column({ nullable: true })
   @IsOptional()
   screenshotPath?: string;
+
+  // Populated by the nmap service-discovery step (ToolCategory.SERVICE_DISCOVERY).
+  // `service` is nmap's protocol label (http, ssl/http, ftp, smtp, imap, ...);
+  // `product` is the identified software; `scheme` is set ONLY for web services
+  // (http/https) and is therefore the reliable, port-agnostic "this is a web
+  // endpoint" signal used to gate screenshot creation.
+  @ApiProperty({ required: false })
+  @Column({ type: 'varchar', nullable: true })
+  @IsOptional()
+  service?: string;
+
+  @ApiProperty({ required: false })
+  @Column({ type: 'varchar', nullable: true })
+  @IsOptional()
+  product?: string;
+
+  @ApiProperty({ required: false })
+  @Index({ where: '"scheme" IS NOT NULL' })
+  @Column({ type: 'varchar', nullable: true })
+  @IsOptional()
+  scheme?: string;
 }

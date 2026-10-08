@@ -17,7 +17,10 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
-import { useStatisticControllerGetTimelineStatistics } from '@/services/apis/gen/queries';
+import {
+  getStatisticControllerGetTimelineStatisticsQueryKey,
+  useStatisticControllerGetTimelineStatistics,
+} from '@/services/apis/gen/queries';
 import { format } from 'date-fns';
 
 const chartConfig = {
@@ -44,7 +47,10 @@ export function AssetTrends() {
   const { data } = useStatisticControllerGetTimelineStatistics({
     query: {
       enabled: !!selectedWorkspaceId,
-      queryKey: [selectedWorkspaceId],
+      queryKey: [
+        ...getStatisticControllerGetTimelineStatisticsQueryKey(),
+        selectedWorkspaceId,
+      ],
       refetchInterval: 60 * 60 * 1000,
     },
   });

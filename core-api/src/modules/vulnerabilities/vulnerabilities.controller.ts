@@ -1,3 +1,5 @@
+import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
+import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
 import { UserContext } from '@/common/decorators/app.decorator';
 import { WorkspaceId } from '@/common/decorators/workspace-id.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
@@ -45,6 +47,7 @@ export class VulnerabilitiesController {
     },
   })
   @Post('scan')
+  @WorkspacePolicy(WorkspaceAction.SCAN_EXECUTE)
   scan(@Body() scanDto: ScanDto, @WorkspaceId() workspaceId: string) {
     return this.vulnerabilitiesService.scan(scanDto.targetId, workspaceId);
   }
@@ -61,6 +64,7 @@ export class VulnerabilitiesController {
     },
   })
   @Get()
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   async getVulnerabilities(
     @Query() query: GetVulnerabilitiesQueryDto,
     @WorkspaceId() workspaceId: string,
@@ -77,6 +81,9 @@ export class VulnerabilitiesController {
     },
   })
   @Get('statistics')
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ, {
+    workspaceQuery: 'workspaceId',
+  })
   async getVulnerabilitiesStatistics(
     @Query() query: GetVulnerabilitiesStatisticsQueryDto,
   ) {
@@ -95,6 +102,7 @@ export class VulnerabilitiesController {
     },
   })
   @Get(':id')
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   getVulnerabilityById(
     @Param('id') id: string,
     @WorkspaceId() workspaceId: string,
@@ -114,6 +122,7 @@ export class VulnerabilitiesController {
     },
   })
   @Post(':id/analyze')
+  @WorkspacePolicy(WorkspaceAction.FINDING_TRIAGE)
   @HttpCode(HttpStatus.OK)
   async analyzeVulnerability(
     @Param('id') id: string,
@@ -141,6 +150,7 @@ export class VulnerabilitiesController {
     },
   })
   @Delete(':id/analyze')
+  @WorkspacePolicy(WorkspaceAction.FINDING_TRIAGE)
   async deleteVulnerabilityAnalysis(
     @Param('id') id: string,
     @WorkspaceId() workspaceId: string,
@@ -164,6 +174,7 @@ export class VulnerabilitiesController {
     },
   })
   @Post('dismiss')
+  @WorkspacePolicy(WorkspaceAction.FINDING_TRIAGE)
   bulkDismissVulnerabilities(
     @WorkspaceId() workspaceId: string,
     @UserContext() user: User,
@@ -186,6 +197,7 @@ export class VulnerabilitiesController {
     },
   })
   @Post('reopen')
+  @WorkspacePolicy(WorkspaceAction.FINDING_TRIAGE)
   bulkReopenVulnerabilities(
     @WorkspaceId() workspaceId: string,
     @Body() dto: BulkReopenVulnerabilitiesDto,

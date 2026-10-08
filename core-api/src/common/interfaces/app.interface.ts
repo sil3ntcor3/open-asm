@@ -70,6 +70,19 @@ export class ScreenshotPayload {
   screenshot: string;
 }
 
+/**
+ * One open port's service identification, produced by the nmap service-discovery
+ * step and emitted by the worker as parsed JSON. `scheme` is present only for web
+ * services (http/https).
+ */
+export interface ServiceDiscoveryPayload {
+  port: number;
+  service: string;
+  product?: string;
+  isWeb: boolean;
+  scheme?: string;
+}
+
 export interface ReleaseVersion {
   url: string;
   assets_url: string;

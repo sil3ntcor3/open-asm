@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils';
 import { buttonVariants } from './button-variants';
 
-const REPO_URL = 'https://github.com/oasm-platform/open-asm';
+const REPO_URL = 'https://github.com/sil3ntcor3/open-asm';
 export function GithubBadge() {
   return (
     <a

@@ -11,17 +11,22 @@ import { useNavigateWithParams } from '@/hooks/useNavigateWithParams';
 import type { Tool } from '@/services/apis/gen/queries';
 import { Verified } from 'lucide-react';
 import React from 'react';
+import ToolUpdateControls from './tool-update-controls';
 
 interface ToolCardProps {
   tool: Tool;
   button?: React.ReactNode;
+  canUpdateTools?: boolean;
 }
 
-const ToolCard = ({ tool, button }: ToolCardProps) => {
+/** Renders one navigable marketplace tool with availability and version metadata. */
+const ToolCard = ({ tool, button, canUpdateTools = false }: ToolCardProps) => {
   const navigateWithParams = useNavigateWithParams();
+
+  /** Opens the tool detail unless an embedded action button was selected. */
   const handleCardClick = (e: React.MouseEvent) => {
     // Don't navigate if clicking on the button
-    if ((e.target as HTMLElement).closest('button')) {
+    if ((e.target as HTMLElement).closest('button, a, [role="dialog"]')) {
       return;
     }
     navigateWithParams(`/tools/${tool.id}`);
@@ -90,10 +95,7 @@ const ToolCard = ({ tool, button }: ToolCardProps) => {
           </div>
           <div className="shrink-0">{button}</div>
         </div>
-        <div className="flex items-center gap-2">
-          {/* <Badge variant="secondary" className="text-xs font-normal px-2 py-1">
-                        {tool.version || 'N/A'}
-                    </Badge> */}
+        <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary" className="text-xs font-normal px-2 py-1">
             {tool.category
               ? tool.category
@@ -102,7 +104,13 @@ const ToolCard = ({ tool, button }: ToolCardProps) => {
                   .join(' ')
               : 'N/A'}
           </Badge>
+          {!tool.updateComponents?.length && (
+            <Badge variant="outline" className="text-xs font-normal px-2 py-1">
+              Version: {tool.version?.trim() || 'Not reported'}
+            </Badge>
+          )}
         </div>
+        <ToolUpdateControls tool={tool} canUpdateTools={canUpdateTools} />
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>

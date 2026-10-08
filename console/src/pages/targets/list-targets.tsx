@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import JobStatusBadge from '@/components/ui/job-status';
 import { useServerDataTable } from '@/hooks/useServerDataTable';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
+import { useWorkspacePermissions } from '@/hooks/useWorkspacePermissions';
 import type { GetManyTargetResponseDto } from '@/services/apis/gen/queries';
 import { Loader2Icon, Plus, Target } from 'lucide-react';
 import { getRouteApi, useNavigate } from '@tanstack/react-router';
@@ -130,6 +131,9 @@ export function ListTargets() {
   const navigate = useNavigate({ from: '/targets/' });
   const search = routeApi.useSearch();
   const queryClient = useQueryClient();
+  const { can } = useWorkspacePermissions();
+  const canCreateTargets = can('target.create');
+  const canRunScans = can('scan.execute');
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
 
   // Initialize type filter from URL params
@@ -154,7 +158,10 @@ export function ListTargets() {
   const handleTypeFilterChange = (newType: TargetType | undefined) => {
     setTypeFilter(newType);
     navigate({
-      search: ((prev: Record<string, unknown>) => ({ ...prev, type: newType || undefined })) as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+      search: ((prev: Record<string, unknown>) => ({
+        ...prev,
+        type: newType || undefined,
+      })) as any, // eslint-disable-line @typescript-eslint/no-explicit-any
       replace: true,
     });
   };
@@ -163,7 +170,10 @@ export function ListTargets() {
   const handleStatusFilterChange = (newStatus: JobStatus | undefined) => {
     setStatusFilter(newStatus);
     navigate({
-      search: ((prev: Record<string, unknown>) => ({ ...prev, status: newStatus || undefined })) as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+      search: ((prev: Record<string, unknown>) => ({
+        ...prev,
+        status: newStatus || undefined,
+      })) as any, // eslint-disable-line @typescript-eslint/no-explicit-any
       replace: true,
     });
   };
@@ -172,7 +182,10 @@ export function ListTargets() {
   const handleScopeFilterChange = (newValue: TargetScopeType | undefined) => {
     setScopeFilter(newValue);
     navigate({
-      search: ((prev: Record<string, unknown>) => ({ ...prev, scope: newValue || undefined })) as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+      search: ((prev: Record<string, unknown>) => ({
+        ...prev,
+        scope: newValue || undefined,
+      })) as any, // eslint-disable-line @typescript-eslint/no-explicit-any
       replace: true,
     });
   };
@@ -312,29 +325,37 @@ export function ListTargets() {
           onValueChange={handleScopeFilterChange}
         />,
         // <ExportDataButton api="api/targets/export" prefix="targets" />,
-        <Button
-          key="add-target"
-          variant="outline"
-          className="gap-2"
-          onClick={() => navigate({ to: '/targets/add-target' })}
-        >
-          <Plus className="shrink-0" />
-          <span>Add Target</span>
-        </Button>,
-        <Button
-          key="start-discovery"
-          variant="outline"
-          className="gap-2"
-          disabled={selectedTargets.length === 0 || isStartingDiscovery}
-          onClick={handleStartDiscovery}
-        >
-          {isStartingDiscovery ? (
-            <Loader2Icon className="shrink-0 animate-spin" />
-          ) : (
-            <Target className="shrink-0" />
-          )}
-          <span>Start Discovery</span>
-        </Button>,
+        ...(canCreateTargets
+          ? [
+              <Button
+                key="add-target"
+                variant="outline"
+                className="gap-2"
+                onClick={() => navigate({ to: '/targets/add-target' })}
+              >
+                <Plus className="shrink-0" />
+                <span>Add Target</span>
+              </Button>,
+            ]
+          : []),
+        ...(canRunScans
+          ? [
+              <Button
+                key="start-discovery"
+                variant="outline"
+                className="gap-2"
+                disabled={selectedTargets.length === 0 || isStartingDiscovery}
+                onClick={handleStartDiscovery}
+              >
+                {isStartingDiscovery ? (
+                  <Loader2Icon className="shrink-0 animate-spin" />
+                ) : (
+                  <Target className="shrink-0" />
+                )}
+                <span>Start Discovery</span>
+              </Button>,
+            ]
+          : []),
       ]}
       totalItems={total}
       onRowClick={handleRowClick}

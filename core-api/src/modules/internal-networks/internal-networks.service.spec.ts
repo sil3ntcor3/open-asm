@@ -3,8 +3,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { WorkspacesService } from '../workspaces/workspaces.service';
+import { NotFoundException } from '@nestjs/common';
 import { TargetsService } from '../targets/targets.service';
 import type { CreateInternalNetworkDto } from './dtos/create-internal-network.dto';
 import type { GetManyInternalNetworksQueryDto } from './dtos/get-many-internal-networks.dto';
@@ -16,12 +15,13 @@ import { InternalNetwork } from './entities/internal-network.entity';
 import { NetworkInterface } from './entities/network-interface.entity';
 import { InternalNetworksService } from './internal-networks.service';
 import { SortOrder } from '@/common/dtos/get-many-base.dto';
+import { TargetType } from '../targets/entities/target.entity';
 
 describe('InternalNetworksService', () => {
   let service: InternalNetworksService;
   let internalNetworkRepo: Repository<InternalNetwork>;
   let networkInterfaceRepo: Repository<NetworkInterface>;
-  let workspacesService: WorkspacesService;
+  let targetsService: TargetsService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -62,14 +62,8 @@ describe('InternalNetworksService', () => {
               getRawMany: jest.fn(),
               getCount: jest.fn(),
             }),
-            findByIds: jest.fn(),
+            find: jest.fn(),
             findAndCount: jest.fn(),
-          },
-        },
-        {
-          provide: WorkspacesService,
-          useValue: {
-            getWorkspaceByIdAndOwner: jest.fn(),
           },
         },
         {
@@ -88,7 +82,7 @@ describe('InternalNetworksService', () => {
     networkInterfaceRepo = module.get<Repository<NetworkInterface>>(
       getRepositoryToken(NetworkInterface),
     );
-    workspacesService = module.get<WorkspacesService>(WorkspacesService);
+    targetsService = module.get<TargetsService>(TargetsService);
   });
 
   it('should be defined', () => {
@@ -102,9 +96,6 @@ describe('InternalNetworksService', () => {
       };
       const workspaceId = randomUUID();
       const user = { id: randomUUID() };
-      jest
-        .spyOn(workspacesService, 'getWorkspaceByIdAndOwner')
-        .mockResolvedValue({} as any);
       jest.spyOn(internalNetworkRepo, 'save').mockResolvedValue({} as any);
 
       const result = await service.createInternalNetwork(
@@ -116,46 +107,11 @@ describe('InternalNetworksService', () => {
       expect(result).toEqual({
         message: 'Internal network created successfully',
       });
-      expect(workspacesService.getWorkspaceByIdAndOwner).toHaveBeenCalledWith(
+      expect(internalNetworkRepo.save).toHaveBeenCalledWith({
+        name: dto.name,
         workspaceId,
-        user,
-      );
-    });
-
-    it('should throw ForbiddenException if workspace not found or not owner', async () => {
-      const dto: CreateInternalNetworkDto = {
-        name: 'Test Network',
-      };
-      const workspaceId = randomUUID();
-      const user = { id: randomUUID() };
-
-      jest
-        .spyOn(workspacesService, 'getWorkspaceByIdAndOwner')
-        .mockRejectedValue(
-          new ForbiddenException('You are not the owner of this workspace'),
-        );
-
-      await expect(
-        service.createInternalNetwork(dto, workspaceId, user as any),
-      ).rejects.toThrow(ForbiddenException);
-    });
-
-    it('should throw ForbiddenException if user is not owner', async () => {
-      const dto: CreateInternalNetworkDto = {
-        name: 'Test Network',
-      };
-      const workspaceId = randomUUID();
-      const user = { id: randomUUID() };
-
-      jest
-        .spyOn(workspacesService, 'getWorkspaceByIdAndOwner')
-        .mockRejectedValue(
-          new ForbiddenException('You are not the owner of this workspace'),
-        );
-
-      await expect(
-        service.createInternalNetwork(dto, workspaceId, user as any),
-      ).rejects.toThrow(ForbiddenException);
+        createdBy: user.id,
+      });
     });
   });
 
@@ -163,19 +119,16 @@ describe('InternalNetworksService', () => {
     it('should update internal network successfully', async () => {
       const id = randomUUID();
       const dto: UpdateInternalNetworkDto = { name: 'Updated Network' };
-      const user = { id: randomUUID() };
+      const workspaceId = randomUUID();
       const internalNetwork = {
         id,
         name: 'Old Name',
-        workspace: { owner: { id: user.id } },
+        workspaceId,
       };
 
       jest
         .spyOn(internalNetworkRepo, 'findOne')
         .mockResolvedValue(internalNetwork as any);
-      jest
-        .spyOn(workspacesService, 'getWorkspaceByIdAndOwner')
-        .mockResolvedValue({} as any);
       jest
         .spyOn(internalNetworkRepo, 'save')
         .mockResolvedValue(internalNetwork as any);
@@ -183,110 +136,129 @@ describe('InternalNetworksService', () => {
       const result = await service.updateInternalNetworkById(
         id,
         dto,
-        user as any,
+        workspaceId,
       );
 
       expect(result).toEqual({
         message: 'Internal network updated successfully',
       });
       expect(internalNetwork.name).toBe(dto.name);
+      expect(internalNetworkRepo.findOne).toHaveBeenCalledWith({
+        where: { id, workspaceId },
+      });
     });
 
     it('should throw NotFoundException if internal network not found', async () => {
       const id = randomUUID();
       const dto: UpdateInternalNetworkDto = { name: 'Updated Network' };
-      const user = { id: randomUUID() };
+      const workspaceId = randomUUID();
 
       jest.spyOn(internalNetworkRepo, 'findOne').mockResolvedValue(null);
 
       await expect(
-        service.updateInternalNetworkById(id, dto, user as any),
+        service.updateInternalNetworkById(id, dto, workspaceId),
       ).rejects.toThrow(NotFoundException);
-    });
-
-    it('should throw ForbiddenException if user is not owner', async () => {
-      const id = randomUUID();
-      const dto: UpdateInternalNetworkDto = { name: 'Updated Network' };
-      const user = { id: randomUUID() };
-      const internalNetwork = {
-        id,
-        workspaceId: randomUUID(),
-        workspace: { owner: { id: randomUUID() } },
-      };
-
-      jest
-        .spyOn(internalNetworkRepo, 'findOne')
-        .mockResolvedValue(internalNetwork as any);
-      jest
-        .spyOn(workspacesService, 'getWorkspaceByIdAndOwner')
-        .mockRejectedValue(
-          new ForbiddenException('You are not the owner of this workspace'),
-        );
-
-      await expect(
-        service.updateInternalNetworkById(id, dto, user as any),
-      ).rejects.toThrow(ForbiddenException);
     });
   });
 
   describe('deleteInternalNetwork', () => {
     it('should delete internal network successfully', async () => {
       const id = randomUUID();
-      const user = { id: randomUUID() };
+      const workspaceId = randomUUID();
       const internalNetwork = {
         id,
-        workspace: { owner: { id: user.id } },
+        workspaceId,
       };
 
       jest
         .spyOn(internalNetworkRepo, 'findOne')
         .mockResolvedValue(internalNetwork as any);
       jest
-        .spyOn(workspacesService, 'getWorkspaceByIdAndOwner')
-        .mockResolvedValue({} as any);
-      jest
         .spyOn(internalNetworkRepo, 'remove')
         .mockResolvedValue(internalNetwork as any);
 
-      const result = await service.deleteInternalNetwork(id, user as any);
+      const result = await service.deleteInternalNetwork(id, workspaceId);
 
       expect(result).toEqual({
         message: 'Internal network deleted successfully',
+      });
+      expect(internalNetworkRepo.findOne).toHaveBeenCalledWith({
+        where: { id, workspaceId },
       });
     });
 
     it('should throw NotFoundException if internal network not found', async () => {
       const id = randomUUID();
-      const user = { id: randomUUID() };
+      const workspaceId = randomUUID();
 
       jest.spyOn(internalNetworkRepo, 'findOne').mockResolvedValue(null);
 
       await expect(
-        service.deleteInternalNetwork(id, user as any),
+        service.deleteInternalNetwork(id, workspaceId),
       ).rejects.toThrow(NotFoundException);
     });
+  });
 
-    it('should throw ForbiddenException if user is not owner', async () => {
-      const id = randomUUID();
+  describe('createTargetsFromInterfaces', () => {
+    it('creates targets only from interfaces in the selected workspace', async () => {
+      const workspaceId = randomUUID();
+      const internalNetworkId = randomUUID();
+      const interfaceIds = [randomUUID(), randomUUID()];
       const user = { id: randomUUID() };
-      const internalNetwork = {
-        id,
-        workspaceId: randomUUID(),
-        workspace: { owner: { id: randomUUID() } },
-      };
 
+      jest.spyOn(networkInterfaceRepo, 'find').mockResolvedValue(
+        interfaceIds.map((id, index) => ({
+          id,
+          cidr: `192.0.2.${index}/32`,
+          internalNetworkId,
+          internalNetwork: { id: internalNetworkId, workspaceId },
+        })) as any,
+      );
       jest
-        .spyOn(internalNetworkRepo, 'findOne')
-        .mockResolvedValue(internalNetwork as any);
-      jest
-        .spyOn(workspacesService, 'getWorkspaceByIdAndOwner')
-        .mockRejectedValue(
-          new ForbiddenException('You are not the owner of this workspace'),
-        );
+        .spyOn(targetsService, 'createMultipleTargets')
+        .mockResolvedValue({} as any);
+
+      await service.createTargetsFromInterfaces(
+        { networkInterfaceIds: interfaceIds },
+        workspaceId,
+        user as any,
+      );
+
+      expect(networkInterfaceRepo.find).toHaveBeenCalledWith({
+        where: {
+          id: expect.anything(),
+          internalNetwork: { workspaceId },
+        },
+        relations: ['internalNetwork'],
+      });
+      expect(targetsService.createMultipleTargets).toHaveBeenCalledWith(
+        {
+          targets: [
+            { value: '192.0.2.0/32', type: TargetType.CIDR },
+            { value: '192.0.2.1/32', type: TargetType.CIDR },
+          ],
+        },
+        workspaceId,
+        user,
+        internalNetworkId,
+      );
+    });
+
+    it('rejects when any requested interface is outside the selected workspace', async () => {
+      const workspaceId = randomUUID();
+      const interfaceIds = [randomUUID(), randomUUID()];
+      jest.spyOn(networkInterfaceRepo, 'find').mockResolvedValue([
+        { id: interfaceIds[0] },
+      ] as NetworkInterface[]);
 
       await expect(
-        service.deleteInternalNetwork(id, user as any),
-      ).rejects.toThrow(ForbiddenException);
+        service.createTargetsFromInterfaces(
+          { networkInterfaceIds: interfaceIds },
+          workspaceId,
+          { id: randomUUID() } as any,
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(targetsService.createMultipleTargets).not.toHaveBeenCalled();
     });
   });
 

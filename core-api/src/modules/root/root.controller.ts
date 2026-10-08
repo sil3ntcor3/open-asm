@@ -1,13 +1,9 @@
-import { Public } from '@/common/decorators/app.decorator';
+import { Public, Roles } from '@/common/decorators/app.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
-import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Controller, Get, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import {
-  CreateFirstAdminDto,
-  GetMetadataDto,
-  GetVersionDto,
-} from './dto/root.dto';
+import { Role } from '@/common/enums/enum';
+import { GetMetadataDto, GetVersionDto } from './dto/root.dto';
 import { RootService } from './root.service';
 
 @ApiTags('Root')
@@ -19,21 +15,6 @@ export class RootController {
   @Get('health')
   getHealth(): string {
     return this.rootService.getHealth();
-  }
-
-  @Public()
-  @Doc({
-    summary: 'Creates the first admin user in the system.',
-    description: 'Creates the first admin user in the system.',
-    response: {
-      serialization: DefaultMessageResponseDto,
-    },
-  })
-  @Post('init-admin')
-  createFirstAdmin(
-    @Body() dto: CreateFirstAdminDto,
-  ): Promise<DefaultMessageResponseDto> {
-    return this.rootService.createFirstAdmin(dto);
   }
 
   @Public()
@@ -61,5 +42,19 @@ export class RootController {
   @Get('version/latest')
   getLatestVersion(): Promise<GetVersionDto> {
     return this.rootService.getLatestVersion();
+  }
+
+  @Roles(Role.ADMIN)
+  @Doc({
+    summary: 'Check for updates.',
+    description:
+      'Refreshes release information from GitHub and returns the current update status.',
+    response: {
+      serialization: GetVersionDto,
+    },
+  })
+  @Post('version/check')
+  checkForUpdates(): Promise<GetVersionDto> {
+    return this.rootService.checkForUpdates();
   }
 }

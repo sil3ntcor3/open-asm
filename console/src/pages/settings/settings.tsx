@@ -7,6 +7,8 @@ import GetAboutProject from './components/get-about-project';
 import Preferences from './components/preferences';
 import SecuritySettings from './components/security-settings';
 import WorkspaceSettings from './components/workspace-settings';
+import WorkspaceMembers from './components/workspace-members';
+import WorkspaceRolePermissions from './components/workspace-role-permissions';
 
 interface TabContentProps {
   title: string;
@@ -47,6 +49,27 @@ export const settingsTabGroups: SettingsTabGroup[] = [
           description: 'Manage your workspace settings',
         },
         component: <WorkspaceSettings />,
+      },
+      {
+        id: 'members',
+        label: 'Members',
+        path: '/settings/members',
+        content: {
+          title: 'Workspace members',
+          description: 'Manage member access and workspace roles',
+        },
+        component: <WorkspaceMembers />,
+      },
+      {
+        id: 'permissions',
+        label: 'Roles & permissions',
+        path: '/settings/permissions',
+        content: {
+          title: 'Roles and permissions',
+          description:
+            'Understand platform roles and the actions allowed for each workspace role',
+        },
+        component: <WorkspaceRolePermissions />,
       },
       {
         id: 'apikeys',
@@ -171,7 +194,13 @@ const Settings = ({ defaultTab = 'general' }: SettingsProps) => {
     visibleTabs.find((t) => t.id === currentTab) || visibleTabs[0];
 
   return (
-    <div className="mx-auto w-full sm:w-3/4 xl:w-1/3">
+    <div
+      className={
+        activeTab?.id === 'permissions'
+          ? 'mx-auto w-full xl:w-5/6'
+          : 'mx-auto w-full sm:w-3/4 xl:w-1/3'
+      }
+    >
       {activeTab && (
         <div className="space-y-4">
           <div className="flex items-center flex-row justify-between">

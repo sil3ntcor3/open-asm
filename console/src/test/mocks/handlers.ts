@@ -7,6 +7,7 @@ import {
   mockDashboardStats,
   mockWorkspaces,
 } from './data';
+import { workspaceRolePermissionsFixture } from '../fixtures/workspace-role-permissions';
 
 export const handlers = [
   // Auth
@@ -219,6 +220,21 @@ export const handlers = [
   // Workspaces
   http.get('/api/workspaces', () => {
     return HttpResponse.json({ data: mockWorkspaces });
+  }),
+  http.get('/api/workspaces/role-permissions', () => {
+    return HttpResponse.json(workspaceRolePermissionsFixture);
+  }),
+  http.get('/api/workspaces/:id/roles', () => {
+    return HttpResponse.json(
+      workspaceRolePermissionsFixture.roles.map((role, index) => ({
+        id: `00000000-0000-4000-8000-00000000000${index + 1}`,
+        key: role.role,
+        name: role.label,
+        description: role.description,
+        protected: true,
+        permissions: role.permissions,
+      })),
+    );
   }),
   http.post('/api/workspaces', async ({ request }) => {
     const body = (await request.json()) as Record<string, unknown>;

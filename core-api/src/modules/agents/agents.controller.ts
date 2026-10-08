@@ -1,4 +1,6 @@
 import { UserId, WorkspaceId } from '@/common/decorators/app.decorator';
+import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
+import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import {
@@ -61,6 +63,7 @@ import { WorkspaceMemoryResponseDto } from './dto/workspace-memory.dto';
 @ApiTags('Agents')
 @Controller('agents')
 @UseGuards(AuthGuard)
+@WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
 export class AgentsController {
   constructor(
     private readonly agentsService: AgentsService,
@@ -82,6 +85,7 @@ export class AgentsController {
   }
 
   @Post('llm-configs')
+  @WorkspacePolicy(WorkspaceAction.AGENT_MANAGE)
   @Doc({
     summary: 'Create LLM config',
     description: 'Create a new LLM provider configuration',
@@ -97,6 +101,7 @@ export class AgentsController {
   }
 
   @Get('llm-configs')
+  @WorkspacePolicy(WorkspaceAction.AGENT_MANAGE)
   @Doc({
     summary: 'List LLM configs with provider info',
     description:
@@ -111,6 +116,7 @@ export class AgentsController {
   }
 
   @Get('llm-configs/:id/models')
+  @WorkspacePolicy(WorkspaceAction.AGENT_MANAGE)
   @Doc({
     summary: 'List models for a provider config',
     description:
@@ -129,6 +135,7 @@ export class AgentsController {
   }
 
   @Patch('llm-configs/:id')
+  @WorkspacePolicy(WorkspaceAction.AGENT_MANAGE)
   @Doc({
     summary: 'Update LLM config',
     description: 'Update an existing LLM configuration',
@@ -147,6 +154,7 @@ export class AgentsController {
   }
 
   @Delete('llm-configs/:id')
+  @WorkspacePolicy(WorkspaceAction.AGENT_MANAGE)
   @Doc({
     summary: 'Delete LLM config',
     description: 'Delete an LLM configuration',
@@ -165,6 +173,7 @@ export class AgentsController {
   }
 
   @Patch('llm-configs/:id/set-preferred')
+  @WorkspacePolicy(WorkspaceAction.AGENT_MANAGE)
   @Doc({
     summary: 'Set preferred LLM config',
     description: 'Set an LLM config as the preferred one for the workspace',
@@ -186,6 +195,7 @@ export class AgentsController {
   // ==========================================
 
   @Get('conversations/:id')
+  @WorkspacePolicy(WorkspaceAction.AGENT_USE)
   @Doc({
     summary: 'Get conversation detail',
     description: 'Get a single conversation with full details including todos',
@@ -203,6 +213,7 @@ export class AgentsController {
   }
 
   @Get('conversations')
+  @WorkspacePolicy(WorkspaceAction.AGENT_USE)
   @Doc({
     summary: 'List conversations',
     description: 'Get all conversations for the workspace',
@@ -217,6 +228,7 @@ export class AgentsController {
   }
 
   @Patch('conversations/:id')
+  @WorkspacePolicy(WorkspaceAction.AGENT_USE)
   @Doc({
     summary: 'Update conversation',
     description: 'Update a conversation title',
@@ -235,6 +247,7 @@ export class AgentsController {
   }
 
   @Delete('conversations')
+  @WorkspacePolicy(WorkspaceAction.AGENT_USE)
   @Doc({
     summary: 'Delete all conversations',
     description:
@@ -250,6 +263,7 @@ export class AgentsController {
   }
 
   @Delete('conversations/:id')
+  @WorkspacePolicy(WorkspaceAction.AGENT_USE)
   @Doc({
     summary: 'Delete conversation',
     description: 'Delete a conversation and all its messages',
@@ -272,6 +286,7 @@ export class AgentsController {
   // ==========================================
 
   @Get('conversations/:id/messages')
+  @WorkspacePolicy(WorkspaceAction.AGENT_USE)
   @Doc({
     summary: 'Get messages',
     description: 'Get all messages in a conversation',
@@ -290,6 +305,7 @@ export class AgentsController {
   }
 
   @Post('messages/stream')
+  @WorkspacePolicy(WorkspaceAction.AGENT_USE)
   @HttpCode(HttpStatus.OK)
   @Doc({
     summary: 'Send message (streaming)',
@@ -416,6 +432,7 @@ export class AgentsController {
   }
 
   @Delete('conversations/:cid/messages/:mid')
+  @WorkspacePolicy(WorkspaceAction.AGENT_USE)
   @Doc({
     summary: 'Delete message',
     description: 'Delete a specific message in a conversation',
@@ -442,6 +459,7 @@ export class AgentsController {
   }
 
   @Get('mcp-configs')
+  @WorkspacePolicy(WorkspaceAction.AGENT_MANAGE)
   @Doc({
     summary: 'Get MCP configs',
     description: 'Get all MCP server configurations for the workspace',
@@ -455,6 +473,7 @@ export class AgentsController {
   }
 
   @Put('mcp-configs/:name')
+  @WorkspacePolicy(WorkspaceAction.AGENT_MANAGE)
   @Doc({
     summary: 'Upsert MCP server',
     description: 'Add or update an MCP server configuration',
@@ -473,6 +492,7 @@ export class AgentsController {
   }
 
   @Delete('mcp-configs/:name')
+  @WorkspacePolicy(WorkspaceAction.AGENT_MANAGE)
   @Doc({
     summary: 'Delete MCP server',
     description: 'Remove an MCP server configuration',
@@ -491,6 +511,7 @@ export class AgentsController {
   }
 
   @Patch('mcp-configs/:name/toggle')
+  @WorkspacePolicy(WorkspaceAction.AGENT_MANAGE)
   @Doc({
     summary: 'Toggle MCP server',
     description: 'Enable or disable an MCP server',
@@ -509,6 +530,7 @@ export class AgentsController {
   }
 
   @Get('mcp-configs/:name/ping')
+  @WorkspacePolicy(WorkspaceAction.AGENT_MANAGE)
   @Doc({
     summary: 'Ping MCP server',
     description: 'Check connectivity status of an MCP server',
@@ -530,6 +552,7 @@ export class AgentsController {
   // ==========================================
 
   @Get('workspace-memory')
+  @WorkspacePolicy(WorkspaceAction.AGENT_USE)
   @Doc({
     summary: 'Get workspace memory',
     description:
@@ -546,6 +569,7 @@ export class AgentsController {
   }
 
   @Delete('workspace-memory/:id')
+  @WorkspacePolicy(WorkspaceAction.AGENT_USE)
   @Doc({
     summary: 'Delete workspace memory',
     description: 'Delete a long-term memory record by ID',
@@ -569,6 +593,7 @@ export class AgentsController {
   // ==========================================
 
   @Get('skills')
+  @WorkspacePolicy(WorkspaceAction.AGENT_USE)
   @Doc({
     summary: 'List skills',
     description: 'Get all available skills (builtin + user) for the workspace',
@@ -580,10 +605,10 @@ export class AgentsController {
   }
 
   @Post('skills')
+  @WorkspacePolicy(WorkspaceAction.AGENT_MANAGE)
   @Doc({
     summary: 'Create skill',
-    description:
-      'Create a new user skill for the workspace (workspace owner only)',
+    description: 'Create a new user skill for the workspace',
     request: { getWorkspaceId: true },
     response: { serialization: SkillResponseDto },
   })
@@ -596,9 +621,10 @@ export class AgentsController {
   }
 
   @Patch('skills/:id')
+  @WorkspacePolicy(WorkspaceAction.AGENT_MANAGE)
   @Doc({
     summary: 'Update skill',
-    description: 'Update a user skill (workspace owner only)',
+    description: 'Update a user skill for the workspace',
     request: {
       getWorkspaceId: true,
       params: [{ name: 'id', description: 'Skill ID' }],
@@ -620,9 +646,10 @@ export class AgentsController {
   }
 
   @Delete('skills/:id')
+  @WorkspacePolicy(WorkspaceAction.AGENT_MANAGE)
   @Doc({
     summary: 'Delete skill',
-    description: 'Delete a user skill (workspace owner only)',
+    description: 'Delete a user skill from the workspace',
     request: {
       getWorkspaceId: true,
       params: [{ name: 'id', description: 'Skill ID' }],
@@ -639,9 +666,10 @@ export class AgentsController {
   }
 
   @Patch('skills/:id/toggle')
+  @WorkspacePolicy(WorkspaceAction.AGENT_MANAGE)
   @Doc({
     summary: 'Toggle skill',
-    description: 'Enable or disable a user skill (workspace owner only)',
+    description: 'Enable or disable a user skill for the workspace',
     request: {
       getWorkspaceId: true,
       params: [{ name: 'id', description: 'Skill ID' }],

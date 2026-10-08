@@ -5,7 +5,8 @@ import {
 import { getWorkspaceIdFromRequest } from '@/common/decorators/workspace-id.decorator';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import { SortOrder } from '@/common/dtos/get-many-base.dto';
-import { ApiKeyType, WorkspaceRole } from '@/common/enums/enum';
+import { ApiKeyType, Role, WorkspaceRole } from '@/common/enums/enum';
+import { WORKSPACE_ROLE_DEFINITIONS } from '@/common/authorization/workspace-policy.service';
 import { UserContextPayload } from '@/common/interfaces/app.interface';
 import { getManyResponse } from '@/utils/getManyResponse';
 import getSwaggerMetadata, {
@@ -13,6 +14,7 @@ import getSwaggerMetadata, {
 } from '@/utils/getSwaggerMetadata';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -23,6 +25,7 @@ import { randomUUID } from 'crypto';
 import { Request, Response } from 'express';
 import { In, Repository } from 'typeorm';
 import { Job } from '@/modules/jobs-registry/entities/job.entity';
+import { User } from '../auth/entities/user.entity';
 import { ApiKeysService } from '../apikeys/apikeys.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Target } from '../targets/entities/target.entity';
@@ -32,12 +35,17 @@ import { GetWorkspaceConfigsDto } from './dto/get-workspace-configs.dto';
 import { UpdateWorkspaceConfigsDto } from './dto/update-workspace-configs.dto';
 import {
   CreateWorkspaceDto,
+  AddWorkspaceMemberDto,
   GetApiKeyResponseDto,
   GetManyWorkspacesDto,
+  UpdateWorkspaceMemberRoleDto,
   UpdateWorkspaceDto,
+  WorkspaceMemberResponseDto,
 } from './dto/workspaces.dto';
 import { WorkspaceMembers } from './entities/workspace-members.entity';
 import { Workspace } from './entities/workspace.entity';
+import { WorkspaceRolesService } from './workspace-roles.service';
+import { PROTECTED_WORKSPACE_ROLE_IDS } from './workspace-role.constants';
 
 @Injectable()
 export class WorkspacesService implements OnModuleInit {
@@ -48,12 +56,112 @@ export class WorkspacesService implements OnModuleInit {
     private readonly workspaceMembersRepository: Repository<WorkspaceMembers>,
     @InjectRepository(WorkspaceTarget)
     private readonly workspaceTargetRepository: Repository<WorkspaceTarget>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
     private apiKeyService: ApiKeysService,
     private notificationsService: NotificationsService,
     private workflowsService: WorkflowsService,
+    private readonly workspaceRolesService: WorkspaceRolesService,
   ) {}
 
   async onModuleInit() {}
+
+  private toWorkspaceMemberResponse(
+    member: Pick<WorkspaceMembers, 'roleId' | 'accessRole' | 'user'>,
+  ): WorkspaceMemberResponseDto {
+    return {
+      id: member.user.id,
+      name: member.user.name,
+      image: member.user.image ?? null,
+      roleId: member.roleId,
+      roleKey: member.accessRole.key,
+      roleName: member.accessRole.name,
+      roleProtected: member.accessRole.protected,
+    };
+  }
+
+  public async getWorkspaceMembers(
+    workspaceId: string,
+  ): Promise<WorkspaceMemberResponseDto[]> {
+    const members = await this.workspaceMembersRepository.find({
+      where: { workspace: { id: workspaceId } },
+      relations: ['user', 'accessRole'],
+    });
+
+    return members.map((member) => this.toWorkspaceMemberResponse(member));
+  }
+
+  public async addWorkspaceMember(
+    workspaceId: string,
+    dto: AddWorkspaceMemberDto,
+  ): Promise<WorkspaceMemberResponseDto> {
+    const user = await this.userRepository.findOne({
+      where: { email: dto.email.trim().toLowerCase() },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const existingMember = await this.workspaceMembersRepository.findOne({
+      where: {
+        workspace: { id: workspaceId },
+        user: { id: user.id },
+      },
+    });
+
+    if (existingMember) {
+      throw new ConflictException('User is already a workspace member');
+    }
+
+    const accessRole = await this.workspaceRolesService.getAssignableRole(
+      workspaceId,
+      dto.roleId,
+    );
+    const member = await this.workspaceMembersRepository.save({
+      workspace: { id: workspaceId },
+      user,
+      roleId: accessRole.id,
+      accessRole,
+    });
+
+    return this.toWorkspaceMemberResponse({ ...member, user });
+  }
+
+  public async updateWorkspaceMemberRole(
+    workspaceId: string,
+    userId: string,
+    dto: UpdateWorkspaceMemberRoleDto,
+  ): Promise<WorkspaceMemberResponseDto> {
+    const member = await this.getWorkspaceMember(workspaceId, userId);
+
+    if (member.accessRole.key === WorkspaceRole.OWNER) {
+      throw new BadRequestException('Workspace owner role cannot be changed');
+    }
+
+    const accessRole = await this.workspaceRolesService.getAssignableRole(
+      workspaceId,
+      dto.roleId,
+    );
+    member.roleId = accessRole.id;
+    member.accessRole = accessRole;
+    const updatedMember = await this.workspaceMembersRepository.save(member);
+    return this.toWorkspaceMemberResponse(updatedMember);
+  }
+
+  public async removeWorkspaceMember(
+    workspaceId: string,
+    userId: string,
+  ): Promise<DefaultMessageResponseDto> {
+    const member = await this.getWorkspaceMember(workspaceId, userId);
+
+    if (member.accessRole.key === WorkspaceRole.OWNER) {
+      throw new BadRequestException('Workspace owner cannot be removed');
+    }
+
+    await this.workspaceMembersRepository.remove(member);
+    return { message: 'Workspace member removed successfully' };
+  }
 
   /**
    * Creates a new workspace, and adds the requesting user as a member.
@@ -90,6 +198,7 @@ export class WorkspacesService implements OnModuleInit {
     await this.workspaceMembersRepository.save({
       workspace: newWorkspace,
       user: { id },
+      roleId: PROTECTED_WORKSPACE_ROLE_IDS[WorkspaceRole.OWNER],
     });
 
     await this.workflowsService.createDefaultWorkflows(newWorkspace.id);
@@ -126,7 +235,8 @@ export class WorkspacesService implements OnModuleInit {
   ) {
     const { limit, page, sortOrder, isArchived } = query;
     let { sortBy } = query;
-    const { id } = userContextPayload;
+    const { id, role: platformRole } = userContextPayload;
+    const isPlatformAdmin = platformRole === Role.ADMIN;
     if (!(sortBy in Workspace)) {
       sortBy = 'createdAt';
     }
@@ -152,15 +262,22 @@ export class WorkspacesService implements OnModuleInit {
           : '';
 
     // Get total count - count workspaces where user is a member
-    const countQuery = `
+    const countQuery = isPlatformAdmin
+      ? `
+      SELECT COUNT(*) as total
+      FROM workspaces w
+      WHERE 1=1 ${archivedCondition}
+    `
+      : `
       SELECT COUNT(*) as total
       FROM workspaces w
       INNER JOIN workspace_members wm ON wm."workspaceId" = w.id AND wm."userId" = $1
       WHERE 1=1 ${archivedCondition}
     `;
-    const countResult: { total: string }[] = await this.repo.query(countQuery, [
-      id,
-    ]);
+    const countResult: { total: string }[] = await this.repo.query(
+      countQuery,
+      isPlatformAdmin ? [] : [id],
+    );
     const total = parseInt(countResult[0]?.total || '0', 10);
 
     // Get paginated data with target and member counts
@@ -181,9 +298,13 @@ export class WorkspacesService implements OnModuleInit {
         w."ownerId" as workspace_ownerId,
         COALESCE(t.target_count, 0)::integer as targetcount,
         COALESCE(m.member_count, 0)::integer as membercount,
-        wm.role as member_role
+        wr.id as member_role_id,
+        wr.key as member_role_key,
+        wr.name as member_role_name,
+        wr.protected as member_role_protected
       FROM workspaces w
-      INNER JOIN workspace_members wm ON wm."workspaceId" = w.id AND wm."userId" = $1
+      ${isPlatformAdmin ? 'LEFT' : 'INNER'} JOIN workspace_members wm ON wm."workspaceId" = w.id AND wm."userId" = $1
+      LEFT JOIN workspace_roles wr ON wr.id = wm."roleId"
       LEFT JOIN (
         SELECT "workspaceId", COUNT(*) as target_count
         FROM workspace_targets
@@ -205,21 +326,44 @@ export class WorkspacesService implements OnModuleInit {
     );
 
     // Map raw data to expected format
-    const mappedData = rawData.map((row) => ({
-      id: row.workspace_id as string,
-      name: row.workspace_name as string,
-      description: row.workspace_description as string | null,
-      createdAt: row.workspace_createdAt as Date,
-      updatedAt: row.workspace_updatedAt as Date,
-      archivedAt: row.workspace_archivedAt as Date | null,
-      isAssetsDiscovery: row.workspace_isAssetsDiscovery as boolean,
-      isAutoEnableAssetAfterDiscovered:
-        row.workspace_isAutoEnableAssetAfterDiscovered as boolean,
-      ownerId: row.workspace_ownerId as string,
-      targetCount: Number(row.targetcount) || 0,
-      memberCount: Number(row.membercount) || 0,
-      role: row.member_role as WorkspaceRole,
-    }));
+    const mappedData = rawData.map((row) => {
+      const legacyRoleKey = row.member_role as WorkspaceRole | undefined;
+      const roleKey = isPlatformAdmin
+        ? null
+        : ((row.member_role_key as WorkspaceRole | null) ??
+          legacyRoleKey ??
+          null);
+      const roleName = isPlatformAdmin
+        ? 'Platform Administrator'
+        : ((row.member_role_name as string | null) ??
+          WORKSPACE_ROLE_DEFINITIONS.find(
+            (definition) => definition.role === roleKey,
+          )?.label ??
+          'Custom role');
+
+      return {
+        id: row.workspace_id as string,
+        name: row.workspace_name as string,
+        description: row.workspace_description as string | null,
+        createdAt: row.workspace_createdAt as Date,
+        updatedAt: row.workspace_updatedAt as Date,
+        archivedAt: row.workspace_archivedAt as Date | null,
+        isAssetsDiscovery: row.workspace_isAssetsDiscovery as boolean,
+        isAutoEnableAssetAfterDiscovered:
+          row.workspace_isAutoEnableAssetAfterDiscovered as boolean,
+        ownerId: row.workspace_ownerId as string,
+        targetCount: Number(row.targetcount) || 0,
+        memberCount: Number(row.membercount) || 0,
+        roleId: isPlatformAdmin
+          ? null
+          : ((row.member_role_id as string | null) ?? null),
+        roleKey,
+        roleName,
+        accessSource: isPlatformAdmin
+          ? ('platform_admin' as const)
+          : ('membership' as const),
+      };
+    });
     const defaultWorkspace = mappedData[0]?.id;
     const workspaceId = getWorkspaceIdFromRequest(req);
     const selectedWorkspaceId =
@@ -340,16 +484,13 @@ export class WorkspacesService implements OnModuleInit {
     workspaceId: string,
     userContext: UserContextPayload,
   ): Promise<GetApiKeyResponseDto> {
+    const workspace = await this.getWorkspaceById(workspaceId, userContext);
+
     const apiKey = await this.apiKeyService.create({
       name: `API Key for workspace ${workspaceId}`,
       type: ApiKeyType.WORKSPACE,
       ref: workspaceId,
     });
-
-    const workspace = await this.getWorkspaceByIdAndOwner(
-      workspaceId,
-      userContext,
-    );
 
     workspace.apiKey = apiKey;
     await this.repo.save(workspace);
@@ -369,10 +510,7 @@ export class WorkspacesService implements OnModuleInit {
   ): Promise<GetWorkspaceConfigsDto> {
     const swaggerMetadata = getSwaggerMetadata(Workspace);
 
-    const workspace = await this.getWorkspaceByIdAndOwner(
-      workspaceId,
-      userContext,
-    );
+    const workspace = await this.getWorkspaceById(workspaceId, userContext);
 
     if (!workspace) {
       throw new NotFoundException('Workspace not found');
@@ -457,7 +595,7 @@ export class WorkspacesService implements OnModuleInit {
     workspaceId: string,
     userContext: UserContextPayload,
   ): Promise<GetApiKeyResponseDto> {
-    await this.getWorkspaceByIdAndOwner(workspaceId, userContext);
+    await this.getWorkspaceById(workspaceId, userContext);
     try {
       const apiKey = await this.apiKeyService.getCurrentApiKey(
         ApiKeyType.WORKSPACE,
@@ -483,22 +621,27 @@ export class WorkspacesService implements OnModuleInit {
    */
   public async getWorkspaceById(
     id: string,
-    userContext: UserContextPayload,
+    userContext: Pick<UserContextPayload, 'id'> &
+      Partial<Pick<UserContextPayload, 'role'>>,
   ): Promise<Workspace> {
     const userId = userContext.id;
-    const workspace = await this.repo
+    const workspace = this.repo
       .createQueryBuilder('workspace')
       .leftJoinAndSelect('workspace.owner', 'owner')
       .leftJoin('workspace.workspaceMembers', 'member')
-      .where('workspace.id = :workspaceId', { workspaceId: id })
-      .andWhere('member.user.id = :userId', { userId })
-      .getOne();
+      .where('workspace.id = :workspaceId', { workspaceId: id });
 
-    if (!workspace) {
+    if (userContext.role !== Role.ADMIN) {
+      workspace.andWhere('member.user.id = :userId', { userId });
+    }
+
+    const result = await workspace.getOne();
+
+    if (!result) {
       throw new NotFoundException('Workspace not found');
     }
 
-    return workspace;
+    return result;
   }
 
   /**
@@ -517,7 +660,10 @@ export class WorkspacesService implements OnModuleInit {
       relations: ['owner'],
     });
 
-    if (!workspace || workspace.owner.id !== userContext.id) {
+    if (
+      !workspace ||
+      (userContext.role !== Role.ADMIN && workspace.owner.id !== userContext.id)
+    ) {
       throw new ForbiddenException('You are not the owner of this workspace');
     }
 
@@ -568,7 +714,7 @@ export class WorkspacesService implements OnModuleInit {
         workspace: { id: workspaceId },
         user: { id: userId },
       },
-      relations: ['workspace', 'user'],
+      relations: ['workspace', 'user', 'accessRole'],
     });
 
     if (!workspaceMember) {

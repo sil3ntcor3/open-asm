@@ -1,4 +1,17 @@
 services:
+  postgres:
+    ports:
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+
+  redis:
+    ports:
+      - '127.0.0.1:${REDIS_PORT:-6379}:6379'
+
+  rustfs:
+    ports:
+      - '127.0.0.1:${RUSTFS_API_PORT:-9000}:9000'
+      - '127.0.0.1:${RUSTFS_CONSOLE_PORT:-9001}:9001'
+
   console:
     image: sil3ntcor3/myoasm-console:${MYOASM_IMAGE_TAG:-dev}
 
