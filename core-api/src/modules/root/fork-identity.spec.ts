@@ -61,8 +61,13 @@ describe('fork release identity', () => {
 
   it('contains no source or documentation references to the upstream repository', () => {
     const upstreamRepository = ['oasm-platform', 'open-asm'].join('/');
-    const offendingFiles = collectTextFiles().filter((path) =>
-      readFileSync(path, 'utf8').includes(upstreamRepository),
+    // MERGE_REVIEW.md is the upstream sync record. It has to name the upstream
+    // repository: cherry-picked syncs keep no other record of what was taken.
+    const allowedFiles = new Set([resolve(repositoryRoot, 'MERGE_REVIEW.md')]);
+    const offendingFiles = collectTextFiles().filter(
+      (path) =>
+        !allowedFiles.has(path) &&
+        readFileSync(path, 'utf8').includes(upstreamRepository),
     );
 
     expect(offendingFiles).toEqual([]);
