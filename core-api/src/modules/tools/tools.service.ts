@@ -30,6 +30,7 @@ import { ToolsQueryDto } from './dto/tools-query.dto';
 import { AddToolToWorkspaceDto } from './dto/tools.dto';
 import { Tool } from './entities/tools.entity';
 import { WorkspaceTool } from './entities/workspace_tools.entity';
+import { ToolUpdateService } from './tool-update.service';
 import { builtInTools } from './tools-provider/built-in-tools';
 import { officialSupportTools } from './tools-provider/official-support-tools';
 @Injectable()
@@ -51,6 +52,8 @@ export class ToolsService implements OnModuleInit {
 
     @Inject(forwardRef(() => WorkersService))
     private readonly workersService: WorkersService,
+
+    private readonly toolUpdateService: ToolUpdateService,
   ) {}
 
   /**
@@ -131,10 +134,20 @@ export class ToolsService implements OnModuleInit {
         .insert()
         .orUpdate({
           conflict_target: ['name'],
-          overwrite: ['description', 'logoUrl', 'version', 'priority'],
+          overwrite: [
+            'description',
+            'logoUrl',
+            'version',
+            'priority',
+            'command',
+          ],
         })
         .values(toolsToInsert)
         .execute();
+      await this.toolUpdateService.synchronizeCatalog();
+      void this.toolUpdateService.checkAll().catch((error: unknown) => {
+        Logger.warn('Initial tool release check failed', error);
+      });
     } catch (error) {
       Logger.error('Error initializing built-in tools:', error);
     }
@@ -275,21 +288,28 @@ export class ToolsService implements OnModuleInit {
         },
       });
 
-      // Get installed tools for this workspace
-      const installedTools = await this.workspaceToolRepository.find({
-        where: {
-          workspace: { id: workspaceId },
-        },
-        relations: ['tool'],
-      });
+      const [installedTools, updateComponentsByTool] = await Promise.all([
+        this.workspaceToolRepository.find({
+          where: {
+            workspace: { id: workspaceId },
+          },
+          relations: ['tool'],
+        }),
+        this.toolUpdateService.getToolComponents(data, workspaceId),
+      ]);
 
       // Add isInstalled flag and availableWorkersCount to each tool
       const toolsWithInstalledFlag = await Promise.all(
         data.map(async (tool) => {
+          const updateComponents = tool.id
+            ? (updateComponentsByTool.get(tool.id) ?? [])
+            : [];
+
           // Skip tools without ID or type
           if (!tool.id || !tool.type) {
             return {
               ...tool,
+              updateComponents,
               isInstalled: false,
               availableWorkersCount: 0,
             };
@@ -306,6 +326,7 @@ export class ToolsService implements OnModuleInit {
           if (tool.type === WorkerType.BUILT_IN) {
             return {
               ...tool,
+              updateComponents,
               isInstalled: true,
               availableWorkersCount,
             };
@@ -316,6 +337,7 @@ export class ToolsService implements OnModuleInit {
           );
           return {
             ...tool,
+            updateComponents,
             isInstalled: !!workspaceTool?.isEnabled,
             availableWorkersCount,
           };
@@ -389,6 +411,14 @@ export class ToolsService implements OnModuleInit {
       throw new NotFoundException(`Tool with ID "${id}" not found.`);
     }
 
+    if (workspaceId) {
+      const componentMap = await this.toolUpdateService.getToolComponents(
+        [tool],
+        workspaceId,
+      );
+      tool.updateComponents = componentMap.get(id) ?? [];
+    }
+
     // If tool is built-in, it's always considered installed
     if (tool.type === WorkerType.BUILT_IN) {
       tool.isInstalled = true;
@@ -448,14 +478,11 @@ export class ToolsService implements OnModuleInit {
    * @param toolId The ID of the tool to retrieve the API key for.
    * @returns The API key for the tool.
    */
-  public async getToolApiKey(toolId: string): Promise<GetApiKeyResponseDto> {
-    const tool = await this.toolsRepository.findOne({
-      where: { id: toolId },
-    });
-
-    if (!tool) {
-      throw new NotFoundException(`Tool with ID "${toolId}" not found.`);
-    }
+  public async getToolApiKey(
+    toolId: string,
+    workspaceId: string,
+  ): Promise<GetApiKeyResponseDto> {
+    await this.getToolById(toolId, workspaceId);
 
     const apiKey = await this.apiKeysService.getCurrentApiKey(
       ApiKeyType.TOOL,
@@ -463,7 +490,7 @@ export class ToolsService implements OnModuleInit {
     );
 
     if (!apiKey) {
-      return this.rotateToolApiKey(toolId);
+      return this.rotateToolApiKey(toolId, workspaceId);
     }
 
     return {
@@ -476,14 +503,11 @@ export class ToolsService implements OnModuleInit {
    * @param toolId The ID of the tool to regenerate the API key for.
    * @returns The new API key for the tool.
    */
-  public async rotateToolApiKey(toolId: string): Promise<GetApiKeyResponseDto> {
-    const tool = await this.toolsRepository.findOne({
-      where: { id: toolId },
-    });
-
-    if (!tool) {
-      throw new NotFoundException(`Tool with ID "${toolId}" not found.`);
-    }
+  public async rotateToolApiKey(
+    toolId: string,
+    workspaceId: string,
+  ): Promise<GetApiKeyResponseDto> {
+    await this.getToolById(toolId, workspaceId);
 
     const apiKey = await this.apiKeysService.create({
       name: `API Key for tool ${toolId}`,

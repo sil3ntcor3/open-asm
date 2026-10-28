@@ -1,4 +1,6 @@
 import { UserContext } from '@/common/decorators/app.decorator';
+import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
+import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
 import { WorkspaceId } from '@/common/decorators/workspace-id.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
 import { UserContextPayload } from '@/common/interfaces/app.interface';
@@ -36,6 +38,7 @@ export class TemplatesController {
     },
   })
   @Post()
+  @WorkspacePolicy(WorkspaceAction.TEMPLATE_MANAGE)
   createTemplate(
     @Body() dto: CreateTemplateDTO,
     @WorkspaceId() workspaceId: string,
@@ -50,10 +53,15 @@ export class TemplatesController {
     response: { serialization: UploadTemplateResponseDTO },
   })
   @Post('upload')
-  uploadFile(@Body() template: UploadTemplateDTO) {
+  @WorkspacePolicy(WorkspaceAction.TEMPLATE_MANAGE)
+  uploadFile(
+    @Body() template: UploadTemplateDTO,
+    @WorkspaceId() workspaceId: string,
+  ) {
     return this.templateService.uploadFile(
       template.templateId,
       template.fileContent,
+      workspaceId,
     );
   }
 
@@ -66,6 +74,7 @@ export class TemplatesController {
     },
   })
   @Patch(':templateId/rename')
+  @WorkspacePolicy(WorkspaceAction.TEMPLATE_MANAGE)
   renameFile(
     @WorkspaceId() workspaceId: string,
     @UserContext() userContext: UserContextPayload,
@@ -89,6 +98,7 @@ export class TemplatesController {
     },
   })
   @Get(':templateId')
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   getTemplateById(
     @WorkspaceId() workspaceId: string,
     @UserContext() userContext: UserContextPayload,
@@ -110,6 +120,7 @@ export class TemplatesController {
     },
   })
   @Get()
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   getAllTemplates(
     @Query() query: GetManyTemplatesQueryDTO,
     @WorkspaceId() workspaceId: string,
@@ -130,6 +141,7 @@ export class TemplatesController {
     },
   })
   @Delete(':templateId')
+  @WorkspacePolicy(WorkspaceAction.TEMPLATE_MANAGE)
   deleteTemplate(
     @WorkspaceId() workspaceId: string,
     @UserContext() userContext: UserContextPayload,

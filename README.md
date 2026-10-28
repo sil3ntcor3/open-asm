@@ -1,11 +1,11 @@
 # Open Attack Surface Management (OASM)
 
-[![Latest Release](https://img.shields.io/github/v/release/oasm-platform/open-asm.svg)](https://github.com/oasm-platform/open-asm/releases)
-[![CI](https://github.com/oasm-platform/open-asm/actions/workflows/build-nightly.yml/badge.svg)](https://github.com/oasm-platform/open-asm/actions/workflows/build-nightly.yml)
-[![Docker Build](https://img.shields.io/badge/docker-build-blue.svg)](https://github.com/oasm-platform/open-asm/actions/workflows/build-release.yml)
+[![Latest Release](https://img.shields.io/github/v/release/sil3ntcor3/open-asm.svg)](https://github.com/sil3ntcor3/open-asm/releases)
+[![CI](https://github.com/sil3ntcor3/open-asm/actions/workflows/build-nightly.yml/badge.svg)](https://github.com/sil3ntcor3/open-asm/actions/workflows/build-nightly.yml)
+[![Docker Build](https://img.shields.io/badge/docker-build-blue.svg)](https://github.com/sil3ntcor3/open-asm/actions/workflows/build-release.yml)
 [![Docker Hub](https://img.shields.io/badge/docker-oasm-blue.svg)](https://hub.docker.com/u/oasm)
 [![Docker Pulls](https://img.shields.io/docker/pulls/oasm/oasm-api)](https://hub.docker.com/r/oasm/oasm-api)
-[![Security Scanning](https://img.shields.io/badge/security-trivy-green.svg)](https://github.com/oasm-platform/open-asm/actions/workflows/build-unstable.yml)
+[![Security Scanning](https://img.shields.io/badge/security-trivy-green.svg)](https://github.com/sil3ntcor3/open-asm/actions/workflows/build-unstable.yml)
 
 Open-source platform for cybersecurity Attack Surface Management. Built to help security teams identify, monitor, and manage external assets and potential security exposures across their digital infrastructure.
 
@@ -13,7 +13,8 @@ Open-source platform for cybersecurity Attack Surface Management. Built to help 
   <a href="#features">Features</a> •
   <a href="#system-architecture">System Architecture</a> •
   <a href="#installation">Installation</a> •
-  <a href="https://docs.oasm.dev" target="_blank">Documentation</a> •
+  <a href="docs/ADMINISTRATOR_GUIDE.md">Administrator Guide</a> •
+  <a href="docs/USER_GUIDE.md">User Guide</a> •
   <a href="#developer-guide">Developer Guide</a> •
   <a href="#screenshots">Screenshots</a>
 </p>
@@ -120,40 +121,65 @@ graph TD
 
 ### Docker (Recommended)
 
-To quickly get started with OASM using Docker:
+Production deployments use the separate
+[`oasm-docker`](https://github.com/sil3ntcor3/oasm-docker) repository and the
+published Open-ASM images. The application source repository is not required
+on the deployment host.
 
-1. Clone the repository:
-
-   ```bash
-   git clone https://github.com/oasm-platform/open-asm.git
-   cd open-asm
-   ```
-
-2. Copy the example environment files:
+1. Clone the deployment repository:
 
    ```bash
-   cp core-api/example.env core-api/.env
-   cp console/example.env console/.env
-   cp worker/example.env worker/.env
+   git clone https://github.com/sil3ntcor3/oasm-docker.git
+   cd oasm-docker
    ```
 
-3. Start the services:
+2. Prepare and secure the deployment configuration:
 
    ```bash
-   docker compose up -d --build
+   cp .env.example .env
+   cp provider-config.example.yaml provider-config.yaml
+   chmod 600 .env provider-config.yaml
    ```
 
-This will launch the entire system, including the console, core API, workers, PostgreSQL, Redis, Geo-IP proxy, and Rustfs storage. Access the console at `http://localhost:3000`.
+3. Configure the required authentication and service secrets in `.env`.
+
+4. Pull the images, apply migrations, and provision the first administrator:
+
+   ```bash
+   ./install.sh
+   ```
+
+The installer prompts privately on the deployment host. No bootstrap token,
+setup link, or Open-ASM source checkout is required. See the
+[`oasm-docker` administrator provisioning guide](https://github.com/sil3ntcor3/oasm-docker/blob/main/docs/administrator-provisioning.md)
+for verification, recovery, and update procedures.
+
+This launches the console, Core API, workers, PostgreSQL, Redis, Geo-IP proxy,
+and RustFS storage. The deployment repository documents its configured console
+address.
+
+Subfinder uses every available passive source. To enable sources that require
+credentials, configure a worker-local provider file as described in
+[Subfinder provider credentials](docs/subfinder-provider-credentials.md).
 
 ### Pre-built Images
 
-You can also use pre-built images from Docker Hub:
+The `oasm-docker` installer pulls the configured pre-built images automatically.
+Use `./install.sh --no-pull` only when the required images are already present
+on the deployment host.
 
-```bash
-docker compose -f docker-compose.yml up -d
-```
+Images: `sil3ntcor3/myoasm-console`, `sil3ntcor3/myoasm-api`,
+`sil3ntcor3/myoasm-worker`
 
-Images: `oasm/oasm-console`, `oasm/oasm-api`, `oasm/oasm-worker`
+## Documentation
+
+| Guide | For |
+|-------|-----|
+| [Administrator Guide](docs/ADMINISTRATOR_GUIDE.md) | Deploying, securing, scaling, and maintaining a deployment |
+| [User Guide](docs/USER_GUIDE.md) | Adding targets, running discovery, and triaging findings |
+| [Developer Guide](DEVELOPER_GUIDE.md) | Local development environment and contributing |
+| [Scanner tool lifecycle](docs/tool-updates.md) | Step-by-step Tools-page updates and bundled image version updates |
+| [Subfinder provider credentials](docs/subfinder-provider-credentials.md) | Enabling credentialed passive subdomain sources |
 
 ## Developer Guide
 

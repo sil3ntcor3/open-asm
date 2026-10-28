@@ -55,9 +55,12 @@ export class IssuesService {
     createCommentDto: CreateIssueCommentDto,
     issueId: string,
     userId: string,
+    workspaceId: string,
     isCanDelete = true,
     isCanEdit = true,
   ): Promise<IssueComment> {
+    await this.getById(issueId, workspaceId);
+
     const comment = this.issueCommentsRepository.create({
       content: createCommentDto.content,
       repCommentId: createCommentDto.repCommentId,
@@ -80,14 +83,20 @@ export class IssuesService {
     return savedComment;
   }
 
-  async getCommentsByIssueId(issueId: string, query: GetManyBaseQueryParams) {
+  async getCommentsByIssueId(
+    issueId: string,
+    query: GetManyBaseQueryParams,
+    workspaceId: string,
+  ) {
     const { limit, page } = query;
 
     const queryBuilder = this.issueCommentsRepository
       .createQueryBuilder('issueComments')
       .withDeleted()
       .leftJoinAndSelect('issueComments.createdBy', 'createdBy')
+      .innerJoin('issueComments.issue', 'issue')
       .where('issueComments.issueId = :issueId', { issueId })
+      .andWhere('issue.workspaceId = :workspaceId', { workspaceId })
       .andWhere('issueComments.deletedAt IS NULL')
       .select([
         'issueComments',
@@ -141,9 +150,10 @@ export class IssuesService {
     id: string,
     updateCommentDto: UpdateIssueCommentDto,
     userId: string,
+    workspaceId: string,
   ): Promise<IssueComment> {
     const comment = await this.issueCommentsRepository.findOne({
-      where: { id },
+      where: { id, issue: { workspaceId } },
       relations: ['createdBy', 'issue'],
     });
 
@@ -176,10 +186,11 @@ export class IssuesService {
   async deleteCommentById(
     id: string,
     userId: string,
+    workspaceId: string,
   ): Promise<{ message: string }> {
     const comment = await this.issueCommentsRepository.findOne({
-      where: { id },
-      relations: ['createdBy'],
+      where: { id, issue: { workspaceId } },
+      relations: ['createdBy', 'issue'],
     });
 
     if (!comment) {
@@ -376,19 +387,13 @@ export class IssuesService {
     return getManyResponse({ query, data: issues, total });
   }
 
-  async getById(id: string, workspaceId?: string): Promise<Issue> {
+  async getById(id: string, workspaceId: string): Promise<Issue> {
     const issue = await this.issuesRepository.findOne({
-      where: { id },
+      where: { id, workspaceId },
       relations: ['createdBy'],
     });
     if (!issue) {
       throw new NotFoundException(`Issue with ID ${id} not found`);
-    }
-    // If workspaceId is provided, check if the issue belongs to the workspace
-    if (workspaceId && issue.workspaceId !== workspaceId) {
-      throw new ForbiddenException(
-        'You do not have permission to access this issue',
-      );
     }
     return issue;
   }
@@ -397,8 +402,9 @@ export class IssuesService {
     id: string,
     updateIssueDto: UpdateIssueDto,
     userId: string,
+    workspaceId: string,
   ): Promise<Issue> {
-    const issue = await this.getById(id);
+    const issue = await this.getById(id, workspaceId);
 
     // Check if the user is the creator of the issue
     if (issue.createdBy.id !== userId) {
@@ -424,8 +430,9 @@ export class IssuesService {
     id: string,
     changeIssueStatusDto: ChangeIssueStatusDto,
     userId: string,
+    workspaceId: string,
   ): Promise<Issue> {
-    const issue = await this.getById(id);
+    const issue = await this.getById(id, workspaceId);
     // Check if the user is the creator of the issue
     if (issue.createdBy.id !== userId) {
       throw new ForbiddenException(
@@ -465,8 +472,8 @@ export class IssuesService {
     return savedIssue;
   }
 
-  async delete(id: string): Promise<{ message: string }> {
-    const issue = await this.getById(id);
+  async delete(id: string, workspaceId: string): Promise<{ message: string }> {
+    const issue = await this.getById(id, workspaceId);
     await this.issuesRepository.remove(issue);
     return { message: 'Issue deleted successfully' };
   }

@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import {
+  getWorkspacesControllerGetWorkspaceApiKeyQueryKey,
   useWorkspacesControllerGetWorkspaceApiKey,
   useWorkspacesControllerRotateApiKey,
 } from '@/services/apis/gen/queries';
@@ -24,7 +25,10 @@ export default function ApiKeysSettings() {
     refetch,
   } = useWorkspacesControllerGetWorkspaceApiKey({
     query: {
-      queryKey: [selectedWorkspaceId],
+      queryKey: [
+        ...getWorkspacesControllerGetWorkspaceApiKeyQueryKey(),
+        selectedWorkspaceId,
+      ],
       enabled: !!selectedWorkspaceId,
     },
   });

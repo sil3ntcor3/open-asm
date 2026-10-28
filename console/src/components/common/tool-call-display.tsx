@@ -8,8 +8,6 @@ import {
   XCircleIcon,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import type { RemoteExecuteStreamEvent } from '@/hooks/use-remote-execute-stream';
-import { RemoteExecuteTerminal } from './remote-execute-terminal';
 
 export interface ToolCallState {
   toolCallId: string;
@@ -35,17 +33,9 @@ function formatToolName(name: string): string {
 
 export function ToolCallDisplay({
   toolCall,
-  streamEvents,
 }: {
   toolCall: ToolCallState;
-  streamEvents?: RemoteExecuteStreamEvent[];
 }) {
-  if (toolCall.toolName === 'execute_remote_command') {
-    return (
-      <RemoteExecuteTerminal toolCall={toolCall} streamEvents={streamEvents} />
-    );
-  }
-
   const config = statusConfig[toolCall.status];
   const StatusIcon = config.icon;
 

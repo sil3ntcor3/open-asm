@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderWithProviders, screen, waitFor } from '@/test/utils';
 import Settings from '@/pages/settings/settings';
 import { useParams } from '@tanstack/react-router';
+import { workspaceRolePermissionsFixture } from '@/test/fixtures/workspace-role-permissions';
 
 vi.mock('@tanstack/react-router', async () => {
   const actual = await vi.importActual('@tanstack/react-router');
@@ -17,12 +18,36 @@ vi.mock('@/utils/authClient', () => ({
   })),
 }));
 
+vi.mock('@/services/apis/gen/queries', async () => {
+  const actual = await vi.importActual('@/services/apis/gen/queries');
+  return {
+    ...actual,
+    useWorkspacesControllerGetWorkspaceRolePermissions: vi.fn(() => ({
+      data: workspaceRolePermissionsFixture,
+      isLoading: false,
+      isError: false,
+    })),
+  };
+});
+
 vi.mock('@/pages/settings/components/workspace-settings', () => ({
   default: () => <div data-testid="workspace-settings">WorkspaceSettings</div>,
 }));
 
 vi.mock('@/pages/settings/components/api-keys-settings', () => ({
   default: () => <div data-testid="api-keys-settings">ApiKeysSettings</div>,
+}));
+
+vi.mock('@/pages/settings/components/workspace-members', () => ({
+  default: () => <div data-testid="workspace-members">WorkspaceMembers</div>,
+}));
+
+vi.mock('@/pages/settings/components/workspace-role-permissions', () => ({
+  default: () => (
+    <div data-testid="workspace-role-permissions">
+      WorkspaceRolePermissions
+    </div>
+  ),
 }));
 
 vi.mock('@/pages/settings/components/preferences', () => ({
@@ -34,7 +59,9 @@ vi.mock('@/pages/settings/components/security-settings', () => ({
 }));
 
 vi.mock('@/pages/settings/components/brand-name-and-logo', () => ({
-  default: () => <div data-testid="brand-settings">BrandNameAndLogoSettings</div>,
+  default: () => (
+    <div data-testid="brand-settings">BrandNameAndLogoSettings</div>
+  ),
 }));
 
 vi.mock('@/pages/settings/components/get-about-project', () => ({
@@ -74,9 +101,37 @@ describe('Settings Page', () => {
     renderWithProviders(<Settings />);
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Preferences' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: 'Preferences' }),
+      ).toBeInTheDocument();
       expect(screen.getByTestId('preferences')).toBeInTheDocument();
     });
+  });
+
+  it('exposes workspace member role management', async () => {
+    vi.mocked(useParams).mockReturnValue({ tab: 'members' });
+
+    renderWithProviders(<Settings />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { name: 'Workspace members' }),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('workspace-members')).toBeInTheDocument();
+    });
+  });
+
+  it('opens workspace role and permission management', async () => {
+    vi.mocked(useParams).mockReturnValue({ tab: 'permissions' });
+
+    renderWithProviders(<Settings />);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Roles and permissions' }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByTestId('workspace-role-permissions'),
+    ).toBeInTheDocument();
   });
 
   it('filters tabs based on user role', async () => {

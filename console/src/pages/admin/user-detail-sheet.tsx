@@ -3,17 +3,17 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Sheet, SheetContent, SheetHeader } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
+import {
+  getUserWorkspaceAccess,
+  rbacKeys,
+  removePlatformUser,
+  setPlatformRole,
+  setUserBanned,
+} from '@/services/apis/rbac';
 import { authClient, type User } from '@/utils/authClient';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
@@ -201,48 +201,52 @@ export function UserDetailSheet({ user, onOpenChange }: UserDetailSheetProps) {
   const { mutate: toggleBan, isPending: isBanning } = useMutation({
     mutationFn: async () => {
       if (!aUser) return;
-      const action = aUser.banned
-        ? authClient.admin.unbanUser
-        : authClient.admin.banUser;
-      await action({ userId: aUser.id });
+      await setUserBanned(aUser.id, !aUser.banned);
     },
     onSuccess: () => {
       toast.success(`User has been ${aUser?.banned ? 'unbanned' : 'banned'}.`);
       return queryClient.invalidateQueries({ queryKey: ['user', aUser?.id] });
     },
-    onError: () => {
-      toast.error('Failed to update user status.');
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to update user status.');
     },
   });
 
   const { mutate: setRole, isPending: isSettingRole } = useMutation({
     mutationFn: async (role: 'admin' | 'user') => {
       if (!aUser) return;
-      await authClient.admin.setRole({ userId: aUser.id, role });
+      await setPlatformRole(aUser.id, role);
     },
     onSuccess: () => {
       toast.success('User role updated.');
       return queryClient.invalidateQueries({ queryKey: ['user', aUser?.id] });
     },
-    onError: () => {
-      toast.error('Failed to update user role.');
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to update user role.');
     },
   });
 
   const { mutate: deleteUser, isPending: isDeleting } = useMutation({
     mutationFn: async () => {
       if (!aUser) return;
-      await authClient.admin.removeUser({ userId: aUser.id });
+      await removePlatformUser(aUser.id);
     },
     onSuccess: () => {
       toast.success('User deleted successfully.');
       onOpenChange(false);
       return queryClient.invalidateQueries({ queryKey: ['users'] });
     },
-    onError: () => {
-      toast.error('Failed to delete user.');
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to delete user.');
     },
   });
+
+  const { data: workspaceAccess = [], isLoading: isLoadingWorkspaceAccess } =
+    useQuery({
+      queryKey: rbacKeys.userAccess(aUser?.id ?? ''),
+      queryFn: () => getUserWorkspaceAccess(aUser!.id),
+      enabled: Boolean(aUser),
+    });
 
   return (
     <Sheet open={!!user} onOpenChange={onOpenChange}>
@@ -297,6 +301,9 @@ export function UserDetailSheet({ user, onOpenChange }: UserDetailSheetProps) {
           >
             <TabsList className="mx-6 mt-4 mb-1">
               <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="workspace-access">
+                Workspace access
+              </TabsTrigger>
               <TabsTrigger value="raw-json">Raw JSON</TabsTrigger>
             </TabsList>
 
@@ -483,25 +490,46 @@ export function UserDetailSheet({ user, onOpenChange }: UserDetailSheetProps) {
                 <div className="rounded-lg border border-destructive/30 divide-y divide-destructive/20">
                   <div className="px-4">
                     <ActionRow
-                      label="Change role"
-                      description="Set the user's access level"
+                      label={
+                        aUser.role === 'admin'
+                          ? 'Demote Platform Admin'
+                          : 'Promote to Platform Admin'
+                      }
+                      description={
+                        aUser.role === 'admin'
+                          ? 'Remove inherited access to all workspaces'
+                          : 'Grant full access to the application and every workspace'
+                      }
                       danger
                       action={
-                        <Select
-                          defaultValue={aUser.role}
-                          onValueChange={(value) =>
-                            setRole(value as 'admin' | 'user')
+                        <ConfirmDialog
+                          title={
+                            aUser.role === 'admin'
+                              ? 'Demote Platform Admin?'
+                              : 'Promote to Platform Admin?'
                           }
-                          disabled={isSettingRole}
-                        >
-                          <SelectTrigger className="w-[130px] h-8 text-sm">
-                            <SelectValue placeholder="Select role" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="admin">Admin</SelectItem>
-                            <SelectItem value="user">User</SelectItem>
-                          </SelectContent>
-                        </Select>
+                          description={
+                            aUser.role === 'admin'
+                              ? `${aUser.name} will retain only explicitly assigned workspace memberships. The last active Platform Admin cannot be demoted.`
+                              : `${aUser.name} will receive full access to every current and future workspace.`
+                          }
+                          onConfirm={() =>
+                            setRole(aUser.role === 'admin' ? 'user' : 'admin')
+                          }
+                          confirmText={
+                            aUser.role === 'admin' ? 'Demote' : 'Promote'
+                          }
+                          cancelText="Cancel"
+                          trigger={
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={isSettingRole}
+                            >
+                              {aUser.role === 'admin' ? 'Demote' : 'Promote'}
+                            </Button>
+                          }
+                        />
                       }
                     />
                   </div>
@@ -569,6 +597,52 @@ export function UserDetailSheet({ user, onOpenChange }: UserDetailSheetProps) {
                   </div>
                 </div>
               </section>
+            </TabsContent>
+
+            <TabsContent
+              value="workspace-access"
+              className="flex-1 overflow-y-auto mt-0 px-6 pb-6 pt-4"
+            >
+              <div className="mb-4">
+                <p className="text-sm font-semibold">Workspace access</p>
+                <p className="text-xs text-muted-foreground">
+                  Platform Admin access is inherited. User access comes from an
+                  explicit membership with one role per workspace.
+                </p>
+              </div>
+              {isLoadingWorkspaceAccess ? (
+                <p className="text-sm text-muted-foreground">
+                  Loading workspace access…
+                </p>
+              ) : workspaceAccess.length ? (
+                <div className="space-y-2">
+                  {workspaceAccess.map((access) => (
+                    <div
+                      key={access.workspaceId}
+                      className="flex items-center justify-between gap-4 rounded-lg border p-3"
+                    >
+                      <div>
+                        <p className="text-sm font-medium">
+                          {access.workspaceName}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {access.accessSource === 'platform_admin'
+                            ? 'Inherited from Platform Admin'
+                            : 'Explicit workspace membership'}
+                        </p>
+                      </div>
+                      <Badge variant="secondary">{access.roleName}</Badge>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed p-6 text-center">
+                  <p className="text-sm font-medium">No workspace access</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Add this account from a workspace&apos;s Members settings.
+                  </p>
+                </div>
+              )}
             </TabsContent>
 
             {/* Raw JSON Tab */}

@@ -23,7 +23,6 @@ import { Markdown } from '@/components/common/markdown';
 import type { ToolCallState } from '@/components/common/tool-call-display';
 import { ToolCallDisplay } from '@/components/common/tool-call-display';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { RemoteExecuteStreamEvent } from '@/hooks/use-remote-execute-stream';
 import type { TextUIPart, UIMessage } from 'ai';
 import { motion } from 'framer-motion';
 import {
@@ -71,7 +70,6 @@ interface ChatConversationProps {
   todos?: AgentTodoItem[];
   showTodoAboveInput?: boolean;
   selectedToolCallId?: string | null;
-  remoteExecuteEvents?: Map<string, RemoteExecuteStreamEvent[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -183,13 +181,11 @@ const ChatMessage = memo(function ChatMessage({
   idx,
   messagesLength,
   isStreaming,
-  remoteExecuteEvents,
 }: {
   message: UIMessage;
   idx: number;
   messagesLength: number;
   isStreaming: boolean;
-  remoteExecuteEvents?: Map<string, RemoteExecuteStreamEvent[]>;
 }) {
   const textContent = getTextContent(message);
   const hasContent = textContent.length > 0;
@@ -340,7 +336,6 @@ const ChatMessage = memo(function ChatMessage({
                         input: item.input as Record<string, unknown> | undefined,
                         output: item.output,
                       }}
-                      streamEvents={remoteExecuteEvents?.get(item.toolCallId)}
                     />
                   </div>
                 );
@@ -589,7 +584,6 @@ export const ChatConversation = memo(function ChatConversation({
   todos,
   showTodoAboveInput = true,
   selectedToolCallId,
-  remoteExecuteEvents,
 }: ChatConversationProps) {
   const isLoadingMoreRef = useRef(false);
   const onLoadMoreRef = useRef(onLoadMore);
@@ -762,11 +756,6 @@ export const ChatConversation = memo(function ChatConversation({
               )}
 
               {messages.map((message, idx) => {
-                const hasToolCalls = (message.parts || []).some(
-                  (p) =>
-                    (p.type === 'dynamic-tool' || p.type.startsWith('tool-')) &&
-                    'toolCallId' in p,
-                );
                 return (
                   <ChatMessage
                     key={message.id}
@@ -774,9 +763,6 @@ export const ChatConversation = memo(function ChatConversation({
                     idx={idx}
                     messagesLength={messages.length}
                     isStreaming={isStreaming}
-                    remoteExecuteEvents={
-                      hasToolCalls ? remoteExecuteEvents : undefined
-                    }
                   />
                 );
               })}

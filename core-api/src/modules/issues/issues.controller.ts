@@ -1,4 +1,6 @@
 import { UserContext } from '@/common/decorators/app.decorator';
+import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
+import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
 import { WorkspaceId } from '@/common/decorators/workspace-id.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
 import { GetManyBaseQueryParams } from '@/common/dtos/get-many-base.dto';
@@ -30,6 +32,7 @@ import { IssuesService } from './issues.service';
 
 @ApiTags('Issues')
 @Controller('issues')
+@WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
 export class IssuesController {
   constructor(private readonly issuesService: IssuesService) {}
 
@@ -61,6 +64,7 @@ export class IssuesController {
       getWorkspaceId: true,
     },
   })
+  @WorkspacePolicy(WorkspaceAction.FINDING_TRIAGE)
   @Post()
   create(
     @Body() createIssueDto: CreateIssueDto,
@@ -108,13 +112,20 @@ export class IssuesController {
       ],
     },
   })
+  @WorkspacePolicy(WorkspaceAction.FINDING_TRIAGE)
   @Patch(':id')
   update(
     @Param('id') id: string,
     @Body() updateIssueDto: UpdateIssueDto,
     @UserContext() user: UserContextPayload,
+    @WorkspaceId() workspaceId: string,
   ) {
-    return this.issuesService.update(id, updateIssueDto, user.id);
+    return this.issuesService.update(
+      id,
+      updateIssueDto,
+      user.id,
+      workspaceId,
+    );
   }
 
   @Doc({
@@ -124,16 +135,19 @@ export class IssuesController {
       serialization: Issue,
     },
   })
+  @WorkspacePolicy(WorkspaceAction.FINDING_TRIAGE)
   @Patch(':id/status')
   changeStatus(
     @Param() param: IdQueryParamDto,
     @Body() changeIssueStatusDto: ChangeIssueStatusDto,
     @UserContext() user: UserContextPayload,
+    @WorkspaceId() workspaceId: string,
   ) {
     return this.issuesService.changeStatus(
       param.id,
       changeIssueStatusDto,
       user.id,
+      workspaceId,
     );
   }
 
@@ -144,13 +158,20 @@ export class IssuesController {
       serialization: IssueComment,
     },
   })
+  @WorkspacePolicy(WorkspaceAction.FINDING_TRIAGE)
   @Post(':issueId/comments')
   createComment(
     @Param('issueId') issueId: string,
     @Body() createCommentDto: CreateIssueCommentDto,
     @UserContext() user: UserContextPayload,
+    @WorkspaceId() workspaceId: string,
   ) {
-    return this.issuesService.createComment(createCommentDto, issueId, user.id);
+    return this.issuesService.createComment(
+      createCommentDto,
+      issueId,
+      user.id,
+      workspaceId,
+    );
   }
 
   @Doc({
@@ -164,8 +185,13 @@ export class IssuesController {
   getCommentsByIssueId(
     @Param('issueId') issueId: string,
     @Query() query: GetManyBaseQueryParams,
+    @WorkspaceId() workspaceId: string,
   ) {
-    return this.issuesService.getCommentsByIssueId(issueId, query);
+    return this.issuesService.getCommentsByIssueId(
+      issueId,
+      query,
+      workspaceId,
+    );
   }
 
   @Doc({
@@ -185,13 +211,20 @@ export class IssuesController {
       ],
     },
   })
+  @WorkspacePolicy(WorkspaceAction.FINDING_TRIAGE)
   @Patch('comments/:id')
   updateCommentById(
     @Param('id') id: string,
     @Body() updateCommentDto: UpdateIssueCommentDto,
     @UserContext() user: UserContextPayload,
+    @WorkspaceId() workspaceId: string,
   ) {
-    return this.issuesService.updateCommentById(id, updateCommentDto, user.id);
+    return this.issuesService.updateCommentById(
+      id,
+      updateCommentDto,
+      user.id,
+      workspaceId,
+    );
   }
 
   @Doc({
@@ -211,11 +244,13 @@ export class IssuesController {
       ],
     },
   })
+  @WorkspacePolicy(WorkspaceAction.FINDING_TRIAGE)
   @Delete('comments/:id')
   deleteCommentById(
     @Param('id') id: string,
     @UserContext() user: UserContextPayload,
+    @WorkspaceId() workspaceId: string,
   ) {
-    return this.issuesService.deleteCommentById(id, user.id);
+    return this.issuesService.deleteCommentById(id, user.id, workspaceId);
   }
 }

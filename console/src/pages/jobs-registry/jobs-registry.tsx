@@ -249,7 +249,13 @@ const JobsRegistryPage = () => {
         header: 'Ended At',
         cell: ({ row }) => {
           const job = row.original;
-          if (job.status !== JobStatus.completed) return null;
+          if (
+            job.status !== JobStatus.completed &&
+            job.status !== JobStatus.failed &&
+            job.status !== JobStatus.cancelled
+          ) {
+            return null;
+          }
 
           return (
             <div className="flex flex-col text-muted-foreground text-xs gap-3">

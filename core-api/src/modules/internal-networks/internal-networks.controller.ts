@@ -2,8 +2,9 @@ import { UserContext } from '@/common/decorators/app.decorator';
 import { WorkspaceId } from '@/common/decorators/workspace-id.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
-import { WorkspaceOwnerGuard } from '@/common/guards/workspace-owner.guard';
 import { UserContextPayload } from '@/common/interfaces/app.interface';
+import { WorkspacePolicy } from '@/common/authorization/workspace-policy.decorator';
+import { WorkspaceAction } from '@/common/authorization/workspace-action.enum';
 import {
   Body,
   Controller,
@@ -14,7 +15,6 @@ import {
   Patch,
   Post,
   Query,
-  UseGuards,
 } from '@nestjs/common';
 import { CreateInternalNetworkDto } from './dtos/create-internal-network.dto';
 import { CreateTargetsFromInterfacesDto } from './dtos/create-targets-from-interfaces.dto';
@@ -47,6 +47,7 @@ export class InternalNetworksController {
       getWorkspaceId: true,
     },
   })
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   @Get()
   getManyInternalNetworks(
     @Query() query: GetManyInternalNetworksQueryDto,
@@ -61,7 +62,7 @@ export class InternalNetworksController {
   @Doc({
     summary: 'Create an internal network',
     description:
-      'Creates a new internal network for the specified workspace. Only the workspace owner can perform this action.',
+      'Creates a new internal network for the specified workspace.',
     response: {
       serialization: DefaultMessageResponseDto,
     },
@@ -69,8 +70,8 @@ export class InternalNetworksController {
       getWorkspaceId: true,
     },
   })
+  @WorkspacePolicy(WorkspaceAction.WORKER_MANAGE)
   @Post()
-  @UseGuards(WorkspaceOwnerGuard)
   createInternalNetwork(
     @Body() dto: CreateInternalNetworkDto,
     @WorkspaceId() workspaceId: string,
@@ -94,13 +95,18 @@ export class InternalNetworksController {
       getWorkspaceId: true,
     },
   })
+  @WorkspacePolicy(WorkspaceAction.TARGET_CREATE)
   @Post('targets')
-  @UseGuards(WorkspaceOwnerGuard)
   createTargetsFromInterfaces(
     @Body() dto: CreateTargetsFromInterfacesDto,
+    @WorkspaceId() workspaceId: string,
     @UserContext() user: UserContextPayload,
   ): Promise<DefaultMessageResponseDto> {
-    return this.internalNetworksService.createTargetsFromInterfaces(dto, user);
+    return this.internalNetworksService.createTargetsFromInterfaces(
+      dto,
+      workspaceId,
+      user,
+    );
   }
 
   @Doc({
@@ -114,6 +120,7 @@ export class InternalNetworksController {
       getWorkspaceId: true,
     },
   })
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   @Get(':id/network-interfaces')
   getManyNetworkInterfaces(
     @Param('id', ParseUUIDPipe) id: string,
@@ -133,6 +140,7 @@ export class InternalNetworksController {
       getWorkspaceId: true,
     },
   })
+  @WorkspacePolicy(WorkspaceAction.WORKSPACE_READ)
   @Get(':id')
   getInternalNetworkById(
     @Param('id', ParseUUIDPipe) id: string,
@@ -144,7 +152,7 @@ export class InternalNetworksController {
   @Doc({
     summary: 'Update an internal network by ID',
     description:
-      'Updates the name of an existing internal network. Only the workspace owner can perform this action.',
+      'Updates the name of an existing internal network.',
     response: {
       serialization: DefaultMessageResponseDto,
     },
@@ -152,24 +160,24 @@ export class InternalNetworksController {
       getWorkspaceId: true,
     },
   })
+  @WorkspacePolicy(WorkspaceAction.WORKER_MANAGE)
   @Patch(':id')
-  @UseGuards(WorkspaceOwnerGuard)
   updateInternalNetworkById(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateInternalNetworkDto,
-    @UserContext() user: UserContextPayload,
+    @WorkspaceId() workspaceId: string,
   ): Promise<DefaultMessageResponseDto> {
     return this.internalNetworksService.updateInternalNetworkById(
       id,
       dto,
-      user,
+      workspaceId,
     );
   }
 
   @Doc({
     summary: 'Delete an internal network',
     description:
-      'Deletes an existing internal network. Only the workspace owner can perform this action.',
+      'Deletes an existing internal network.',
     response: {
       serialization: DefaultMessageResponseDto,
     },
@@ -177,12 +185,12 @@ export class InternalNetworksController {
       getWorkspaceId: true,
     },
   })
+  @WorkspacePolicy(WorkspaceAction.WORKER_MANAGE)
   @Delete(':id')
-  @UseGuards(WorkspaceOwnerGuard)
   deleteInternalNetwork(
     @Param('id', ParseUUIDPipe) id: string,
-    @UserContext() user: UserContextPayload,
+    @WorkspaceId() workspaceId: string,
   ): Promise<DefaultMessageResponseDto> {
-    return this.internalNetworksService.deleteInternalNetwork(id, user);
+    return this.internalNetworksService.deleteInternalNetwork(id, workspaceId);
   }
 }

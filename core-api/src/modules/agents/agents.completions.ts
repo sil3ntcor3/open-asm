@@ -1366,21 +1366,6 @@ export class AgentsCompletionsService {
         };
         todosEmitter.on('todos-updated', onTodosUpdated);
 
-        // Subscribe to remote-execute-output events for real-time terminal streaming
-        const onRemoteExecuteOutput = (data: {
-          toolCallId: string;
-          type: number;
-          data: string;
-          exitCode: number;
-        }) => {
-          if (controllerClosed) return;
-          controller.enqueue({
-            type: 'data-remote-execute-output',
-            data,
-          } as unknown as UIMessageChunk);
-        };
-        todosEmitter.on('remote-execute-output', onRemoteExecuteOutput);
-
         // Subscribe to stream-error events (provider errors propagated to frontend)
         const onStreamError = (data: { message: string }) => {
           if (controllerClosed) return;
@@ -1650,7 +1635,6 @@ export class AgentsCompletionsService {
             abortSignal.removeEventListener('abort', onAbort);
           }
           todosEmitter.off('todos-updated', onTodosUpdated);
-          todosEmitter.off('remote-execute-output', onRemoteExecuteOutput);
           todosEmitter.off('stream-error', onStreamError);
 
           // Auto-complete stuck in_progress todos AFTER all continuation
@@ -1793,12 +1777,7 @@ export class AgentsCompletionsService {
 
     // Get tools for the current agent mode
     const tools = {
-      ...(this.agentTool.getTools(
-        workspaceId,
-        agentMode,
-        todosEmitter,
-        conversation.id,
-      ) as ToolSet),
+      ...(this.agentTool.getTools(workspaceId, agentMode) as ToolSet),
       ...(this.agentTool.getTodoTools(
         conversation.id,
         todosEmitter,

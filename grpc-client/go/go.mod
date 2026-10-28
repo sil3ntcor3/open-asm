@@ -1,4 +1,4 @@
-module github.com/oasm-platform/open-asm/grpc-client/go
+module github.com/sil3ntcor3/open-asm/grpc-client/go
 
 go 1.25.0
 

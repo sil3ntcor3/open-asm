@@ -13,6 +13,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
+import { useWorkspacePermissions } from '@/hooks/useWorkspacePermissions';
 
 const domainRegex = /^(?!:\/\/)([a-zA-Z0-9-_]+\.)+[a-zA-Z]{2,}$/;
 const cidr24Regex = /^(\d{1,3}\.){3}\d{1,3}\/24$/;
@@ -150,6 +151,9 @@ export default function AddTarget() {
   const queryClient = useQueryClient();
   const { mutate, isPending } = useTargetsControllerCreateMultipleTargets();
   const navigate = useNavigate();
+  const { can, isLoading: isLoadingPermissions } = useWorkspacePermissions();
+  const canCreateTargets = can('target.create');
+  const canRunScans = can('scan.execute');
 
   const validateTargets = (input: string): string | true => {
     if (targetType === 'CIDR') {
@@ -225,7 +229,9 @@ export default function AddTarget() {
   return (
     <Page title="Add Target" isShowButtonGoBack>
       <div className="max-w-4xl mx-auto py-6">
-        <div className={`bg-card rounded-lg border ${targetTypeBg[targetType]} p-4`}>
+        <div
+          className={`bg-card rounded-lg border ${targetTypeBg[targetType]} p-4`}
+        >
           <div className="mb-6">
             <p className="text-muted-foreground mt-2">
               Enter one or more targets to register, separated by commas or new
@@ -247,33 +253,48 @@ export default function AddTarget() {
                 }}
                 className="flex flex-col sm:flex-row gap-4 sm:gap-6"
               >
-                <Label htmlFor="type-domain" className="flex items-center gap-2 cursor-pointer">
+                <Label
+                  htmlFor="type-domain"
+                  className="flex items-center gap-2 cursor-pointer"
+                >
                   <RadioGroupItem
                     value="DOMAIN"
                     id="type-domain"
                     className={targetTypeColor.DOMAIN}
                   />
-                  <span className={`${targetType === 'DOMAIN' ? 'font-bold' : 'font-normal'} ${targetTypeColor.DOMAIN}`}>
+                  <span
+                    className={`${targetType === 'DOMAIN' ? 'font-bold' : 'font-normal'} ${targetTypeColor.DOMAIN}`}
+                  >
                     Root domain
                   </span>
                 </Label>
-                <Label htmlFor="type-ip" className="flex items-center gap-2 cursor-pointer">
+                <Label
+                  htmlFor="type-ip"
+                  className="flex items-center gap-2 cursor-pointer"
+                >
                   <RadioGroupItem
                     value="IP"
                     id="type-ip"
                     className={targetTypeColor.IP}
                   />
-                  <span className={`${targetType === 'IP' ? 'font-bold' : 'font-normal'} ${targetTypeColor.IP}`}>
+                  <span
+                    className={`${targetType === 'IP' ? 'font-bold' : 'font-normal'} ${targetTypeColor.IP}`}
+                  >
                     IP address
                   </span>
                 </Label>
-                <Label htmlFor="type-cidr" className="flex items-center gap-2 cursor-pointer">
+                <Label
+                  htmlFor="type-cidr"
+                  className="flex items-center gap-2 cursor-pointer"
+                >
                   <RadioGroupItem
                     value="CIDR"
                     id="type-cidr"
                     className={targetTypeColor.CIDR}
                   />
-                  <span className={`${targetType === 'CIDR' ? 'font-bold' : 'font-normal'} ${targetTypeColor.CIDR}`}>
+                  <span
+                    className={`${targetType === 'CIDR' ? 'font-bold' : 'font-normal'} ${targetTypeColor.CIDR}`}
+                  >
                     CIDR /24
                   </span>
                 </Label>
@@ -353,12 +374,23 @@ export default function AddTarget() {
                 Cancel
               </Button>
               <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-                <Button disabled={isPending} type="submit" variant="outline">
+                <Button
+                  disabled={
+                    isPending || isLoadingPermissions || !canCreateTargets
+                  }
+                  type="submit"
+                  variant="outline"
+                >
                   {isPending && <Loader2Icon className="animate-spin" />}
                   Add Target
                 </Button>
                 <Button
-                  disabled={isPending}
+                  disabled={
+                    isPending ||
+                    isLoadingPermissions ||
+                    !canCreateTargets ||
+                    !canRunScans
+                  }
                   type="button"
                   className={targetTypeButton[targetType]}
                   onClick={handleSubmit((data) => onSubmit(data, true))}
@@ -368,6 +400,12 @@ export default function AddTarget() {
                 </Button>
               </div>
             </div>
+            {!isLoadingPermissions && canCreateTargets && !canRunScans && (
+              <p className="text-right text-xs text-muted-foreground">
+                Your workspace role can register targets but cannot start
+                discovery.
+              </p>
+            )}
           </form>
         </div>
       </div>

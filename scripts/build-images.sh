@@ -17,6 +17,10 @@
 #
 # The oasm-docker compose pins `platform: linux/amd64`, so images are built
 # for linux/amd64 by default. Override with PLATFORM=.
+#
+# The worker image bakes the Nuclei template seed pinned in
+# scripts/tool-versions.json, passed through as build arguments so a built
+# image can never disagree with the pin file.
 set -euo pipefail
 
 # Registry namespace and tag the oasm-docker deployment pulls.
@@ -45,6 +49,12 @@ fi
 # image name for a given component
 image_for() { echo "${REGISTRY}/myoasm-$1:${TAG}"; }
 
+# Reads one field of the pinned Nuclei template seed from scripts/tool-versions.json.
+pinned_template_field() {
+  python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["nucleiTemplates"][sys.argv[2]])' \
+    "$ROOT/scripts/tool-versions.json" "$1"
+}
+
 build_one() {
   local name="$1" context dockerfile img
   img="$(image_for "$name")"
@@ -56,8 +66,17 @@ build_one() {
     *) echo "Unknown target: $name" >&2; return 2 ;;
   esac
 
+  local build_arguments=()
+  if [ "$name" = "worker" ]; then
+    build_arguments+=(
+      "--build-arg" "NUCLEI_TEMPLATES_VERSION=$(pinned_template_field version)"
+      "--build-arg" "NUCLEI_TEMPLATES_SHA256=$(pinned_template_field sha256)"
+    )
+  fi
+
   echo ">> Building ${img} (context=${context}, platform=${PLATFORM})"
-  docker build --platform "${PLATFORM}" -f "${dockerfile}" -t "${img}" "${context}"
+  docker build --platform "${PLATFORM}" -f "${dockerfile}" \
+    "${build_arguments[@]+"${build_arguments[@]}"}" -t "${img}" "${context}"
 
   if [ "${PUSH}" -eq 1 ]; then
     echo ">> Pushing ${img}"

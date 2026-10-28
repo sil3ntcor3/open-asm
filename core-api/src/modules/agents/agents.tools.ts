@@ -2,7 +2,6 @@
 import { Inject, Injectable, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { tool } from 'ai';
-import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { Repository } from 'typeorm';
 import { z } from 'zod';
@@ -10,7 +9,6 @@ import { z } from 'zod';
 import { AssetsService } from '@/modules/assets/assets.service';
 import { IssuesService } from '@/modules/issues/issues.service';
 import { JobsRegistryService } from '@/modules/jobs-registry/jobs-registry.service';
-import { RemoteExecuteService } from '@/modules/remote-execute/remote-execute.service';
 import { StatisticService } from '@/modules/statistic/statistic.service';
 import { TargetsService } from '@/modules/targets/targets.service';
 import { ToolsService } from '@/modules/tools/tools.service';
@@ -19,6 +17,7 @@ import { WorkersService } from '@/modules/workers/workers.service';
 
 import { SortOrder } from '@/common/dtos/get-many-base.dto';
 import { AgentMode } from '@/common/enums/enum';
+import { VulnerabilitySortField } from '@/modules/vulnerabilities/dto/get-vulnerability.dto';
 import { AgentsMemoriesService } from './agents.memories';
 import {
   detailAssetSchema,
@@ -64,7 +63,6 @@ export class AgentTool {
     private readonly workersService: WorkersService,
     @Inject(forwardRef(() => JobsRegistryService))
     private readonly jobsRegistryService: JobsRegistryService,
-    private readonly remoteExecuteService: RemoteExecuteService,
     @InjectRepository(AgentConversation)
     private readonly conversationRepository: Repository<AgentConversation>,
     @InjectRepository(AgentConversationTodo)
@@ -100,7 +98,13 @@ export class AgentTool {
         execute: async (params: z.infer<typeof getVulnerabilitiesSchema>) => {
           const { page, limit, q } = params;
           const response = await this.vulnerabilitiesService.getVulnerabilities(
-            { limit: limit ?? 100, page: page ?? 1, q, sortBy: 'createdAt', sortOrder: SortOrder.DESC },
+            {
+              limit: limit ?? 100,
+              page: page ?? 1,
+              q,
+              sortBy: VulnerabilitySortField.CREATED_AT,
+              sortOrder: SortOrder.DESC,
+            },
             workspaceId,
           );
           return { ...response, data: response.data.map((i) => ({ id: i.id, name: i.name, severity: i.severity })) };
@@ -308,6 +312,7 @@ export class AgentTool {
           const { page, limit, q } = params;
           const response = await this.toolsService.getManyTools({
             limit: limit ?? 100, page: page ?? 1, sortBy: 'createdAt', sortOrder: SortOrder.DESC, search: q,
+            workspaceId,
           });
           return { ...response, data: response.data.map((i) => ({ id: i.id, name: i.name })) };
         },
@@ -344,48 +349,13 @@ export class AgentTool {
           const { page, limit, jobHistoryId, jobStatus } = params;
           const response = await this.jobsRegistryService.getManyJobs({
             limit: limit ?? 100, page: page ?? 1, sortBy: 'createdAt', sortOrder: SortOrder.DESC,
-            jobHistoryId, jobStatus,
+            jobHistoryId, jobStatus, workspaceId,
           });
           return { ...response, data: response.data.map((i) => ({ id: i.id, status: i.status })) };
         },
       };
       return tool(toolConfig);
     };
-  }
-
-  remoteExecuteTool(workspaceId: string, conversationId: string, emitter?: EventEmitter): ToolType {
-    const toolConfig: any = {
-      description: [
-        'Execute arbitrary shell commands on remote worker nodes (nmap, curl, dig, etc.).',
-        'Params: command (required shell command string).',
-        'Output: stdout, stderr, exitCode, error, timedOut.',
-        'Warning: OS-level permissions, no PTY, strict timeout.',
-      ].join('\n'),
-      parameters: z.object({
-        command: z.string().min(1).describe('Shell command to execute'),
-      }),
-      execute: async (
-        params: { command: string },
-        options: { toolCallId: string },
-      ) => {
-        const { command } = params;
-        const { toolCallId } = options;
-        const sessionId = randomUUID();
-
-        return this.remoteExecuteService.waitForResult(
-          command,
-          sessionId,
-          conversationId,
-          60_000,
-          (event) => {
-            if (emitter) {
-              emitter.emit('remote-execute-output', { toolCallId, ...event });
-            }
-          },
-        );
-      },
-    };
-    return tool(toolConfig);
   }
 
   getTodoTools(
@@ -916,8 +886,6 @@ export class AgentTool {
   getTools(
     workspaceId: string,
     agentMode: AgentMode,
-    emitter?: EventEmitter,
-    conversationId?: string,
   ): Record<string, ToolType> {
     const { AGENT, ASK } = AgentMode;
     const tools: Record<string, { method: ToolType; permissions: AgentMode[] }> = {
@@ -937,7 +905,6 @@ export class AgentTool {
       display_available_tools: { method: this.listToolsTool(workspaceId), permissions: [AGENT, ASK] },
       list_active_workers: { method: this.listWorkersTool(workspaceId), permissions: [AGENT, ASK] },
       review_jobs: { method: this.listJobsTool(workspaceId), permissions: [AGENT, ASK] },
-      execute_remote_command: { method: this.remoteExecuteTool(workspaceId, conversationId ?? '', emitter), permissions: [AGENT] },
     };
 
     return Object.fromEntries(

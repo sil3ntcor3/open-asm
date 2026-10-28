@@ -1,0 +1,11 @@
+services:
+  oasm-worker:
+    environment:
+      SUBFINDER_PROVIDER_CONFIG: /run/secrets/subfinder-provider-config.yaml
+    volumes:
+      - type: bind
+        source: ${SUBFINDER_PROVIDER_CONFIG_PATH:-./worker/provider-config.yaml}
+        target: /run/secrets/subfinder-provider-config.yaml
+        read_only: true
+        bind:
+          create_host_path: false

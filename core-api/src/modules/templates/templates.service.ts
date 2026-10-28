@@ -72,8 +72,14 @@ export class TemplatesService {
    * @returns Promise containing the upload result
    * @throws BadRequestException if the template is not found
    */
-  public async uploadFile(templateId: string, fileContent: string) {
-    const template = await this.templateRepo.findOneBy({ id: templateId });
+  public async uploadFile(
+    templateId: string,
+    fileContent: string,
+    workspaceId: string,
+  ) {
+    const template = await this.templateRepo.findOne({
+      where: { id: templateId, workspace: { id: workspaceId } },
+    });
 
     if (!template) {
       throw new BadRequestException('Invalid upload request');

@@ -10,6 +10,7 @@ interface ToolsListProps {
   title: string;
   emptyMessage?: string;
   renderButton: (tool: Tool) => ReactNode;
+  canUpdateTools?: boolean;
 }
 
 const ToolsList = ({
@@ -18,6 +19,7 @@ const ToolsList = ({
   icon,
   emptyMessage = 'No tools found',
   renderButton,
+  canUpdateTools = false,
 }: ToolsListProps) => {
   return (
     <div className="flex flex-col gap-4">
@@ -26,7 +28,12 @@ const ToolsList = ({
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
           {data?.map((tool, index) => (
-            <ToolCard key={tool.id ?? index} tool={tool} button={renderButton(tool)} />
+            <ToolCard
+              key={tool.id ?? index}
+              tool={tool}
+              button={renderButton(tool)}
+              canUpdateTools={canUpdateTools}
+            />
           ))}
         </div>
       )}

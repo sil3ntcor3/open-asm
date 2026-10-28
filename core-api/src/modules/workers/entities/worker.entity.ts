@@ -6,7 +6,25 @@ import { Tool } from '@/modules/tools/entities/tools.entity';
 import { Workspace } from '@/modules/workspaces/entities/workspace.entity';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsUUID } from 'class-validator';
-import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany } from 'typeorm';
+import {
+  Column,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+} from 'typeorm';
+
+export interface WorkerToolStatus {
+  installedVersion?: string;
+  state: 'ready' | 'pending' | 'updating' | 'succeeded' | 'failed';
+  requestId?: string;
+  targetVersion?: string;
+  rollbackVersion?: string;
+  lastAttemptAt?: string;
+  lastSuccessAt?: string;
+  error?: string;
+}
 
 @Entity('workers')
 @Index('IDX_workers_token', ['token'])
@@ -96,7 +114,7 @@ export class WorkerInstance extends BaseEntity {
    * (WORKER_MAX_CONCURRENCY). Delivered to the worker on its
    * next control poll; shrinking takes effect as running jobs finish.
    */
-  @ApiProperty({ required: false, nullable: true })
+  @ApiProperty({ required: false, nullable: true, type: Number })
   @Column({ type: 'int', nullable: true })
   maxConcurrency?: number | null;
 
@@ -111,4 +129,69 @@ export class WorkerInstance extends BaseEntity {
 
   @ApiProperty({ required: false })
   isOnline?: boolean;
+
+  @ApiProperty({ required: false, nullable: true, type: String })
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  nucleiEngineVersion?: string | null;
+
+  @ApiProperty({ required: false, nullable: true, type: String })
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  nucleiTemplateVersion?: string | null;
+
+  @ApiProperty({ required: false, nullable: true, type: String })
+  @Column({ type: 'varchar', length: 128, nullable: true })
+  nucleiTemplateSource?: string | null;
+
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    type: String,
+    enum: ['ready', 'refreshing', 'stale', 'error'],
+  })
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  nucleiTemplateStatus?: string | null;
+
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    type: String,
+    format: 'date-time',
+  })
+  @Column({ type: 'timestamptz', nullable: true })
+  nucleiTemplateLastAttemptAt?: Date | null;
+
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    type: String,
+    format: 'date-time',
+  })
+  @Column({ type: 'timestamptz', nullable: true })
+  nucleiTemplateLastSuccessAt?: Date | null;
+
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    type: String,
+    format: 'date-time',
+  })
+  @Column({ type: 'timestamptz', nullable: true })
+  nucleiTemplateValidatedAt?: Date | null;
+
+  @ApiProperty({ required: false, nullable: true, type: String })
+  @Column({ type: 'varchar', length: 2048, nullable: true })
+  nucleiTemplateLastError?: string | null;
+
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    type: String,
+    format: 'date-time',
+  })
+  @Column({ type: 'timestamptz', nullable: true })
+  scannerStatusUpdatedAt?: Date | null;
+
+  @ApiProperty({ required: false, type: Object })
+  @Column({ type: 'jsonb', default: () => "'{}'::jsonb" })
+  toolStatuses: Record<string, WorkerToolStatus>;
 }

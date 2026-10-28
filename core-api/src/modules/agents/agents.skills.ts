@@ -6,7 +6,6 @@ import * as path from 'path';
 import { Repository } from 'typeorm';
 import { z } from 'zod';
 
-import type { UserContextPayload } from '@/common/interfaces/app.interface';
 import { WorkspacesService } from '@/modules/workspaces/workspaces.service';
 import type { SkillResponseDto } from './dto/skill.dto';
 import { CreateSkillDto, UpdateSkillDto } from './dto/skill.dto';
@@ -234,10 +233,7 @@ export class AgentsSkillsService {
     userId: string,
     dto: CreateSkillDto,
   ): Promise<SkillResponseDto> {
-    await this.workspacesService.getWorkspaceByIdAndOwner(
-      workspaceId,
-      { id: userId } as UserContextPayload,
-    );
+    await this.workspacesService.getWorkspaceById(workspaceId, { id: userId });
 
     const existing = await this.skillRepository.findOne({
       where: { workspaceId, name: dto.name },
@@ -279,10 +275,7 @@ export class AgentsSkillsService {
     dto: UpdateSkillDto,
     userId: string,
   ): Promise<SkillResponseDto> {
-    await this.workspacesService.getWorkspaceByIdAndOwner(
-      workspaceId,
-      { id: userId } as UserContextPayload,
-    );
+    await this.workspacesService.getWorkspaceById(workspaceId, { id: userId });
 
     const skill = await this.skillRepository.findOne({
       where: { id: skillId, workspaceId },
@@ -326,10 +319,7 @@ export class AgentsSkillsService {
     skillId: string,
     userId: string,
   ): Promise<void> {
-    await this.workspacesService.getWorkspaceByIdAndOwner(
-      workspaceId,
-      { id: userId } as UserContextPayload,
-    );
+    await this.workspacesService.getWorkspaceById(workspaceId, { id: userId });
 
     const skill = await this.skillRepository.findOne({
       where: { id: skillId, workspaceId },
@@ -348,10 +338,7 @@ export class AgentsSkillsService {
     isEnabled: boolean,
     userId: string,
   ): Promise<SkillResponseDto> {
-    await this.workspacesService.getWorkspaceByIdAndOwner(
-      workspaceId,
-      { id: userId } as UserContextPayload,
-    );
+    await this.workspacesService.getWorkspaceById(workspaceId, { id: userId });
 
     const skill = await this.skillRepository.findOne({
       where: { id: skillId, workspaceId },
