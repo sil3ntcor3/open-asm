@@ -19,8 +19,8 @@ RUN \
   VITE_API_URL=APP_VITE_API_URL \
   bun run build
 
-# Clean bun cache and remove unused files
-RUN bun pm cache clean && rm -rf src test
+# Remove unused files (the bun cache stays in this discarded builder stage)
+RUN rm -rf src test
 
 FROM nginx:stable-alpine
 
