@@ -14,7 +14,7 @@ ENV APP_COMMIT=$APP_COMMIT
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install
+RUN npm install --legacy-peer-deps
 COPY . .
 RUN npm run build
 RUN mkdir -p /tmp/proto && cp -r src/proto/* /tmp/proto/
