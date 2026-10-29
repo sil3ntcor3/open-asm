@@ -37,8 +37,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # scripts/update-tool-artifacts.test.sh.
 FROM debian:bookworm-slim AS templates
 
-ARG NUCLEI_TEMPLATES_VERSION=10.4.7
-ARG NUCLEI_TEMPLATES_SHA256=e1e2b1acf375bb80c558c968f87ea8639de1914cd47099351b54b06afa8643c4
+ARG NUCLEI_TEMPLATES_VERSION=10.5.0
+ARG NUCLEI_TEMPLATES_SHA256=80fbabceca095fac40afecc7f023748df22b9576b9ff10a4422bd2fbf81f9a41
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
