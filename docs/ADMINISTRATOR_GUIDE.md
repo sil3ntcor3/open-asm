@@ -170,7 +170,7 @@ reuse a value across variables.
 | `BETTER_AUTH_SECRET` | 32 chars | Core API | Signs session cookies. Rotating it logs everyone out. |
 | `POSTGRES_PASSWORD` | 32 chars | Core API, Postgres, migration | Database superuser password |
 | `REDIS_PASSWORD` | 32 chars, URI-safe | Core API, Redis | Redis AUTH. Embedded in `REDIS_URL`, so avoid `@ : / ?`. |
-| `RUSTFS_ACCESS_KEY` | 16 chars | Core API, RustFS | S3 access key |
+| `RUSTFS_ACCESS_KEY` | 16 chars, no `/` | Core API, RustFS | S3 access key. A `/` breaks request signing, so every upload fails with HTTP 403 "Invalid SigV4 authorization header". Use `openssl rand -hex 16`. |
 | `RUSTFS_SECRET_KEY` | 32 chars | Core API, RustFS | S3 secret key |
 | `WORKER_ENROLLMENT_TOKEN` | 32 chars | Core API, workers | Shared secret every worker presents to enroll |
 

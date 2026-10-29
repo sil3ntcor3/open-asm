@@ -178,6 +178,22 @@ test("credential policy rejects shipped defaults and accepts generated values", 
   }
 });
 
+test("credential policy rejects a RustFS access key containing a slash", () => {
+  const result = runCredentialValidator({
+    ...generatedCredentials,
+    RUSTFS_ACCESS_KEY: "AbCd/Ef0123456789xyz",
+  });
+  assert.notEqual(result.status, 0, "slash in RUSTFS_ACCESS_KEY was accepted");
+  assert.match(result.stderr, /RUSTFS_ACCESS_KEY must not contain "\/"/);
+
+  // A slash in the secret key is fine: it is only used for signing.
+  const secretResult = runCredentialValidator({
+    ...generatedCredentials,
+    RUSTFS_SECRET_KEY: "Zx9/Qw+Er=TyUi0pAsDfGhJkLzXcVbNm1234",
+  });
+  assert.equal(secretResult.status, 0, secretResult.stderr);
+});
+
 test("Compose shares injected credentials across legitimate service clients", () => {
   const config = requireRenderedCompose(
     [primaryCompose],
