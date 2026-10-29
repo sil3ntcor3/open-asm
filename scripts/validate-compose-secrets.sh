@@ -38,4 +38,13 @@ case "$REDIS_PASSWORD" in
     ;;
 esac
 
+# The access key is embedded in the SigV4 Credential=<key>/<date>/... field,
+# so a slash breaks every RustFS request with HTTP 403. base64 output often
+# contains one; the secret key is unaffected.
+case "$RUSTFS_ACCESS_KEY" in
+  */*)
+    fail 'RUSTFS_ACCESS_KEY must not contain "/" (RustFS rejects it); use letters and digits, e.g. openssl rand -hex 16'
+    ;;
+esac
+
 printf '%s\n' 'Compose credentials accepted'

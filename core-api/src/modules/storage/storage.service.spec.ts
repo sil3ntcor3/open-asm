@@ -26,9 +26,10 @@ const unreachableError = () =>
     code: 'ENOTFOUND',
   });
 
-const buildService = (send: jest.Mock) => {
+const buildService = (send: jest.Mock, configProblem?: string) => {
   const rustFsClient = {
     getClient: () => ({ send }),
+    configProblem,
   } as unknown as RustFsClient;
   const configService = {
     get: jest.fn().mockReturnValue('test-secret'),
@@ -137,6 +138,22 @@ describe('StorageService bucket provisioning', () => {
     await expect(
       service.uploadFile('result.json', Buffer.from('{}'), 'job-results'),
     ).resolves.toEqual({ path: 'job-results/result.json' });
+  });
+
+  it('names a known bad credential in every upload failure', async () => {
+    const send = jest.fn().mockRejectedValue(
+      new S3ServiceException({
+        name: 'AccessDenied',
+        message: 'Invalid SigV4 authorization header',
+        $fault: 'client',
+        $metadata: { httpStatusCode: 403 },
+      }),
+    );
+    const service = buildService(send, 'RUSTFS_ACCESS_KEY contains "/"');
+
+    await expect(
+      service.uploadFile('result.json', Buffer.from('{}'), 'job-results'),
+    ).rejects.toThrow(/Invalid SigV4.*RUSTFS_ACCESS_KEY contains "\/"/);
   });
 
   it('provisions each bucket only once across concurrent writes', async () => {

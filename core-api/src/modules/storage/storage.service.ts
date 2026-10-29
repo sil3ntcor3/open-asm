@@ -180,8 +180,13 @@ export class StorageService implements OnModuleInit {
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error occurred';
+      // The startup log scrolls away; repeat a known-bad credential here,
+      // where people actually look.
+      const hint = this.rustFsClient.configProblem;
       throw new InternalServerErrorException(
-        `Failed to save file: ${errorMessage}`,
+        hint
+          ? `Failed to save file: ${errorMessage}. ${hint}`
+          : `Failed to save file: ${errorMessage}`,
       );
     }
   }
